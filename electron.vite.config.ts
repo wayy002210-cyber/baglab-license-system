@@ -18,9 +18,14 @@ export default defineConfig({
       lib: { entry: resolve("electron/preload.ts") },
       rollupOptions: {
         // Sandboxed preload scripts can import Electron, but cannot resolve
-        // arbitrary Node packages at runtime. Bundle Zod and every other
-        // preload dependency into the generated module.
-        external: ["electron"]
+        // arbitrary Node packages or execute ESM imports at runtime. Bundle
+        // every dependency and emit CommonJS, leaving only Electron's
+        // sandbox-supported require call external.
+        external: ["electron"],
+        output: {
+          format: "cjs",
+          entryFileNames: "preload.cjs"
+        }
       }
     }
   },

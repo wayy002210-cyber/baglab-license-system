@@ -11,7 +11,7 @@ if (!installDirectory.startsWith(`${releaseDirectory}\\`)) {
 rmSync(installDirectory, { recursive: true, force: true });
 const installer = join(
   releaseDirectory,
-  "袋研官矩阵混剪工作台-0.1.0-x64.exe"
+  "袋研官矩阵混剪工作台-0.1.1-x64.exe"
 );
 const installed = spawnSync(
   installer,

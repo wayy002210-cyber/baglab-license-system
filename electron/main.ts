@@ -383,7 +383,7 @@ function createWindow(): void {
     show: false,
     backgroundColor: "#f4f7fc",
     webPreferences: {
-      preload: resolve(__dirname, "../preload/preload.mjs"),
+      preload: resolve(__dirname, "../preload/preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
