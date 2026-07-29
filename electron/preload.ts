@@ -126,6 +126,7 @@ const synthesisRequestSchema = z.object({
   speed: z.number().min(0.5).max(2).optional(),
   volume: z.number().min(0).max(3).optional(),
   pitch: z.number().int().min(-12).max(12).optional(),
+  emotion: z.string().nullable().optional(),
   languageBoost: z.string().nullable().optional()
 });
 const voiceSchema = z.object({
@@ -137,6 +138,40 @@ const synthesisResultSchema = z.object({
   audioPath: z.string().min(1),
   cacheHit: z.boolean(),
   sha256: z.string().length(64)
+});
+const sampleMetadataSchema = z.object({
+  path: z.string().min(1),
+  durationSec: z.number().positive(),
+  format: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative()
+});
+const cloneVoiceRequestSchema = z.object({
+  samplePath: z.string().min(1),
+  voiceId: z.string().min(8).max(256),
+  previewText: z.string().max(1000).optional(),
+  model: z.string().min(1).optional(),
+  languageBoost: z.string().nullable().optional(),
+  needNoiseReduction: z.boolean().optional(),
+  needVolumeNormalization: z.boolean().optional()
+});
+const cloneVoiceResultSchema = z.object({
+  voiceId: z.string().min(1),
+  status: z.enum(["ready", "failed"]),
+  demoAudio: z.string(),
+  sample: sampleMetadataSchema
+});
+const voiceCapabilitiesSchema = z.object({
+  models: z.array(z.string()).min(1),
+  emotions: z.array(z.string()),
+  speedRange: z.tuple([z.number(), z.number()]),
+  volumeRange: z.tuple([z.number(), z.number()]),
+  pitchRange: z.tuple([z.number(), z.number()]),
+  sample: z.object({
+    formats: z.array(z.string()),
+    minDurationSec: z.number(),
+    maxDurationSec: z.number(),
+    maxSizeBytes: z.number()
+  })
 });
 const taskStatusSchema = z.enum([
   "draft",
@@ -444,6 +479,26 @@ contextBridge.exposeInMainWorld("autocut", {
       ),
   listVoices: async () =>
     z.array(voiceSchema).parse(await ipcRenderer.invoke("voices:list")),
+  getVoiceCapabilities: async () =>
+    voiceCapabilitiesSchema.parse(
+      await ipcRenderer.invoke("voices:capabilities")
+    ),
+  selectVoiceSample: async () =>
+    z.string().nullable().parse(await ipcRenderer.invoke("voices:selectSample")),
+  validateVoiceSample: async (samplePath: unknown) =>
+    sampleMetadataSchema.parse(
+      await ipcRenderer.invoke(
+        "voices:validateSample",
+        z.string().min(1).parse(samplePath)
+      )
+    ),
+  cloneVoice: async (input: unknown) =>
+    cloneVoiceResultSchema.parse(
+      await ipcRenderer.invoke(
+        "voices:clone",
+        cloneVoiceRequestSchema.parse(input)
+      )
+    ),
   synthesizeVoice: async (input: unknown) =>
     synthesisResultSchema.parse(
       await ipcRenderer.invoke(

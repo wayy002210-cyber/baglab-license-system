@@ -23,6 +23,7 @@ class SynthesisRequest(BaseModel):
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     volume: float = Field(default=1.0, ge=0.0, le=3.0)
     pitch: int = Field(default=0, ge=-12, le=12)
+    emotion: str | None = None
     language_boost: str | None = Field(default="Chinese", alias="languageBoost")
 
     @field_validator("text")

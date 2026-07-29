@@ -88,7 +88,8 @@ def test_minimax_client_decodes_hex_audio_and_maps_request(monkeypatch) -> None:
     audio = MiniMaxTTS().synthesize(
         api_key="secret",
         request=SynthesisRequest(
-            text="你好", voiceId="voice-1", speed=1.2, volume=0.8, pitch=2
+            text="你好", voiceId="voice-1", speed=1.2, volume=0.8, pitch=2,
+            emotion="happy"
         ),
     )
 
@@ -100,6 +101,7 @@ def test_minimax_client_decodes_hex_audio_and_maps_request(monkeypatch) -> None:
         "speed": 1.2,
         "vol": 0.8,
         "pitch": 2,
+        "emotion": "happy",
     }
 
 

@@ -861,6 +861,75 @@ ipcMain.handle("voices:list", async () => {
   }
   return result;
 });
+ipcMain.handle("voices:capabilities", async () => {
+  if (backendState.status !== "ready") {
+    throw new Error("本地 AI 服务尚未就绪");
+  }
+  const response = await fetch(`${backendState.baseUrl}/voices/capabilities`, {
+    headers: { "X-Autocut-Token": backendState.token }
+  });
+  const result = (await response.json()) as { detail?: string };
+  if (!response.ok) {
+    throw new Error(result.detail || `获取声音能力失败 (${response.status})`);
+  }
+  return result;
+});
+ipcMain.handle("voices:selectSample", async () => {
+  if (!window) return null;
+  const result = await dialog.showOpenDialog(window, {
+    title: "选择声音克隆样本",
+    properties: ["openFile"],
+    filters: [
+      { name: "声音样本", extensions: ["mp3", "m4a", "wav"] }
+    ]
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
+ipcMain.handle(
+  "voices:validateSample",
+  async (_event, samplePath: string) => {
+    if (backendState.status !== "ready") {
+      throw new Error("本地 AI 服务尚未就绪");
+    }
+    const response = await fetch(
+      `${backendState.baseUrl}/voices/sample/validate`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Autocut-Token": backendState.token
+        },
+        body: JSON.stringify({ samplePath })
+      }
+    );
+    const result = (await response.json()) as { detail?: string };
+    if (!response.ok) {
+      throw new Error(result.detail || `声音样本校验失败 (${response.status})`);
+    }
+    return result;
+  }
+);
+ipcMain.handle("voices:clone", async (_event, payload: unknown) => {
+  if (backendState.status !== "ready") {
+    throw new Error("本地 AI 服务尚未就绪");
+  }
+  const apiKey = await credentials.get("minimax");
+  if (!apiKey) throw new Error("请先在系统设置中配置 MiniMax API Key");
+  const response = await fetch(`${backendState.baseUrl}/voices/clones`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Autocut-Token": backendState.token,
+      "X-MiniMax-Key": apiKey
+    },
+    body: JSON.stringify(payload)
+  });
+  const result = (await response.json()) as { detail?: string };
+  if (!response.ok) {
+    throw new Error(result.detail || `声音克隆失败 (${response.status})`);
+  }
+  return result;
+});
 ipcMain.handle("voices:synthesize", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");

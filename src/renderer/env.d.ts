@@ -134,6 +134,45 @@ declare global {
       listVoices(): Promise<
         Array<{ voiceId: string; name: string; kind: string }>
       >;
+      getVoiceCapabilities(): Promise<{
+        models: string[];
+        emotions: string[];
+        speedRange: [number, number];
+        volumeRange: [number, number];
+        pitchRange: [number, number];
+        sample: {
+          formats: string[];
+          minDurationSec: number;
+          maxDurationSec: number;
+          maxSizeBytes: number;
+        };
+      }>;
+      selectVoiceSample(): Promise<string | null>;
+      validateVoiceSample(samplePath: string): Promise<{
+        path: string;
+        durationSec: number;
+        format: string;
+        sizeBytes: number;
+      }>;
+      cloneVoice(input: {
+        samplePath: string;
+        voiceId: string;
+        previewText?: string;
+        model?: string;
+        languageBoost?: string | null;
+        needNoiseReduction?: boolean;
+        needVolumeNormalization?: boolean;
+      }): Promise<{
+        voiceId: string;
+        status: "ready" | "failed";
+        demoAudio: string;
+        sample: {
+          path: string;
+          durationSec: number;
+          format: string;
+          sizeBytes: number;
+        };
+      }>;
       synthesizeVoice(input: {
         text: string;
         voiceId: string;
@@ -141,6 +180,7 @@ declare global {
         speed?: number;
         volume?: number;
         pitch?: number;
+        emotion?: string | null;
         languageBoost?: string | null;
       }): Promise<{
         audioPath: string;

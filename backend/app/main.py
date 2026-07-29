@@ -30,7 +30,15 @@ from app.copywriting.topic_service import (
     TopicResult,
     TopicService,
 )
-from app.voice.minimax import MiniMaxTTS
+from app.voice.minimax import MiniMaxTTS, MiniMaxVoiceClient
+from app.voice.cloning import (
+    CloneRequest,
+    CloneResult,
+    FfprobeSampleProbe,
+    SampleMetadata,
+    VoiceCloneService,
+    VoiceSampleError,
+)
 from app.voice.service import SynthesisRequest, SynthesisResult, VoiceService
 from app.timeline.exporter import EncoderDetector, Exporter
 from app.tasks.runtime import (
@@ -52,6 +60,10 @@ class CreateTaskRequest(BaseModel):
 
 class ScanAssetsRequest(BaseModel):
     folder_path: str = Field(alias="folderPath", min_length=1)
+
+
+class ValidateVoiceSampleRequest(BaseModel):
+    sample_path: str = Field(alias="samplePath", min_length=1)
 
 
 class PublishAccountCheckRequest(BaseModel):
@@ -92,6 +104,14 @@ class VoiceProvider(Protocol):
     def synthesize(
         self, *, api_key: str, request: SynthesisRequest
     ) -> SynthesisResult: ...
+
+
+class VoiceCloner(Protocol):
+    def validate_sample(self, path: Path) -> SampleMetadata: ...
+
+    def clone(self, *, api_key: str, request: CloneRequest) -> CloneResult: ...
+
+    def get(self, voice_id: str) -> CloneResult | None: ...
 
 
 class VideoEncoderDetector(Protocol):
@@ -138,6 +158,7 @@ def create_app(
     copywriting_service: Copywriter | None = None,
     content_creation_service: ContentCreator | None = None,
     voice_service: VoiceProvider | None = None,
+    voice_clone_service: VoiceCloner | None = None,
     encoder_detector: VideoEncoderDetector | None = None,
     task_runtime: GenerationTaskRuntime | None = None,
     publishing_service: Publisher | None = None,
@@ -170,6 +191,9 @@ def create_app(
         cache_dir=Path(
             os.environ.get("AUTOCUT_VOICE_CACHE", "backend-data/cache/voice")
         ),
+    )
+    voice_cloner = voice_clone_service or VoiceCloneService(
+        MiniMaxVoiceClient(), FfprobeSampleProbe(ffprobe_path)
     )
     video_encoder_detector = encoder_detector or EncoderDetector(ffmpeg=ffmpeg_path)
     generation_runtime = task_runtime or SecurePipelineRuntime(
@@ -384,6 +408,35 @@ def create_app(
             raise HTTPException(status_code=401, detail="MiniMax API key is required")
         return voice.list_voices(api_key=x_minimax_key)
 
+    @app.get("/voices/capabilities", dependencies=[Depends(authorize)])
+    def voice_capabilities() -> dict[str, object]:
+        return {
+            "models": [
+                "speech-2.8-hd",
+                "speech-2.8-turbo",
+                "speech-2.6-hd",
+                "speech-2.6-turbo",
+            ],
+            "emotions": [
+                "happy",
+                "sad",
+                "angry",
+                "fearful",
+                "disgusted",
+                "surprised",
+                "calm",
+            ],
+            "speedRange": [0.5, 2.0],
+            "volumeRange": [0.0, 3.0],
+            "pitchRange": [-12, 12],
+            "sample": {
+                "formats": ["mp3", "m4a", "wav"],
+                "minDurationSec": 10,
+                "maxDurationSec": 300,
+                "maxSizeBytes": 20 * 1024 * 1024,
+            },
+        }
+
     @app.post(
         "/voices/synthesize",
         response_model=SynthesisResult,
@@ -396,6 +449,46 @@ def create_app(
         if not x_minimax_key:
             raise HTTPException(status_code=401, detail="MiniMax API key is required")
         return voice.synthesize(api_key=x_minimax_key, request=payload)
+
+    @app.post(
+        "/voices/sample/validate",
+        response_model=SampleMetadata,
+        dependencies=[Depends(authorize)],
+    )
+    def validate_voice_sample(
+        payload: ValidateVoiceSampleRequest,
+    ) -> SampleMetadata:
+        try:
+            return voice_cloner.validate_sample(Path(payload.sample_path))
+        except VoiceSampleError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post(
+        "/voices/clones",
+        response_model=CloneResult,
+        dependencies=[Depends(authorize)],
+    )
+    def clone_voice(
+        payload: CloneRequest,
+        x_minimax_key: str | None = Header(default=None),
+    ) -> CloneResult:
+        if not x_minimax_key:
+            raise HTTPException(status_code=401, detail="请先配置 MiniMax API Key")
+        try:
+            return voice_cloner.clone(api_key=x_minimax_key, request=payload)
+        except VoiceSampleError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get(
+        "/voices/clones/{voice_id}",
+        response_model=CloneResult,
+        dependencies=[Depends(authorize)],
+    )
+    def get_voice_clone(voice_id: str) -> CloneResult:
+        result = voice_cloner.get(voice_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="未找到该克隆音色")
+        return result
 
     @app.post(
         "/publish/accounts/{account_id}/check",

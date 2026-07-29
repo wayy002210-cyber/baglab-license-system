@@ -15,6 +15,10 @@ describe("packaged preload bridge", () => {
     expect(preload).toContain("generateTopics");
     expect(preload).toContain("generateCopywriting");
     expect(preload).toContain("checkCopywritingCompliance");
+    expect(preload).toContain("selectVoiceSample");
+    expect(preload).toContain("validateVoiceSample");
+    expect(preload).toContain("cloneVoice");
+    expect(preload).toContain("getVoiceCapabilities");
     expect(preload).toMatch(/require\(["']electron["']\)/);
     expect(preload).not.toMatch(/^\s*import\s/m);
     expect(preload).not.toMatch(/from\s+["']zod["']/);
