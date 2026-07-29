@@ -55,13 +55,21 @@ class GenerationWorker:
         *,
         stages: dict[str, Stage],
         encoding_lock: asyncio.Lock | None = None,
+        on_cancel: Callable[[str], None] | None = None,
+        on_start: Callable[[str], None] | None = None,
+        on_finish: Callable[[str], None] | None = None,
     ) -> None:
         self.stages = stages
         self._canceled: set[str] = set()
         self._encoding_lock = encoding_lock or asyncio.Lock()
+        self._on_cancel = on_cancel
+        self._on_start = on_start
+        self._on_finish = on_finish
 
     def cancel(self, task_id: str) -> None:
         self._canceled.add(task_id)
+        if self._on_cancel:
+            self._on_cancel(task_id)
 
     async def run(
         self,
@@ -74,6 +82,8 @@ class GenerationWorker:
             "snapshot": request.snapshot,
             "outputPath": request.output_path,
         }
+        if self._on_start:
+            self._on_start(request.task_id)
         current_stage: str | None = None
         try:
             for stage_name, progress in self.stage_progress:
@@ -116,6 +126,18 @@ class GenerationWorker:
             )
             raise
         except Exception as error:
+            if request.task_id in self._canceled:
+                self._emit(
+                    on_event,
+                    request.task_id,
+                    status="canceled",
+                    progress=0,
+                    stage=current_stage,
+                    message="Task canceled",
+                )
+                raise TaskCanceledError(
+                    f"Task canceled: {request.task_id}"
+                ) from error
             self._emit(
                 on_event,
                 request.task_id,
@@ -128,6 +150,8 @@ class GenerationWorker:
             raise
         finally:
             self._canceled.discard(request.task_id)
+            if self._on_finish:
+                self._on_finish(request.task_id)
 
     def _raise_if_canceled(self, task_id: str) -> None:
         if task_id in self._canceled:

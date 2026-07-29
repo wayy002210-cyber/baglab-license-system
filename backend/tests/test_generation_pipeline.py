@@ -43,7 +43,7 @@ class Exporter:
     def __init__(self):
         self.project = None
 
-    def export(self, project, encoder=None):
+    def export(self, project, encoder=None, cancel_event=None):
         self.project = project
 
 

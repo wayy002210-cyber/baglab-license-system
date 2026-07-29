@@ -108,3 +108,33 @@ def test_real_export_produces_vertical_h264_aac_video(tmp_path: Path) -> None:
     assert video["codec_name"] == "h264"
     assert video["r_frame_rate"] == "30/1"
     assert audio["codec_name"] == "aac"
+
+
+def test_ten_consecutive_exports_complete_successfully(tmp_path: Path) -> None:
+    video = tmp_path / "source.mp4"
+    voice = tmp_path / "voice.wav"
+    run([
+        "ffmpeg", "-y", "-f", "lavfi", "-i",
+        "color=c=green:s=180x320:d=0.5:r=30",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(video)
+    ])
+    run([
+        "ffmpeg", "-y", "-f", "lavfi", "-i",
+        "sine=frequency=440:duration=0.5", str(voice)
+    ])
+
+    outputs = []
+    for index in range(10):
+        output = tmp_path / f"batch-{index}.mp4"
+        Exporter().export(
+            Project(
+                output_path=output,
+                video_clips=[VideoClip(video, 0, 0.3)],
+                voice_clips=[AudioClip(voice, 0)],
+                subtitles=[SubtitleClip(0, 0.3, f"批量任务 {index}")],
+            ),
+            encoder="libx264",
+        )
+        outputs.append(output)
+
+    assert len([path for path in outputs if path.stat().st_size > 0]) == 10

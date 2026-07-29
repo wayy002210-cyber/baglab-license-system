@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -65,6 +66,7 @@ class GenerationPipeline:
         self.bailian_key = bailian_key
         self.minimax_key = minimax_key
         self.tts_limit = tts_semaphore or asyncio.Semaphore(3)
+        self.cancel_events: dict[str, threading.Event] = {}
         self.worker = GenerationWorker(
             stages={
                 "preparing_copy": self.prepare_copy,
@@ -74,10 +76,20 @@ class GenerationPipeline:
                 "encoding": self.encode,
             },
             encoding_lock=encoding_lock,
+            on_cancel=self._cancel_export,
+            on_start=lambda task_id: self.cancel_events.__setitem__(
+                task_id, threading.Event()
+            ),
+            on_finish=lambda task_id: self.cancel_events.pop(task_id, None),
         )
 
     async def run(self, request: TaskExecutionRequest) -> dict[str, Any]:
         return await self.worker.run(request)
+
+    def _cancel_export(self, task_id: str) -> None:
+        event = self.cancel_events.get(task_id)
+        if event:
+            event.set()
 
     async def prepare_copy(
         self, request: TaskExecutionRequest, context: dict[str, Any]
@@ -220,5 +232,6 @@ class GenerationPipeline:
             self.exporter.export,
             context["project"],
             encoder=None if encoder == "auto" else encoder,
+            cancel_event=self.cancel_events[request.task_id],
         )
         return context

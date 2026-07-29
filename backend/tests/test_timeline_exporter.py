@@ -1,5 +1,7 @@
 from pathlib import Path
 import subprocess
+import threading
+import pytest
 
 from app.timeline.exporter import (
     AudioClip,
@@ -9,6 +11,7 @@ from app.timeline.exporter import (
     SubtitleClip,
     VideoClip,
     write_ass_subtitles,
+    ExportCanceledError,
 )
 
 
@@ -111,3 +114,28 @@ def test_export_retries_with_libx264_when_hardware_encoder_fails(
     export_commands = [command for command in commands if "-encoders" not in command]
     assert "h264_nvenc" in export_commands[0]
     assert "libx264" in export_commands[1]
+
+
+def test_export_terminates_ffmpeg_when_cancel_signal_is_set(tmp_path: Path) -> None:
+    class Process:
+        returncode = None
+        terminated = False
+
+        def poll(self): return self.returncode
+        def terminate(self): self.terminated = True; self.returncode = 1
+        def kill(self): self.returncode = 1
+        def communicate(self, timeout=None): return ("", "canceled")
+
+    process = Process()
+    exporter = Exporter(process_factory=lambda *args, **kwargs: process)
+    canceled = threading.Event()
+    canceled.set()
+    project = Project(
+        output_path=tmp_path / "out.mp4",
+        video_clips=[VideoClip(tmp_path / "a.mp4", 0, 1)],
+    )
+
+    with pytest.raises(ExportCanceledError):
+        exporter.export(project, encoder="libx264", cancel_event=canceled)
+
+    assert process.terminated is True

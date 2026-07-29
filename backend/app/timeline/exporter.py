@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import subprocess
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -75,15 +77,21 @@ class EncoderDetector:
         return "libx264"
 
 
+class ExportCanceledError(RuntimeError):
+    pass
+
+
 class Exporter:
     def __init__(
         self,
         *,
         ffmpeg: str = "ffmpeg",
         runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+        process_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
     ) -> None:
         self.ffmpeg = ffmpeg
         self.runner = runner
+        self.process_factory = process_factory
 
     def build_command(
         self, project: Project, *, encoder: str = "libx264"
@@ -187,7 +195,11 @@ class Exporter:
         return command
 
     def export(
-        self, project: Project, *, encoder: str | None = None
+        self,
+        project: Project,
+        *,
+        encoder: str | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> subprocess.CompletedProcess[str]:
         project.output_path.parent.mkdir(parents=True, exist_ok=True)
         if project.subtitles:
@@ -200,21 +212,55 @@ class Exporter:
             ffmpeg=self.ffmpeg, runner=self.runner
         ).detect()
         try:
-            return self.runner(
+            return self._execute(
                 self.build_command(project, encoder=selected_encoder),
-                capture_output=True,
-                text=True,
-                check=True,
+                cancel_event,
             )
+        except ExportCanceledError:
+            raise
         except subprocess.CalledProcessError:
             if selected_encoder == "libx264":
                 raise
-            return self.runner(
+            return self._execute(
                 self.build_command(project, encoder="libx264"),
-                capture_output=True,
-                text=True,
-                check=True,
+                cancel_event,
             )
+
+    def _execute(
+        self,
+        command: list[str],
+        cancel_event: threading.Event | None,
+    ) -> subprocess.CompletedProcess[str]:
+        if cancel_event is None:
+            return self.runner(
+                command, capture_output=True, text=True, check=True
+            )
+        process = self.process_factory(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        while process.poll() is None:
+            if cancel_event.is_set():
+                process.terminate()
+                try:
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                raise ExportCanceledError("FFmpeg export was canceled")
+            time.sleep(0.1)
+        stdout, stderr = process.communicate()
+        result = subprocess.CompletedProcess(
+            command, process.returncode or 0, stdout, stderr
+        )
+        if result.returncode != 0:
+            raise subprocess.CalledProcessError(
+                result.returncode, command, stdout, stderr
+            )
+        return result
 
 
 def write_ass_subtitles(
