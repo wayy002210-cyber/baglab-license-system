@@ -123,15 +123,34 @@ class GenerationPipeline:
     async def generate_voice(
         self, request: TaskExecutionRequest, context: dict[str, Any]
     ) -> dict[str, Any]:
-        voice_id = request.snapshot["voice"]["voiceId"]
+        voice_settings = request.snapshot["voice"]
+        voice_id = voice_settings["voiceId"]
+        saved_segments = request.snapshot.get("audioSegments", [])
 
-        async def synthesize(shot):
+        async def synthesize(index, shot):
+            saved = saved_segments[index] if index < len(saved_segments) else None
+            if (
+                saved
+                and saved.get("status") == "ready"
+                and saved.get("audioPath")
+                and saved.get("durationSec")
+            ):
+                return Path(saved["audioPath"]), float(saved["durationSec"])
             async with self.tts_limit:
                 result = await asyncio.to_thread(
                     self.voice.synthesize,
                     api_key=self.minimax_key,
                     request=SynthesisRequest(
-                        text=shot.copywriting, voiceId=voice_id
+                        text=shot.copywriting,
+                        voiceId=voice_id,
+                        model=voice_settings.get("model", "speech-2.8-hd"),
+                        emotion=voice_settings.get("emotion"),
+                        speed=voice_settings.get("speed", 1),
+                        volume=voice_settings.get("volume", 1),
+                        pitch=voice_settings.get("pitch", 0),
+                        languageBoost=voice_settings.get(
+                            "languageBoost", "Chinese"
+                        ),
                     ),
                 )
                 path = Path(result.audio_path)
@@ -139,7 +158,10 @@ class GenerationPipeline:
                 return path, duration
 
         generated = await asyncio.gather(
-            *(synthesize(shot) for shot in context["shotPlans"])
+            *(
+                synthesize(index, shot)
+                for index, shot in enumerate(context["shotPlans"])
+            )
         )
         return {
             **context,

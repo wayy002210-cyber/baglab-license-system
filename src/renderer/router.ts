@@ -10,6 +10,10 @@ export const router = createRouter({
       path: "/copywriting",
       component: () => import("./views/CopywritingView.vue")
     },
+    {
+      path: "/audio",
+      component: () => import("./views/AudioProductionView.vue")
+    },
     { path: "/templates", component: () => import("./views/TemplatesView.vue") },
     { path: "/tasks", component: () => import("./views/TasksView.vue") },
     {

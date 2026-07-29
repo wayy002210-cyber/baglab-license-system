@@ -190,9 +190,11 @@ declare global {
       previewVoice(input: {
         text: string;
         voiceId: string;
+        model?: string;
         speed?: number;
         volume?: number;
         pitch?: number;
+        emotion?: string | null;
       }): Promise<string>;
       listTasks(): Promise<GenerationTask[]>;
       createTaskBatch(input: {
