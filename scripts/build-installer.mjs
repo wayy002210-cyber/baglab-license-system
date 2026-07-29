@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 const root = process.cwd();
 const electronVersion = "41.10.3";
@@ -69,15 +69,11 @@ const nativeVerification =
       })
     : { status: null };
 
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const restore = spawnSync(
-  process.execPath,
-  [
-    join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
-    "rebuild",
-    "better-sqlite3",
-    "keytar"
-  ],
-  { stdio: "inherit", windowsHide: true }
+  npmCommand,
+  ["rebuild", "better-sqlite3", "keytar"],
+  { stdio: "inherit", windowsHide: true, shell: process.platform === "win32" }
 );
 if (restore.status !== 0) {
   throw new Error(`native module restore failed with exit code ${restore.status}`);

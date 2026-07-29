@@ -1,6 +1,6 @@
 {
   "name": "autocut-studio",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Windows 本地自动混剪、配音、合成与发布工作台",
   "author": "袋研官 BAG LAB",
   "private": true,
@@ -16,25 +16,46 @@
     "test:watch": "vitest",
     "test:python": "python -m pytest backend/tests -q",
     "lint": "eslint .",
-    "check": "npm run typecheck && npm test && npm run test:python && npm run build"
-    ,"brand:assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-brand-assets.ps1"
-    ,"prepare:runtime": "node scripts/prepare-runtime.mjs"
-    ,"dist:win": "npm run check && npm run prepare:runtime && node scripts/build-installer.mjs"
+    "check": "npm run typecheck && npm test && npm run test:python && npm run build",
+    "brand:assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-brand-assets.ps1",
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "native:node": "npm rebuild better-sqlite3 keytar",
+    "dist:win": "npm run native:node && npm run check && npm run prepare:runtime && node scripts/build-installer.mjs"
   },
   "build": {
     "appId": "com.innovessel.autocut",
     "productName": "袋研官矩阵混剪工作台",
     "npmRebuild": false,
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
-    "asarUnpack": ["node_modules/better-sqlite3/**/*", "node_modules/keytar/**/*"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/keytar/**/*"
+    ],
     "extraResources": [
-      { "from": "build-resources/backend", "to": "backend" },
-      { "from": "build-resources/bin", "to": "bin" },
-      { "from": "build-resources/ms-playwright", "to": "ms-playwright" }
+      {
+        "from": "build-resources/backend",
+        "to": "backend"
+      },
+      {
+        "from": "build-resources/bin",
+        "to": "bin"
+      },
+      {
+        "from": "build-resources/ms-playwright",
+        "to": "ms-playwright"
+      }
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.ico",
       "artifactName": "袋研官矩阵混剪工作台-${version}-${arch}.${ext}",
       "executableName": "袋研官矩阵混剪工作台"
