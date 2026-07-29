@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createTaskSchema,
+  personaInputSchema,
   publishJobSchema,
   shotPlanSchema
 } from "../../src/shared/contracts";
@@ -52,5 +53,20 @@ describe("shared contracts", () => {
         status: "scheduled"
       })
     ).toThrow();
+  });
+
+  it("normalizes comma-separated persona facts and banned words", () => {
+    const persona = personaInputSchema.parse({
+      name: "袋研官",
+      industry: "广告物料",
+      brandFacts: "自有工厂，十年经验",
+      tone: "专业直接",
+      cta: "关注我",
+      bannedWords: "全网最低,百分百",
+      isDefault: true
+    });
+
+    expect(persona.brandFacts).toEqual(["自有工厂", "十年经验"]);
+    expect(persona.bannedWords).toEqual(["全网最低", "百分百"]);
   });
 });

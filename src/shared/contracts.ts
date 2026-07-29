@@ -39,6 +39,27 @@ export const createTaskSchema = z.object({
   count: z.number().int().min(1).max(20)
 });
 
+const stringListSchema = z.preprocess(
+  (value) =>
+    typeof value === "string"
+      ? value
+          .split(/[,，、\n]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : value,
+  z.array(z.string().min(1))
+);
+
+export const personaInputSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  industry: z.string().trim().max(80),
+  brandFacts: stringListSchema,
+  tone: z.string().trim().max(200),
+  cta: z.string().trim().max(200),
+  bannedWords: stringListSchema,
+  isDefault: z.boolean()
+});
+
 export const publishJobSchema = z
   .object({
     taskId: z.string().min(1),
@@ -68,4 +89,5 @@ export const publishJobSchema = z
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 export type ShotPlan = z.infer<typeof shotPlanSchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
+export type PersonaInput = z.infer<typeof personaInputSchema>;
 export type PublishJob = z.infer<typeof publishJobSchema>;

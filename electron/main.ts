@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import Database from "better-sqlite3";
 import keytar from "keytar";
@@ -11,11 +11,30 @@ import {
 } from "./backend-process.js";
 import { CredentialStore, type CredentialName } from "./credential-store.js";
 import { applyMigrations } from "./database.js";
+import {
+  PersonaRepository,
+  type PersonaInput,
+  type PersonaUpdate
+} from "./repositories/persona-repository.js";
+import {
+  AssetRepository,
+  type ScannedAssetInput
+} from "./repositories/asset-repository.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
 let database: Database.Database | null = null;
 const credentials = new CredentialStore(keytar);
+
+function personaRepository(): PersonaRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new PersonaRepository(database);
+}
+
+function assetRepository(): AssetRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new AssetRepository(database);
+}
 let backendState:
   | { status: "starting" | "ready"; baseUrl: string; token: string }
   | { status: "stopped" | "failed"; message: string } = {
@@ -114,6 +133,86 @@ ipcMain.handle(
     return { configured: true };
   }
 );
+ipcMain.handle("personas:list", () => personaRepository().list());
+ipcMain.handle(
+  "personas:create",
+  (_event, input: PersonaInput) => personaRepository().create(input)
+);
+ipcMain.handle(
+  "personas:update",
+  (_event, id: string, patch: PersonaUpdate) =>
+    personaRepository().update(id, patch)
+);
+ipcMain.handle("personas:duplicate", (_event, id: string) =>
+  personaRepository().duplicate(id)
+);
+ipcMain.handle("personas:delete", (_event, id: string) => ({
+  deleted: personaRepository().delete(id)
+}));
+ipcMain.handle("assets:listCategories", () =>
+  assetRepository().listCategories()
+);
+ipcMain.handle("assets:list", (_event, categoryId: string) =>
+  assetRepository().listAssets(categoryId)
+);
+ipcMain.handle("assets:selectAndScan", async () => {
+  if (!window) throw new Error("Application window is not ready");
+  const selection = await dialog.showOpenDialog(window, {
+    title: "选择一个素材分类文件夹",
+    properties: ["openDirectory"]
+  });
+  if (selection.canceled || !selection.filePaths[0]) return null;
+  if (backendState.status !== "ready") {
+    throw new Error("本地媒体服务尚未就绪");
+  }
+  const folderPath = selection.filePaths[0];
+  const response = await fetch(`${backendState.baseUrl}/assets/scan`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Autocut-Token": backendState.token
+    },
+    body: JSON.stringify({ folderPath })
+  });
+  if (!response.ok) {
+    throw new Error(`素材扫描失败 (${response.status})`);
+  }
+  const result = (await response.json()) as {
+    assets: Array<{
+      file_name: string;
+      file_path: string;
+      duration_sec: number | null;
+      width: number | null;
+      height: number | null;
+      fps: number | null;
+      codec: string | null;
+      rotation: number;
+      file_size: number;
+      fingerprint: string;
+      status: string;
+      error_message: string | null;
+    }>;
+  };
+  const assets: ScannedAssetInput[] = result.assets.map((asset) => ({
+    fileName: asset.file_name,
+    filePath: asset.file_path,
+    durationSec: asset.duration_sec,
+    width: asset.width,
+    height: asset.height,
+    fps: asset.fps,
+    codec: asset.codec,
+    rotation: asset.rotation,
+    fileSize: asset.file_size,
+    fingerprint: asset.fingerprint,
+    status: asset.status,
+    errorMessage: asset.error_message
+  }));
+  return assetRepository().saveCategoryScan({
+    categoryName: basename(folderPath),
+    folderPath,
+    assets
+  });
+});
 ipcMain.handle(
   "credentials:delete",
   async (_event, name: CredentialName) => ({
