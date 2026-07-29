@@ -28,13 +28,16 @@ class SecurePipelineRuntime:
         bailian_key: str | None = None,
         minimax_key: str | None = None,
     ) -> None:
-        if not bailian_key or not minimax_key:
+        if (
+            (not bailian_key or not minimax_key)
+            and not request.snapshot.get("approved")
+        ):
             raise ValueError("Bailian and MiniMax API keys are required")
         runtime = self.runtimes.get(request.task_id)
         if runtime is None:
             pipeline = self.factory(
-                bailian_key,
-                minimax_key,
+                bailian_key or "",
+                minimax_key or "",
                 self.encoding_lock,
                 self.tts_semaphore,
             )

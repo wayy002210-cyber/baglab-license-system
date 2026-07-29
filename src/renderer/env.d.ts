@@ -204,6 +204,10 @@ declare global {
         seed: number;
         snapshot: Record<string, unknown>;
       }): Promise<GenerationTask[]>;
+      createTasksFromDraft(input: {
+        count: number;
+        seed: number;
+      }): Promise<GenerationTask[]>;
       cancelTask(id: string): Promise<GenerationTask>;
       retryTask(id: string): Promise<GenerationTask>;
       openTaskOutput(id: string): Promise<{ opened: boolean }>;

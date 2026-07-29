@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.copywriting.service import RequestedShot, RewriteRequest
+from app.copywriting.service import GeneratedShot, RequestedShot, RewriteRequest
 from app.timeline.asset_selector import (
     AssetCandidate,
     AssetSelector,
@@ -95,6 +95,26 @@ class GenerationPipeline:
     async def prepare_copy(
         self, request: TaskExecutionRequest, context: dict[str, Any]
     ) -> dict[str, Any]:
+        if request.snapshot.get("approved") and request.snapshot.get("shots"):
+            return {
+                **context,
+                "shotPlans": [
+                    GeneratedShot(
+                        index=shot.get("index", index),
+                        role=shot.get("role", "custom"),
+                        assetCategoryId=shot["assetCategoryId"],
+                        copywriting=shot["copywriting"],
+                        durationMode=shot.get("durationMode", "voice"),
+                        durationSec=(
+                            shot.get("durationSec")
+                            if shot.get("durationMode") == "fixed"
+                            else None
+                        ),
+                        muteOriginal=shot.get("muteOriginal", True),
+                    )
+                    for index, shot in enumerate(request.snapshot["shots"])
+                ],
+            }
         persona = request.snapshot["persona"]
         shots = request.snapshot["template"]["shots"]
         rewrite_request = RewriteRequest(
@@ -234,7 +254,10 @@ class GenerationPipeline:
                 else None
             ),
             bgm_volume=float(
-                request.snapshot.get("media", {}).get("bgmVolume", 0.16)
+                request.snapshot.get("bgm", {}).get(
+                    "volume",
+                    request.snapshot.get("media", {}).get("bgmVolume", 0.16),
+                )
             ),
             video_bitrate_mbps=float(
                 request.snapshot.get("media", {}).get("videoBitrateMbps", 8)

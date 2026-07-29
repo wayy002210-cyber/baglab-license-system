@@ -10,8 +10,8 @@ import {
 } from "electron";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
-import { basename, join, resolve } from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, extname, join, resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import Database from "better-sqlite3";
@@ -65,6 +65,7 @@ import {
   type ReferenceScriptInput
 } from "./repositories/reference-script-repository.js";
 import type { CopyModelSettings } from "./repositories/settings-repository.js";
+import { buildDraftTaskSnapshot } from "./services/task-snapshot-service.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -139,7 +140,7 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
     credentials.get("bailian"),
     credentials.get("minimax")
   ]);
-  if (!bailianKey || !minimaxKey) {
+  if ((!bailianKey || !minimaxKey) && !task.snapshot.approved) {
     taskRepository().transition(task.id, "failed", {
       errorCode: "AI_KEY_MISSING",
       errorMessage: "请先配置百炼和 MiniMax API Key"
@@ -151,12 +152,12 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
     settings.outputDirectory || join(app.getPath("videos"), "袋研官混剪成片"),
     `${task.id}.mp4`
   );
-  const headers = {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Autocut-Token": backendState.token,
-    "X-Bailian-Key": bailianKey,
-    "X-MiniMax-Key": minimaxKey
+    "X-Autocut-Token": backendState.token
   };
+  if (bailianKey) headers["X-Bailian-Key"] = bailianKey;
+  if (minimaxKey) headers["X-MiniMax-Key"] = minimaxKey;
   try {
     const start = await fetch(`${backendState.baseUrl}/tasks/${task.id}/run`, {
       method: "POST",
@@ -634,6 +635,61 @@ ipcMain.handle("tasks:createBatch", (_event, input: CreateTaskBatchInput) => {
   for (const task of tasks) void runGenerationTask(task);
   return tasks;
 });
+ipcMain.handle(
+  "tasks:createFromDraft",
+  (_event, input: { count: number; seed: number }) => {
+    const draft = creationDraftRepository().get();
+    if (!draft) throw new Error("没有可创建任务的创作草稿");
+    const persona = personaRepository()
+      .list()
+      .find((item) => item.id === draft.personaId);
+    if (!persona) throw new Error("草稿关联的人设档案不存在");
+    const assets = assetRepository()
+      .listCategories()
+      .flatMap((category) => assetRepository().listAssets(category.id));
+    const media = settingsRepository().getMediaSettings();
+    const baseSnapshot = buildDraftTaskSnapshot({
+      draft,
+      persona,
+      assets,
+      media
+    });
+    const tasks = [];
+    for (let index = 0; index < input.count; index += 1) {
+      const seed = input.seed + index;
+      const snapshot = structuredClone(baseSnapshot);
+      if (draft.bgm?.sourceType === "folder") {
+        const candidates = readdirSync(draft.bgm.path, { withFileTypes: true })
+          .filter(
+            (entry) =>
+              entry.isFile() &&
+              [".mp3", ".wav", ".m4a", ".aac", ".flac"].includes(
+                extname(entry.name).toLowerCase()
+              )
+          )
+          .map((entry) => join(draft.bgm!.path, entry.name))
+          .sort();
+        if (!candidates.length) {
+          throw new Error("背景音乐文件夹中没有可用音频");
+        }
+        snapshot.bgmPath =
+          draft.bgm.mode === "sequential"
+            ? candidates[index % candidates.length]
+            : candidates[Math.abs(seed) % candidates.length];
+      }
+      const [task] = taskRepository().createBatch({
+        templateId: "creation-draft",
+        personaId: persona.id,
+        count: 1,
+        seed,
+        snapshot
+      });
+      tasks.push(task);
+    }
+    for (const task of tasks) void runGenerationTask(task);
+    return tasks;
+  }
+);
 ipcMain.handle("settings:getMedia", () => {
   const current = settingsRepository().getMediaSettings();
   return {

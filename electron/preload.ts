@@ -535,6 +535,16 @@ contextBridge.exposeInMainWorld("autocut", {
           createTaskBatchSchema.parse(input)
         )
       ),
+  createTasksFromDraft: async (input: unknown) =>
+    z.array(taskSchema).parse(
+      await ipcRenderer.invoke(
+        "tasks:createFromDraft",
+        z.object({
+          count: z.number().int().min(1).max(20),
+          seed: z.number().int()
+        }).parse(input)
+      )
+    ),
   cancelTask: async (id: string) =>
     taskSchema.parse(
       await ipcRenderer.invoke("tasks:cancel", z.string().uuid().parse(id))
