@@ -13,6 +13,7 @@ describe("database migrations", () => {
       "asset_categories",
       "asset_usage_history",
       "assets",
+      "creation_drafts",
       "generation_tasks",
       "personas",
       "publish_accounts",

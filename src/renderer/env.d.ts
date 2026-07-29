@@ -1,4 +1,4 @@
-import type { PersonaInput } from "../shared/contracts";
+import type { CreationDraft, PersonaInput } from "../shared/contracts";
 
 type Persona = PersonaInput & {
   id: string;
@@ -33,6 +33,10 @@ declare global {
       ): Promise<Persona>;
       duplicatePersona(id: string): Promise<Persona>;
       deletePersona(id: string): Promise<{ deleted: boolean }>;
+      getCreationDraft(): Promise<CreationDraft | null>;
+      saveCreationDraft(input: CreationDraft): Promise<CreationDraft>;
+      clearCreationDraft(): Promise<{ cleared: boolean }>;
+      duplicateCreationDraft(): Promise<CreationDraft | null>;
       listAssetCategories(): Promise<
         Array<{
           id: string;

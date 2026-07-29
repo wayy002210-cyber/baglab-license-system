@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { z } from "zod";
-import { personaInputSchema } from "../src/shared/contracts.js";
+import {
+  creationDraftSchema,
+  personaInputSchema
+} from "../src/shared/contracts.js";
 
 const backendStatusSchema = z.discriminatedUnion("status", [
   z.object({
@@ -245,6 +248,22 @@ contextBridge.exposeInMainWorld("autocut", {
       .parse(
         await ipcRenderer.invoke("personas:delete", personaIdSchema.parse(id))
       ),
+  getCreationDraft: async () => {
+    const result = await ipcRenderer.invoke("draft:get");
+    return result === null ? null : creationDraftSchema.parse(result);
+  },
+  saveCreationDraft: async (input: unknown) =>
+    creationDraftSchema.parse(
+      await ipcRenderer.invoke("draft:save", creationDraftSchema.parse(input))
+    ),
+  clearCreationDraft: async () =>
+    z
+      .object({ cleared: z.boolean() })
+      .parse(await ipcRenderer.invoke("draft:clear")),
+  duplicateCreationDraft: async () => {
+    const result = await ipcRenderer.invoke("draft:duplicate");
+    return result === null ? null : creationDraftSchema.parse(result);
+  },
   listAssetCategories: async () =>
     z
       .array(assetCategorySchema)

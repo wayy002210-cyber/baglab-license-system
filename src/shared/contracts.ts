@@ -1,5 +1,119 @@
 import { z } from "zod";
 
+const complianceIssueSchema = z
+  .object({
+    term: z.string(),
+    start: z.number().int().nonnegative(),
+    end: z.number().int().nonnegative(),
+    riskType: z.string(),
+    explanation: z.string(),
+    suggestion: z.string()
+  })
+  .strict();
+
+const draftCopywritingSchema = z
+  .object({
+    model: z.string().min(1),
+    temperature: z.number().min(0).max(2),
+    topics: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          title: z.string().min(1),
+          angle: z.string(),
+          hook: z.string()
+        })
+        .strict()
+    ),
+    selectedTopicId: z.string().min(1).nullable(),
+    text: z.string(),
+    complianceIssues: z.array(complianceIssueSchema)
+  })
+  .strict();
+
+const draftVoiceSchema = z
+  .object({
+    voiceId: z.string().min(1),
+    source: z.enum(["system", "custom", "clone"]),
+    emotion: z.string().nullable(),
+    speed: z.number().min(0.5).max(2),
+    volume: z.number().min(0).max(3),
+    pitch: z.number().int().min(-12).max(12),
+    languageBoost: z.string().nullable()
+  })
+  .strict();
+
+const draftAudioSegmentSchema = z
+  .object({
+    id: z.string().min(1),
+    index: z.number().int().nonnegative(),
+    text: z.string().min(1),
+    sourceStart: z.number().int().nonnegative(),
+    sourceEnd: z.number().int().positive(),
+    textHash: z.string(),
+    parameterHash: z.string(),
+    audioPath: z.string().nullable(),
+    durationSec: z.number().positive().nullable(),
+    status: z.enum(["pending", "generating", "ready", "failed"]),
+    errorMessage: z.string().nullable()
+  })
+  .strict();
+
+const draftShotSchema = z
+  .object({
+    id: z.string().min(1),
+    index: z.number().int().nonnegative(),
+    audioSegmentId: z.string().min(1),
+    copywriting: z.string().min(1),
+    assetCategoryId: z.string().min(1).nullable(),
+    durationMode: z.enum(["voice", "fixed", "auto"]),
+    durationSec: z.number().positive().nullable(),
+    muteOriginal: z.boolean()
+  })
+  .strict();
+
+const draftBgmSchema = z
+  .object({
+    sourceType: z.enum(["file", "folder"]),
+    path: z.string().min(1),
+    mode: z.enum(["fixed", "random", "sequential"]),
+    volume: z.number().min(0).max(1),
+    fadeInSec: z.number().nonnegative(),
+    fadeOutSec: z.number().nonnegative()
+  })
+  .strict();
+
+const draftTextStyleSchema = z
+  .object({
+    fontPath: z.string().nullable(),
+    fontFamily: z.string().min(1),
+    fontSize: z.number().positive(),
+    primaryColor: z.string().min(1),
+    outlineColor: z.string().min(1),
+    outlineWidth: z.number().nonnegative(),
+    shadowColor: z.string().min(1),
+    shadowX: z.number(),
+    shadowY: z.number(),
+    alignment: z.number().int().min(1).max(9),
+    marginV: z.number().int().nonnegative()
+  })
+  .strict();
+
+export const creationDraftSchema = z
+  .object({
+    version: z.literal(1),
+    stage: z.enum(["persona", "copywriting", "audio", "editing", "ready"]),
+    personaId: z.string().min(1).nullable(),
+    copywriting: draftCopywritingSchema.nullable(),
+    voice: draftVoiceSchema.nullable(),
+    audioSegments: z.array(draftAudioSegmentSchema),
+    shots: z.array(draftShotSchema),
+    bgm: draftBgmSchema.nullable(),
+    titleStyle: draftTextStyleSchema.nullable(),
+    subtitleStyle: draftTextStyleSchema.nullable()
+  })
+  .strict();
+
 export const taskStatusSchema = z.enum([
   "draft",
   "queued",
@@ -91,3 +205,4 @@ export type ShotPlan = z.infer<typeof shotPlanSchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type PersonaInput = z.infer<typeof personaInputSchema>;
 export type PublishJob = z.infer<typeof publishJobSchema>;
+export type CreationDraft = z.infer<typeof creationDraftSchema>;

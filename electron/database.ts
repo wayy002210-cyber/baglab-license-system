@@ -160,6 +160,15 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value_json TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS creation_drafts (
+  id TEXT PRIMARY KEY,
+  version INTEGER NOT NULL,
+  stage TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 export function applyMigrations(database: Database.Database): void {

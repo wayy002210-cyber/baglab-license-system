@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  creationDraftSchema,
   createTaskSchema,
   personaInputSchema,
   publishJobSchema,
@@ -7,6 +8,32 @@ import {
 } from "../../src/shared/contracts";
 
 describe("shared contracts", () => {
+  it("validates a versioned creation draft and strips no unknown fields", () => {
+    const draft = creationDraftSchema.parse({
+      version: 1,
+      stage: "copywriting",
+      personaId: "persona-1",
+      copywriting: {
+        model: "deepseek-v3",
+        temperature: 0.7,
+        topics: [],
+        selectedTopicId: null,
+        text: "测试文案",
+        complianceIssues: []
+      },
+      voice: null,
+      audioSegments: [],
+      shots: [],
+      bgm: null,
+      titleStyle: null,
+      subtitleStyle: null
+    });
+
+    expect(draft.stage).toBe("copywriting");
+    expect(() =>
+      creationDraftSchema.parse({ ...draft, authorization: "secret" })
+    ).toThrow();
+  });
   it("accepts a valid fixed-duration shot", () => {
     const shot = shotPlanSchema.parse({
       index: 0,

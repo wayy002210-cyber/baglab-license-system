@@ -58,6 +58,8 @@ import {
 } from "./repositories/settings-repository.js";
 import { createChineseMenuTemplate } from "./application-menu.js";
 import { PRODUCT_NAME } from "../src/shared/product-copy.js";
+import type { CreationDraft } from "../src/shared/contracts.js";
+import { CreationDraftRepository } from "./repositories/creation-draft-repository.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -109,6 +111,10 @@ function publishRepository(): PublishRepository {
 function settingsRepository(): SettingsRepository {
   if (!database) throw new Error("Database is not ready");
   return new SettingsRepository(database);
+}
+function creationDraftRepository(): CreationDraftRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new CreationDraftRepository(database);
 }
 
 async function runGenerationTask(task: GenerationTask): Promise<void> {
@@ -464,6 +470,15 @@ ipcMain.handle("personas:duplicate", (_event, id: string) =>
 ipcMain.handle("personas:delete", (_event, id: string) => ({
   deleted: personaRepository().delete(id)
 }));
+ipcMain.handle("draft:get", () => creationDraftRepository().get());
+ipcMain.handle("draft:save", (_event, input: CreationDraft) =>
+  creationDraftRepository().save(input)
+);
+ipcMain.handle("draft:clear", () => {
+  creationDraftRepository().clear();
+  return { cleared: true };
+});
+ipcMain.handle("draft:duplicate", () => creationDraftRepository().duplicate());
 ipcMain.handle("assets:listCategories", () =>
   assetRepository().listCategories()
 );
