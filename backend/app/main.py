@@ -16,6 +16,7 @@ from app.copywriting.service import (
 )
 from app.voice.minimax import MiniMaxTTS
 from app.voice.service import SynthesisRequest, SynthesisResult, VoiceService
+from app.timeline.exporter import EncoderDetector
 
 
 class CreateTaskRequest(BaseModel):
@@ -45,11 +46,16 @@ class VoiceProvider(Protocol):
     ) -> SynthesisResult: ...
 
 
+class VideoEncoderDetector(Protocol):
+    def detect(self) -> str: ...
+
+
 def create_app(
     session_token: str | None = None,
     asset_scanner: Scanner | None = None,
     copywriting_service: Copywriter | None = None,
     voice_service: VoiceProvider | None = None,
+    encoder_detector: VideoEncoderDetector | None = None,
 ) -> FastAPI:
     token = session_token or os.environ.get("AUTOCUT_SESSION_TOKEN")
     if not token:
@@ -64,6 +70,7 @@ def create_app(
             os.environ.get("AUTOCUT_VOICE_CACHE", "backend-data/cache/voice")
         ),
     )
+    video_encoder_detector = encoder_detector or EncoderDetector()
 
     def authorize(x_autocut_token: str | None = Header(default=None)) -> None:
         if x_autocut_token != token:
@@ -72,6 +79,14 @@ def create_app(
     @app.get("/health", dependencies=[Depends(authorize)])
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "autocut-backend"}
+
+    @app.get("/media/gpu-encoder", dependencies=[Depends(authorize)])
+    def gpu_encoder() -> dict[str, str | bool]:
+        encoder = video_encoder_detector.detect()
+        return {
+            "encoder": encoder,
+            "hardwareAccelerated": encoder != "libx264",
+        }
 
     @app.post("/tasks", status_code=201, dependencies=[Depends(authorize)])
     def create_task(payload: CreateTaskRequest) -> dict[str, object]:

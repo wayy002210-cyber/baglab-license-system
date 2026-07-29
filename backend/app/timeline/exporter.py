@@ -1,0 +1,258 @@
+from __future__ import annotations
+
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable
+
+
+@dataclass(frozen=True)
+class VideoClip:
+    path: Path
+    start_sec: float
+    duration_sec: float
+    loop: bool = False
+
+
+@dataclass(frozen=True)
+class AudioClip:
+    path: Path
+    start_sec: float
+    volume: float = 1.0
+
+
+@dataclass(frozen=True)
+class SubtitleClip:
+    start_sec: float
+    end_sec: float
+    text: str
+
+
+@dataclass(frozen=True)
+class Project:
+    output_path: Path
+    video_clips: list[VideoClip]
+    voice_clips: list[AudioClip] = field(default_factory=list)
+    subtitles: list[SubtitleClip] = field(default_factory=list)
+    bgm_path: Path | None = None
+    width: int = 1080
+    height: int = 1920
+    fps: int = 30
+    bgm_volume: float = 0.16
+
+    @property
+    def duration_sec(self) -> float:
+        return sum(clip.duration_sec for clip in self.video_clips)
+
+
+class EncoderDetector:
+    priority = ("h264_nvenc", "h264_qsv", "h264_amf")
+
+    def __init__(
+        self,
+        *,
+        ffmpeg: str = "ffmpeg",
+        runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    ) -> None:
+        self.ffmpeg = ffmpeg
+        self.runner = runner
+
+    def detect(self) -> str:
+        result = self.runner(
+            [self.ffmpeg, "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return self.choose(f"{result.stdout}\n{result.stderr}")
+
+    def choose(self, encoder_output: str) -> str:
+        for encoder in self.priority:
+            if encoder in encoder_output:
+                return encoder
+        return "libx264"
+
+
+class Exporter:
+    def __init__(
+        self,
+        *,
+        ffmpeg: str = "ffmpeg",
+        runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    ) -> None:
+        self.ffmpeg = ffmpeg
+        self.runner = runner
+
+    def build_command(
+        self, project: Project, *, encoder: str = "libx264"
+    ) -> list[str]:
+        if not project.video_clips:
+            raise ValueError("Project requires at least one video clip")
+
+        command = [self.ffmpeg, "-hide_banner", "-y"]
+        for clip in project.video_clips:
+            if clip.loop:
+                command.extend(["-stream_loop", "-1"])
+            command.extend(["-i", str(clip.path)])
+        for clip in project.voice_clips:
+            command.extend(["-i", str(clip.path)])
+        if project.bgm_path:
+            command.extend(["-stream_loop", "-1", "-i", str(project.bgm_path)])
+
+        filters: list[str] = []
+        video_labels: list[str] = []
+        for index, clip in enumerate(project.video_clips):
+            label = f"v{index}"
+            filters.append(
+                f"[{index}:v]trim=start={clip.start_sec}:duration={clip.duration_sec},"
+                f"setpts=PTS-STARTPTS,"
+                f"scale={project.width}:{project.height}:"
+                "force_original_aspect_ratio=increase,"
+                f"crop={project.width}:{project.height},"
+                f"fps={project.fps},format=yuv420p,setsar=1[{label}]"
+            )
+            video_labels.append(f"[{label}]")
+        filters.append(
+            "".join(video_labels)
+            + f"concat=n={len(video_labels)}:v=1:a=0[vconcat]"
+        )
+
+        video_output = "vconcat"
+        if project.subtitles:
+            subtitle_path = project.output_path.with_suffix(".ass")
+            escaped = _escape_ffmpeg_filter_path(subtitle_path)
+            filters.append(f"[vconcat]subtitles='{escaped}'[vout]")
+            video_output = "vout"
+
+        audio_labels: list[str] = []
+        audio_input_offset = len(project.video_clips)
+        for index, clip in enumerate(project.voice_clips):
+            input_index = audio_input_offset + index
+            delay_ms = max(0, round(clip.start_sec * 1000))
+            label = f"voice{index}"
+            filters.append(
+                f"[{input_index}:a]adelay={delay_ms}|{delay_ms},"
+                f"volume={clip.volume}[{label}]"
+            )
+            audio_labels.append(f"[{label}]")
+
+        if project.bgm_path:
+            bgm_input = audio_input_offset + len(project.voice_clips)
+            fade_out_start = max(0, project.duration_sec - 1)
+            filters.append(
+                f"[{bgm_input}:a]atrim=duration={project.duration_sec},"
+                "asetpts=PTS-STARTPTS,"
+                f"volume={project.bgm_volume},afade=t=in:st=0:d=1,"
+                f"afade=t=out:st={fade_out_start}:d=1[bgm]"
+            )
+            audio_labels.append("[bgm]")
+
+        if audio_labels:
+            filters.append(
+                "".join(audio_labels)
+                + f"amix=inputs={len(audio_labels)}:"
+                "duration=longest:dropout_transition=0[aout]"
+            )
+
+        command.extend(["-filter_complex", ";".join(filters), "-map", f"[{video_output}]"])
+        if audio_labels:
+            command.extend(["-map", "[aout]"])
+        command.extend(
+            [
+                "-c:v",
+                encoder,
+                "-preset",
+                "medium" if encoder == "libx264" else "p4",
+                "-b:v",
+                "8M",
+                "-maxrate",
+                "10M",
+                "-bufsize",
+                "16M",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-ar",
+                "48000",
+                "-movflags",
+                "+faststart",
+                "-t",
+                str(project.duration_sec),
+                str(project.output_path),
+            ]
+        )
+        return command
+
+    def export(
+        self, project: Project, *, encoder: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        project.output_path.parent.mkdir(parents=True, exist_ok=True)
+        if project.subtitles:
+            write_ass_subtitles(
+                project.output_path.with_suffix(".ass"), project.subtitles
+            )
+        selected_encoder = encoder or EncoderDetector(
+            ffmpeg=self.ffmpeg, runner=self.runner
+        ).detect()
+        try:
+            return self.runner(
+                self.build_command(project, encoder=selected_encoder),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError:
+            if selected_encoder == "libx264":
+                raise
+            return self.runner(
+                self.build_command(project, encoder="libx264"),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+
+def write_ass_subtitles(path: Path, subtitles: list[SubtitleClip]) -> None:
+    header = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Alignment, MarginL, MarginR, MarginV, Outline, Shadow
+Style: Default,Microsoft YaHei,58,&H00FFFFFF,&H00101010,&H80000000,-1,2,80,80,170,4,1
+
+[Events]
+Format: Layer, Start, End, Style, Text
+"""
+    lines = [
+        f"Dialogue: 0,{_ass_time(item.start_sec)},{_ass_time(item.end_sec)},"
+        f"Default,{_escape_ass_text(item.text)}"
+        for item in subtitles
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _ass_time(seconds: float) -> str:
+    centiseconds = max(0, round(seconds * 100))
+    hours, remainder = divmod(centiseconds, 360_000)
+    minutes, remainder = divmod(remainder, 6_000)
+    whole_seconds, fraction = divmod(remainder, 100)
+    return f"{hours}:{minutes:02d}:{whole_seconds:02d}.{fraction:02d}"
+
+
+def _escape_ass_text(text: str) -> str:
+    return (
+        text.replace("\\", "\\\\")
+        .replace("{", "\\{")
+        .replace("}", "\\}")
+        .replace("\r\n", "\\N")
+        .replace("\n", "\\N")
+    )
+
+
+def _escape_ffmpeg_filter_path(path: Path) -> str:
+    return str(path).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
