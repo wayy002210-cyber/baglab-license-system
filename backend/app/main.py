@@ -113,7 +113,9 @@ def create_app(
         raise RuntimeError("AUTOCUT_SESSION_TOKEN is required")
 
     app = FastAPI(title="AutoCut Local Service", version="0.1.0")
-    scanner = asset_scanner or AssetScanner(Ffprobe())
+    ffmpeg_path = os.environ.get("AUTOCUT_FFMPEG", "ffmpeg")
+    ffprobe_path = os.environ.get("AUTOCUT_FFPROBE", "ffprobe")
+    scanner = asset_scanner or AssetScanner(Ffprobe(ffprobe_path))
     copywriter = copywriting_service or CopywritingService(BailianChat())
     voice = voice_service or VoiceService(
         MiniMaxTTS(),
@@ -121,13 +123,13 @@ def create_app(
             os.environ.get("AUTOCUT_VOICE_CACHE", "backend-data/cache/voice")
         ),
     )
-    video_encoder_detector = encoder_detector or EncoderDetector()
+    video_encoder_detector = encoder_detector or EncoderDetector(ffmpeg=ffmpeg_path)
     generation_runtime = task_runtime or SecurePipelineRuntime(
         lambda bailian_key, minimax_key, encoding_lock, tts_semaphore: GenerationPipeline(
             copywriter=copywriter,
             voice=voice,
-            audio_probe=AudioDurationProbe(),
-            exporter=Exporter(),
+            audio_probe=AudioDurationProbe(ffprobe_path),
+            exporter=Exporter(ffmpeg=ffmpeg_path),
             bailian_key=bailian_key,
             minimax_key=minimax_key,
             encoding_lock=encoding_lock,

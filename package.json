@@ -1,9 +1,11 @@
 {
   "name": "autocut-studio",
   "version": "0.1.0",
+  "description": "Windows 本地自动混剪、配音、合成与发布工作台",
+  "author": "AutoCut Studio",
   "private": true,
   "type": "module",
-  "main": "dist-electron/main.cjs",
+  "main": "dist-electron/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
     "dev:renderer": "vite",
@@ -15,6 +17,27 @@
     "test:python": "python -m pytest backend/tests -q",
     "lint": "eslint .",
     "check": "npm run typecheck && npm test && npm run test:python && npm run build"
+    ,"prepare:runtime": "node scripts/prepare-runtime.mjs"
+    ,"dist:win": "npm run check && npm run prepare:runtime && node scripts/build-installer.mjs"
+  },
+  "build": {
+    "appId": "com.innovessel.autocut",
+    "productName": "全自动混剪工作台",
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
+    "asarUnpack": ["node_modules/better-sqlite3/**/*", "node_modules/keytar/**/*"],
+    "extraResources": [
+      { "from": "build-resources/backend", "to": "backend" },
+      { "from": "build-resources/bin", "to": "bin" },
+      { "from": "build-resources/ms-playwright", "to": "ms-playwright" }
+    ],
+    "win": { "target": ["nsis"], "artifactName": "AutoCut-Studio-${version}-${arch}.${ext}" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
@@ -29,12 +52,13 @@
   },
   "devDependencies": {
     "@pinia/testing": "^1.0.3",
-    "@types/node": "^24.10.0",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.10.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vitest/coverage-v8": "^4.0.18",
     "@vue/test-utils": "^2.4.6",
     "electron": "^41.1.1",
+    "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.2",
     "happy-dom": "^20.8.4",

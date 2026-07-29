@@ -5,6 +5,8 @@ export type BackendLaunchInput = {
   backendDirectory: string;
   sessionToken: string;
   port: number;
+  packaged?: boolean;
+  resourceDirectory?: string;
 };
 
 export type BackendLaunchConfig = {
@@ -19,13 +21,20 @@ export function createBackendLaunchConfig(
 ): BackendLaunchConfig {
   return {
     command: input.pythonExecutable,
-    args: ["-m", "app.main"],
+    args: input.packaged ? [] : ["-m", "app.main"],
     cwd: input.backendDirectory,
     env: {
       ...process.env,
       AUTOCUT_HOST: "127.0.0.1",
       AUTOCUT_PORT: String(input.port),
       AUTOCUT_SESSION_TOKEN: input.sessionToken,
+      ...(input.resourceDirectory
+        ? {
+            AUTOCUT_FFMPEG: `${input.resourceDirectory}/bin/ffmpeg.exe`,
+            AUTOCUT_FFPROBE: `${input.resourceDirectory}/bin/ffprobe.exe`,
+            PLAYWRIGHT_BROWSERS_PATH: `${input.resourceDirectory}/ms-playwright`
+          }
+        : {}),
       PYTHONUTF8: "1"
     }
   };
@@ -38,4 +47,35 @@ export function spawnBackend(config: BackendLaunchConfig): ChildProcess {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
+}
+
+export async function waitForBackendHealth(input: {
+  baseUrl: string;
+  token: string;
+  attempts?: number;
+  fetcher?: typeof fetch;
+  delay?: (milliseconds: number) => Promise<void>;
+}): Promise<void> {
+  const fetcher = input.fetcher ?? fetch;
+  const attempts = input.attempts ?? 60;
+  const delay =
+    input.delay ??
+    ((milliseconds: number) =>
+      new Promise<void>((resolveDelay) => setTimeout(resolveDelay, milliseconds)));
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetcher(`${input.baseUrl}/health`, {
+        headers: { "X-Autocut-Token": input.token }
+      });
+      if (response.ok) return;
+      lastError = new Error(`Health check returned ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    }
+    await delay(250);
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Backend health check timed out");
 }

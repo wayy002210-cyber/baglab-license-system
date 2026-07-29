@@ -12,3 +12,7 @@ __pycache__/
 data/
 work/
 output/
+build-resources/
+release/
+backend/build/
+backend/*.spec

@@ -1,25 +1,30 @@
-# AutoCut Studio
+# 全自动混剪工作台
 
-Windows 本地优先的智能混剪与内容发布工作台。
+Windows 11 本地单机视频混剪与发布工具。使用 Electron/Vue 管理素材、Persona、镜头模板、任务与排期，Python 服务负责百炼文案、MiniMax 配音、素材选择、FFmpeg 合成以及 Playwright 发布。
 
-## 当前状态
-
-项目正在按里程碑开发。现阶段已建立 Electron、Vue 3、TypeScript 与
-FastAPI 双进程骨架、共享契约、基础页面框架及自动测试。
-
-## 开发环境
-
-- Node.js 24
-- Python 3.11 稳定版
+## 开发验证
 
 ```powershell
 npm install
-python -m pip install -r backend\requirements-dev.txt
-$env:PYTHONPATH = "backend"
-npm test
-python -m pytest backend\tests -q
+python -m pip install -r backend/requirements-dev.txt
+python -m playwright install chromium
+npm run check
 npm run dev
 ```
 
-Python 服务只能由 Electron 使用随机会话令牌启动；直接运行时必须设置
-`AUTOCUT_SESSION_TOKEN` 与 `AUTOCUT_PORT`。
+## Windows 打包
+
+```powershell
+npm run prepare:runtime
+$env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
+npm run dist:win
+```
+
+安装包输出到 `release/AutoCut-Studio-0.1.0-x64.exe`。安装包自带 Python 后端、FFmpeg、ffprobe 与 Chromium。
+
+详细信息见：
+
+- [开发说明](docs/开发说明.md)
+- [架构说明](docs/架构说明.md)
+- [用户操作手册](docs/用户操作手册.md)
+- [故障排查手册](docs/故障排查手册.md)

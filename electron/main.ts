@@ -8,7 +8,8 @@ import Database from "better-sqlite3";
 import keytar from "keytar";
 import {
   createBackendLaunchConfig,
-  spawnBackend
+  spawnBackend,
+  waitForBackendHealth
 } from "./backend-process.js";
 import { CredentialStore, type CredentialName } from "./credential-store.js";
 import { applyMigrations } from "./database.js";
@@ -239,10 +240,14 @@ async function startBackend(): Promise<void> {
     ? resolve(process.resourcesPath, "backend")
     : resolve(process.cwd(), "backend");
   const config = createBackendLaunchConfig({
-    pythonExecutable: process.env.AUTOCUT_PYTHON ?? "python",
+    pythonExecutable: app.isPackaged
+      ? resolve(backendDirectory, "autocut-backend.exe")
+      : process.env.AUTOCUT_PYTHON ?? "python",
     backendDirectory,
     sessionToken: token,
-    port
+    port,
+    packaged: app.isPackaged,
+    resourceDirectory: app.isPackaged ? process.resourcesPath : undefined
   });
   backendState = {
     status: "starting",
@@ -251,12 +256,26 @@ async function startBackend(): Promise<void> {
   };
   const processHandle = spawnBackend(config);
   backend = processHandle;
-  processHandle.once("spawn", () => {
-    backendState = {
-      status: "ready",
-      baseUrl: `http://127.0.0.1:${port}`,
-      token
-    };
+  processHandle.once("spawn", async () => {
+    try {
+      await waitForBackendHealth({
+        baseUrl: `http://127.0.0.1:${port}`,
+        token
+      });
+      backendState = {
+        status: "ready",
+        baseUrl: `http://127.0.0.1:${port}`,
+        token
+      };
+      logger?.write("info", "backend.ready", { port });
+    } catch (error) {
+      backendState = {
+        status: "failed",
+        message: error instanceof Error ? error.message : "后端健康检查失败"
+      };
+      logger?.write("error", "backend.health_failed", { error });
+      processHandle.kill();
+    }
   });
   processHandle.once("error", (error) => {
     backendState = { status: "failed", message: error.message };
