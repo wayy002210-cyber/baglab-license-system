@@ -14,6 +14,12 @@ from app.media.asset_scanner import (
     Ffprobe,
     ScanResult,
 )
+from app.media.audio_library import (
+    AudioLibrary,
+    AudioLibraryResult,
+    FfprobeAudioProbe,
+)
+from app.media.font_probe import FontMetadata, FontProbe, FontProbeError
 from app.copywriting.bailian import BailianChat
 from app.copywriting.service import (
     CopywritingService,
@@ -64,6 +70,15 @@ class ScanAssetsRequest(BaseModel):
 
 class ValidateVoiceSampleRequest(BaseModel):
     sample_path: str = Field(alias="samplePath", min_length=1)
+
+
+class ScanAudioLibraryRequest(BaseModel):
+    folder_path: str = Field(alias="folderPath", min_length=1)
+    recursive: bool = True
+
+
+class ProbeFontRequest(BaseModel):
+    font_path: str = Field(alias="fontPath", min_length=1)
 
 
 class PublishAccountCheckRequest(BaseModel):
@@ -182,6 +197,8 @@ def create_app(
             executable=ffmpeg_path,
         ),
     )
+    audio_library = AudioLibrary(FfprobeAudioProbe(ffprobe_path))
+    font_probe = FontProbe()
     copywriter = copywriting_service or CopywritingService(BailianChat())
     content_creator = content_creation_service or ContentCreationService(
         TopicService(BailianChat())
@@ -332,6 +349,32 @@ def create_app(
         try:
             return scanner.scan(Path(payload.folder_path))
         except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post(
+        "/media/audio-library/scan",
+        response_model=AudioLibraryResult,
+        dependencies=[Depends(authorize)],
+    )
+    def scan_audio_library(
+        payload: ScanAudioLibraryRequest,
+    ) -> AudioLibraryResult:
+        try:
+            return audio_library.scan(
+                Path(payload.folder_path), recursive=payload.recursive
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post(
+        "/media/fonts/probe",
+        response_model=FontMetadata,
+        dependencies=[Depends(authorize)],
+    )
+    def probe_font(payload: ProbeFontRequest) -> FontMetadata:
+        try:
+            return font_probe.probe(Path(payload.font_path))
+        except FontProbeError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post(

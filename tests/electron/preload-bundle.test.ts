@@ -19,6 +19,9 @@ describe("packaged preload bridge", () => {
     expect(preload).toContain("validateVoiceSample");
     expect(preload).toContain("cloneVoice");
     expect(preload).toContain("getVoiceCapabilities");
+    expect(preload).toContain("selectBgmFolder");
+    expect(preload).toContain("scanAudioLibrary");
+    expect(preload).toContain("selectAndProbeFont");
     expect(preload).toMatch(/require\(["']electron["']\)/);
     expect(preload).not.toMatch(/^\s*import\s/m);
     expect(preload).not.toMatch(/from\s+["']zod["']/);

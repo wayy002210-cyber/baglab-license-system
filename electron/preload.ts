@@ -240,6 +240,21 @@ const mediaSettingsSchema = z.object({
   bgmPath: z.string().nullable(),
   bgmVolume: z.number().min(0).max(1)
 });
+const audioLibraryResultSchema = z.object({
+  tracks: z.array(z.object({
+    path: z.string(),
+    name: z.string(),
+    format: z.string(),
+    durationSec: z.number().positive(),
+    sizeBytes: z.number().int().nonnegative()
+  })),
+  invalid: z.array(z.object({ path: z.string(), error: z.string() }))
+});
+const fontMetadataSchema = z.object({
+  path: z.string(),
+  family: z.string().min(1),
+  format: z.enum(["ttf", "otf"])
+});
 const copyModelSettingsSchema = z.object({
   defaultModel: z.string().trim().min(1),
   temperature: z.number().min(0).max(2),
@@ -571,6 +586,25 @@ contextBridge.exposeInMainWorld("autocut", {
   saveMediaSettings: async (input: unknown) => mediaSettingsSchema.parse(
     await ipcRenderer.invoke("settings:saveMedia", mediaSettingsSchema.parse(input))
   ),
+  selectBgmFile: async () => z.string().nullable().parse(
+    await ipcRenderer.invoke("media:selectBgmFile")
+  ),
+  selectBgmFolder: async () => z.string().nullable().parse(
+    await ipcRenderer.invoke("media:selectBgmFolder")
+  ),
+  scanAudioLibrary: async (input: unknown) => audioLibraryResultSchema.parse(
+    await ipcRenderer.invoke(
+      "media:scanAudioLibrary",
+      z.object({
+        folderPath: z.string().min(1),
+        recursive: z.boolean().optional()
+      }).parse(input)
+    )
+  ),
+  selectAndProbeFont: async () => {
+    const result = await ipcRenderer.invoke("media:selectAndProbeFont");
+    return result === null ? null : fontMetadataSchema.parse(result);
+  },
   getCopyModelSettings: async () =>
     copyModelSettingsSchema.parse(
       await ipcRenderer.invoke("settings:getCopyModel")

@@ -648,6 +648,72 @@ ipcMain.handle("settings:getMedia", () => {
 ipcMain.handle("settings:saveMedia", (_event, input: MediaSettings) =>
   settingsRepository().saveMediaSettings(input)
 );
+ipcMain.handle("media:selectBgmFile", async () => {
+  if (!window) throw new Error("应用窗口尚未就绪");
+  const result = await dialog.showOpenDialog(window, {
+    title: "选择背景音乐",
+    properties: ["openFile"],
+    filters: [
+      { name: "音频", extensions: ["mp3", "wav", "m4a", "aac", "flac"] }
+    ]
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
+ipcMain.handle("media:selectBgmFolder", async () => {
+  if (!window) throw new Error("应用窗口尚未就绪");
+  const result = await dialog.showOpenDialog(window, {
+    title: "选择背景音乐文件夹",
+    properties: ["openDirectory"]
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
+ipcMain.handle("media:scanAudioLibrary", async (_event, payload: unknown) => {
+  if (backendState.status !== "ready") {
+    throw new Error("本地媒体服务尚未就绪");
+  }
+  const response = await fetch(
+    `${backendState.baseUrl}/media/audio-library/scan`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Autocut-Token": backendState.token
+      },
+      body: JSON.stringify(payload)
+    }
+  );
+  const result = (await response.json()) as { detail?: string };
+  if (!response.ok) {
+    throw new Error(result.detail || `扫描背景音乐失败 (${response.status})`);
+  }
+  return result;
+});
+ipcMain.handle("media:selectAndProbeFont", async () => {
+  if (!window) throw new Error("应用窗口尚未就绪");
+  const result = await dialog.showOpenDialog(window, {
+    title: "选择字幕字体",
+    properties: ["openFile"],
+    filters: [{ name: "字体", extensions: ["ttf", "otf"] }]
+  });
+  const fontPath = result.canceled ? null : result.filePaths[0] ?? null;
+  if (!fontPath) return null;
+  if (backendState.status !== "ready") {
+    throw new Error("本地媒体服务尚未就绪");
+  }
+  const response = await fetch(`${backendState.baseUrl}/media/fonts/probe`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Autocut-Token": backendState.token
+    },
+    body: JSON.stringify({ fontPath })
+  });
+  const metadata = (await response.json()) as { detail?: string };
+  if (!response.ok) {
+    throw new Error(metadata.detail || `读取字体失败 (${response.status})`);
+  }
+  return metadata;
+});
 ipcMain.handle("settings:getCopyModel", () =>
   settingsRepository().getCopyModelSettings()
 );

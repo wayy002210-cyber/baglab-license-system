@@ -68,6 +68,17 @@ def test_export_command_loops_short_video_and_bgm(tmp_path: Path) -> None:
     assert str(tmp_path / "bgm.mp3") in command
 
 
+def test_export_command_accepts_flac_bgm_and_keeps_aac_output(tmp_path: Path) -> None:
+    project = sample_project(tmp_path)
+    project = Project(
+        **{**project.__dict__, "bgm_path": tmp_path / "music.flac"}
+    )
+    command = Exporter(ffmpeg="ffmpeg").build_command(project)
+
+    assert str(tmp_path / "music.flac") in command
+    assert command[command.index("-c:a") + 1] == "aac"
+
+
 def test_ass_writer_escapes_user_text_and_uses_portrait_canvas(tmp_path: Path) -> None:
     output = tmp_path / "captions.ass"
     write_ass_subtitles(

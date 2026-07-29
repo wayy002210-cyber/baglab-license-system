@@ -232,6 +232,26 @@ declare global {
       exportDiagnostics(): Promise<string | null>;
       getMediaSettings(): Promise<MediaSettings>;
       saveMediaSettings(input: MediaSettings): Promise<MediaSettings>;
+      selectBgmFile(): Promise<string | null>;
+      selectBgmFolder(): Promise<string | null>;
+      scanAudioLibrary(input: {
+        folderPath: string;
+        recursive?: boolean;
+      }): Promise<{
+        tracks: Array<{
+          path: string;
+          name: string;
+          format: string;
+          durationSec: number;
+          sizeBytes: number;
+        }>;
+        invalid: Array<{ path: string; error: string }>;
+      }>;
+      selectAndProbeFont(): Promise<{
+        path: string;
+        family: string;
+        format: "ttf" | "otf";
+      } | null>;
       getCopyModelSettings(): Promise<CopyModelSettings>;
       saveCopyModelSettings(input: CopyModelSettings): Promise<CopyModelSettings>;
       selectSettingsPath(
