@@ -6,6 +6,10 @@ export const router = createRouter({
     { path: "/", component: () => import("./views/DashboardView.vue") },
     { path: "/personas", component: () => import("./views/PersonasView.vue") },
     { path: "/assets", component: () => import("./views/AssetsView.vue") },
+    {
+      path: "/copywriting",
+      component: () => import("./views/CopywritingView.vue")
+    },
     { path: "/templates", component: () => import("./views/TemplatesView.vue") },
     { path: "/tasks", component: () => import("./views/TasksView.vue") },
     {
