@@ -3,13 +3,19 @@ import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import type { ChildProcess } from "node:child_process";
+import Database from "better-sqlite3";
+import keytar from "keytar";
 import {
   createBackendLaunchConfig,
   spawnBackend
 } from "./backend-process.js";
+import { CredentialStore, type CredentialName } from "./credential-store.js";
+import { applyMigrations } from "./database.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
+let database: Database.Database | null = null;
+const credentials = new CredentialStore(keytar);
 let backendState:
   | { status: "starting" | "ready"; baseUrl: string; token: string }
   | { status: "stopped" | "failed"; message: string } = {
@@ -97,8 +103,27 @@ function createWindow(): void {
 }
 
 ipcMain.handle("backend:status", () => backendState);
+ipcMain.handle("credentials:status", async () => ({
+  bailian: Boolean(await credentials.get("bailian")),
+  minimax: Boolean(await credentials.get("minimax"))
+}));
+ipcMain.handle(
+  "credentials:set",
+  async (_event, name: CredentialName, value: string) => {
+    await credentials.set(name, value);
+    return { configured: true };
+  }
+);
+ipcMain.handle(
+  "credentials:delete",
+  async (_event, name: CredentialName) => ({
+    deleted: await credentials.delete(name)
+  })
+);
 
 app.whenReady().then(async () => {
+  database = new Database(resolve(app.getPath("userData"), "autocut.sqlite3"));
+  applyMigrations(database);
   await startBackend();
   createWindow();
 });
@@ -110,4 +135,6 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   backend?.kill();
   backend = null;
+  database?.close();
+  database = null;
 });
