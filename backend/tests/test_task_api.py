@@ -12,7 +12,7 @@ class Runtime:
         self.canceled = None
         self.retried = None
 
-    async def start(self, request):
+    async def start(self, request, **kwargs):
         self.started = request
 
     def latest(self, task_id):

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
-import { basename, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import Database from "better-sqlite3";
 import keytar from "keytar";
@@ -27,8 +27,11 @@ import {
 } from "./repositories/template-repository.js";
 import {
   TaskRepository,
-  type CreateTaskBatchInput
+  type CreateTaskBatchInput,
+  type GenerationTask,
+  type TaskStatus
 } from "./repositories/task-repository.js";
+import { SseParser } from "./sse-parser.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -53,6 +56,89 @@ function templateRepository(): TemplateRepository {
 function taskRepository(): TaskRepository {
   if (!database) throw new Error("Database is not ready");
   return new TaskRepository(database);
+}
+
+async function runGenerationTask(task: GenerationTask): Promise<void> {
+  if (backendState.status !== "ready") {
+    taskRepository().transition(task.id, "failed", {
+      errorCode: "BACKEND_UNAVAILABLE",
+      errorMessage: "本地生成服务尚未就绪"
+    });
+    return;
+  }
+  const [bailianKey, minimaxKey] = await Promise.all([
+    credentials.get("bailian"),
+    credentials.get("minimax")
+  ]);
+  if (!bailianKey || !minimaxKey) {
+    taskRepository().transition(task.id, "failed", {
+      errorCode: "AI_KEY_MISSING",
+      errorMessage: "请先配置百炼和 MiniMax API Key"
+    });
+    return;
+  }
+  const outputPath = join(
+    app.getPath("videos"),
+    "AutoCut",
+    `${task.id}.mp4`
+  );
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Autocut-Token": backendState.token,
+    "X-Bailian-Key": bailianKey,
+    "X-MiniMax-Key": minimaxKey
+  };
+  try {
+    const start = await fetch(`${backendState.baseUrl}/tasks/${task.id}/run`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        taskId: task.id,
+        seed: task.seed,
+        snapshot: task.snapshot,
+        outputPath
+      })
+    });
+    if (!start.ok) {
+      const body = (await start.json()) as { detail?: string };
+      throw new Error(body.detail || `任务启动失败 (${start.status})`);
+    }
+    const stream = await fetch(
+      `${backendState.baseUrl}/tasks/${task.id}/events`,
+      { headers: { "X-Autocut-Token": backendState.token } }
+    );
+    if (!stream.ok || !stream.body) throw new Error("无法订阅任务进度");
+    const reader = stream.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = new SseParser();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      for (const event of parser.feed(decoder.decode(value, { stream: true }))) {
+        if (event.event !== "task") continue;
+        const payload = JSON.parse(event.data) as {
+          status: TaskStatus;
+          progress: number;
+          errorCode?: string | null;
+          errorMessage?: string | null;
+        };
+        taskRepository().transition(task.id, payload.status, {
+          progress: payload.progress,
+          outputPath: payload.status === "completed" ? outputPath : undefined,
+          errorCode: payload.errorCode ?? undefined,
+          errorMessage: payload.errorMessage ?? undefined
+        });
+      }
+    }
+  } catch (error) {
+    const current = taskRepository().get(task.id);
+    if (current && !["completed", "failed", "canceled"].includes(current.status)) {
+      taskRepository().transition(task.id, "failed", {
+        errorCode: "WORKER_CONNECTION_FAILED",
+        errorMessage: error instanceof Error ? error.message : "任务执行失败"
+      });
+    }
+  }
 }
 let backendState:
   | { status: "starting" | "ready"; baseUrl: string; token: string }
@@ -248,15 +334,25 @@ ipcMain.handle("templates:delete", (_event, id: string) => ({
   deleted: templateRepository().delete(id)
 }));
 ipcMain.handle("tasks:list", () => taskRepository().list());
-ipcMain.handle("tasks:createBatch", (_event, input: CreateTaskBatchInput) =>
-  taskRepository().createBatch(input)
-);
-ipcMain.handle("tasks:cancel", (_event, id: string) =>
-  taskRepository().cancel(id)
-);
-ipcMain.handle("tasks:retry", (_event, id: string) =>
-  taskRepository().retry(id)
-);
+ipcMain.handle("tasks:createBatch", (_event, input: CreateTaskBatchInput) => {
+  const tasks = taskRepository().createBatch(input);
+  for (const task of tasks) void runGenerationTask(task);
+  return tasks;
+});
+ipcMain.handle("tasks:cancel", async (_event, id: string) => {
+  if (backendState.status === "ready") {
+    await fetch(`${backendState.baseUrl}/tasks/${id}/cancel`, {
+      method: "POST",
+      headers: { "X-Autocut-Token": backendState.token }
+    });
+  }
+  return taskRepository().cancel(id);
+});
+ipcMain.handle("tasks:retry", (_event, id: string) => {
+  const task = taskRepository().retry(id);
+  void runGenerationTask(task);
+  return task;
+});
 ipcMain.handle("copywriting:rewrite", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");

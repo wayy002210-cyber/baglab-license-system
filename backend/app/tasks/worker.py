@@ -50,10 +50,15 @@ class GenerationWorker:
         ("encoding", 75),
     )
 
-    def __init__(self, *, stages: dict[str, Stage]) -> None:
+    def __init__(
+        self,
+        *,
+        stages: dict[str, Stage],
+        encoding_lock: asyncio.Lock | None = None,
+    ) -> None:
         self.stages = stages
         self._canceled: set[str] = set()
-        self._encoding_lock = asyncio.Lock()
+        self._encoding_lock = encoding_lock or asyncio.Lock()
 
     def cancel(self, task_id: str) -> None:
         self._canceled.add(task_id)

@@ -10,13 +10,15 @@ type Template = Awaited<ReturnType<typeof window.autocut.listTemplates>>[number]
 const tasks = ref<Task[]>([]);
 const personas = ref<Persona[]>([]);
 const templates = ref<Template[]>([]);
+const voices = ref<Array<{ voiceId: string; name: string; kind: string }>>([]);
 const loading = ref(false);
 const dialogOpen = ref(false);
 const creating = ref(false);
 const form = reactive({
   personaId: "",
   templateId: "",
-  count: 1
+  count: 1,
+  voiceId: ""
 });
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -49,13 +51,20 @@ async function load(): Promise<void> {
   }
 }
 
-function openCreate(): void {
+async function openCreate(): Promise<void> {
   form.personaId =
     personas.value.find((persona) => persona.isDefault)?.id ??
     personas.value[0]?.id ??
     "";
   form.templateId = templates.value[0]?.id ?? "";
   form.count = 1;
+  try {
+    voices.value = await window.autocut.listVoices();
+    form.voiceId = voices.value[0]?.voiceId ?? "";
+  } catch {
+    voices.value = [];
+    form.voiceId = "";
+  }
   dialogOpen.value = true;
 }
 
@@ -66,14 +75,33 @@ async function createTasks(): Promise<void> {
     ElMessage.warning("请先创建账号档案和镜头模板");
     return;
   }
+  if (!form.voiceId) {
+    ElMessage.warning("请先配置 MiniMax Key 并选择配音音色");
+    return;
+  }
   creating.value = true;
   try {
+    const categoryIds = [
+      ...new Set(
+        template.shots
+          .map((shot) => shot.assetCategoryId)
+          .filter((id): id is string => Boolean(id))
+      )
+    ];
+    const assets = (
+      await Promise.all(categoryIds.map((id) => window.autocut.listAssets(id)))
+    ).flat();
     const created = await window.autocut.createTaskBatch({
       personaId: persona.id,
       templateId: template.id,
       count: form.count,
       seed: Date.now(),
-      snapshot: { persona, template }
+      snapshot: {
+        persona,
+        template,
+        assets,
+        voice: { voiceId: form.voiceId }
+      }
     });
     tasks.value = [...created, ...tasks.value];
     dialogOpen.value = false;
@@ -217,6 +245,16 @@ onBeforeUnmount(() => {
         <el-form-item label="生成数量">
           <el-input-number v-model="form.count" :min="1" :max="20" />
           <span class="form-tip">每条任务拥有独立且可复现的随机种子</span>
+        </el-form-item>
+        <el-form-item label="配音音色">
+          <el-select v-model="form.voiceId" placeholder="选择 MiniMax 音色">
+            <el-option
+              v-for="voice in voices"
+              :key="voice.voiceId"
+              :label="voice.name"
+              :value="voice.voiceId"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>

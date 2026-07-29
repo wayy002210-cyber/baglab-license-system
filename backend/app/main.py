@@ -18,13 +18,15 @@ from app.copywriting.service import (
 )
 from app.voice.minimax import MiniMaxTTS
 from app.voice.service import SynthesisRequest, SynthesisResult, VoiceService
-from app.timeline.exporter import EncoderDetector
+from app.timeline.exporter import EncoderDetector, Exporter
 from app.tasks.runtime import (
     TaskAlreadyRunningError,
     TaskNotFoundError,
     TaskRuntime,
 )
 from app.tasks.worker import GenerationWorker, TaskEvent, TaskExecutionRequest
+from app.tasks.pipeline import AudioDurationProbe, GenerationPipeline
+from app.tasks.secure_runtime import SecurePipelineRuntime
 
 
 class CreateTaskRequest(BaseModel):
@@ -59,7 +61,13 @@ class VideoEncoderDetector(Protocol):
 
 
 class GenerationTaskRuntime(Protocol):
-    async def start(self, request: TaskExecutionRequest) -> None: ...
+    async def start(
+        self,
+        request: TaskExecutionRequest,
+        *,
+        bailian_key: str | None = None,
+        minimax_key: str | None = None,
+    ) -> None: ...
 
     def latest(self, task_id: str) -> TaskEvent: ...
 
@@ -94,7 +102,18 @@ def create_app(
         ),
     )
     video_encoder_detector = encoder_detector or EncoderDetector()
-    generation_runtime = task_runtime or TaskRuntime(GenerationWorker(stages={}))
+    generation_runtime = task_runtime or SecurePipelineRuntime(
+        lambda bailian_key, minimax_key, encoding_lock, tts_semaphore: GenerationPipeline(
+            copywriter=copywriter,
+            voice=voice,
+            audio_probe=AudioDurationProbe(),
+            exporter=Exporter(),
+            bailian_key=bailian_key,
+            minimax_key=minimax_key,
+            encoding_lock=encoding_lock,
+            tts_semaphore=tts_semaphore,
+        )
+    )
 
     def authorize(x_autocut_token: str | None = Header(default=None)) -> None:
         if x_autocut_token != token:
@@ -122,12 +141,21 @@ def create_app(
         dependencies=[Depends(authorize)],
     )
     async def run_task(
-        task_id: str, payload: TaskExecutionRequest
+        task_id: str,
+        payload: TaskExecutionRequest,
+        x_bailian_key: str | None = Header(default=None),
+        x_minimax_key: str | None = Header(default=None),
     ) -> dict[str, str]:
         if task_id != payload.task_id:
             raise HTTPException(status_code=400, detail="Task ID mismatch")
         try:
-            await generation_runtime.start(payload)
+            await generation_runtime.start(
+                payload,
+                bailian_key=x_bailian_key,
+                minimax_key=x_minimax_key,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
         except TaskAlreadyRunningError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         return {"status": "accepted", "taskId": task_id}

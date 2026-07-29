@@ -55,6 +55,8 @@ class GenerationPipeline:
         exporter: Any,
         bailian_key: str,
         minimax_key: str,
+        encoding_lock: asyncio.Lock | None = None,
+        tts_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self.copywriter = copywriter
         self.voice = voice
@@ -62,7 +64,7 @@ class GenerationPipeline:
         self.exporter = exporter
         self.bailian_key = bailian_key
         self.minimax_key = minimax_key
-        self.tts_limit = asyncio.Semaphore(3)
+        self.tts_limit = tts_semaphore or asyncio.Semaphore(3)
         self.worker = GenerationWorker(
             stages={
                 "preparing_copy": self.prepare_copy,
@@ -70,7 +72,8 @@ class GenerationPipeline:
                 "selecting_assets": self.select_assets,
                 "composing": self.compose,
                 "encoding": self.encode,
-            }
+            },
+            encoding_lock=encoding_lock,
         )
 
     async def run(self, request: TaskExecutionRequest) -> dict[str, Any]:
