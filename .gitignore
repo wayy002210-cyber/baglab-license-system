@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-electron/
+.coverage/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.log
+.env
+.env.*
+!.env.example
+data/
+work/
+output/
