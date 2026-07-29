@@ -8,7 +8,12 @@ from typing import AsyncIterator, Protocol
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from app.media.asset_scanner import AssetScanner, Ffprobe, ScanResult
+from app.media.asset_scanner import (
+    AssetScanner,
+    FfmpegThumbnailer,
+    Ffprobe,
+    ScanResult,
+)
 from app.copywriting.bailian import BailianChat
 from app.copywriting.service import (
     CopywritingService,
@@ -115,7 +120,18 @@ def create_app(
     app = FastAPI(title="AutoCut Local Service", version="0.1.0")
     ffmpeg_path = os.environ.get("AUTOCUT_FFMPEG", "ffmpeg")
     ffprobe_path = os.environ.get("AUTOCUT_FFPROBE", "ffprobe")
-    scanner = asset_scanner or AssetScanner(Ffprobe(ffprobe_path))
+    scanner = asset_scanner or AssetScanner(
+        Ffprobe(ffprobe_path),
+        thumbnailer=FfmpegThumbnailer(
+            Path(
+                os.environ.get(
+                    "AUTOCUT_THUMBNAIL_CACHE",
+                    "backend-data/cache/thumbnails",
+                )
+            ),
+            executable=ffmpeg_path,
+        ),
+    )
     copywriter = copywriting_service or CopywritingService(BailianChat())
     voice = voice_service or VoiceService(
         MiniMaxTTS(),

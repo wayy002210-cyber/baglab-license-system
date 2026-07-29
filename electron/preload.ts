@@ -45,6 +45,7 @@ const assetSchema = z.object({
   rotation: z.number().int(),
   fileSize: z.number().int().nonnegative(),
   fingerprint: z.string(),
+  thumbnailPath: z.string().nullable(),
   status: z.string(),
   errorMessage: z.string().nullable()
 });
@@ -365,6 +366,9 @@ contextBridge.exposeInMainWorld("autocut", {
   ),
   createPublishJob: async (input: unknown) => publishJobSchema.parse(
     await ipcRenderer.invoke("publishJobs:create", createPublishJobSchema.parse(input))
+  ),
+  cancelPublishJob: async (id: string) => publishJobSchema.parse(
+    await ipcRenderer.invoke("publishJobs:cancel", z.string().uuid().parse(id))
   ),
   exportDiagnostics: async () => z.string().nullable().parse(
     await ipcRenderer.invoke("diagnostics:export")

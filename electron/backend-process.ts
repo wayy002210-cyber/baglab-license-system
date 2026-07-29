@@ -39,6 +39,7 @@ export function createBackendLaunchConfig(
       ...(input.dataDirectory
         ? {
             AUTOCUT_VOICE_CACHE: `${input.dataDirectory}/cache/voice`,
+            AUTOCUT_THUMBNAIL_CACHE: `${input.dataDirectory}/cache/thumbnails`,
             AUTOCUT_WORK_DIRECTORY: `${input.dataDirectory}/work`
           }
         : {}),

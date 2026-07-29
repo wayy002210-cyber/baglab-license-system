@@ -434,6 +434,7 @@ ipcMain.handle("assets:selectAndScan", async () => {
       rotation: number;
       file_size: number;
       fingerprint: string;
+      thumbnail_path: string | null;
       status: string;
       error_message: string | null;
     }>;
@@ -449,6 +450,7 @@ ipcMain.handle("assets:selectAndScan", async () => {
     rotation: asset.rotation,
     fileSize: asset.file_size,
     fingerprint: asset.fingerprint,
+    thumbnailPath: asset.thumbnail_path ?? null,
     status: asset.status,
     errorMessage: asset.error_message
   }));
@@ -624,6 +626,9 @@ ipcMain.handle(
       ].join(":")
     })
 );
+ipcMain.handle("publishJobs:cancel", (_event, id: string) =>
+  publishRepository().cancelJob(id)
+);
 ipcMain.handle("diagnostics:export", async () => {
   if (!window || !database) throw new Error("应用尚未就绪");
   const selection = await dialog.showSaveDialog(window, {
@@ -740,7 +745,16 @@ app.whenReady().then(async () => {
   ensureBuiltInTemplate(templateRepository());
   taskRepository().recoverInterrupted();
   protocol.handle("autocut-media", (request) => {
-    const taskId = new URL(request.url).pathname.split("/").filter(Boolean).at(-1);
+    const url = new URL(request.url);
+    const resourceId = url.pathname.split("/").filter(Boolean).at(-1);
+    if (url.hostname === "asset" && resourceId) {
+      const asset = assetRepository().getAsset(resourceId);
+      if (!asset?.thumbnailPath || !existsSync(asset.thumbnailPath)) {
+        return new Response("Not found", { status: 404 });
+      }
+      return net.fetch(pathToFileURL(asset.thumbnailPath).toString());
+    }
+    const taskId = resourceId;
     const task = taskId ? taskRepository().get(taskId) : null;
     if (!task?.outputPath || !existsSync(task.outputPath)) {
       return new Response("Not found", { status: 404 });

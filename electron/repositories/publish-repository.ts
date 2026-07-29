@@ -187,6 +187,21 @@ export class PublishRepository {
     return this.requireJob(id);
   }
 
+  cancelJob(id: string): PublishJob {
+    const now = new Date().toISOString();
+    const result = this.database
+      .prepare(
+        `UPDATE publish_jobs
+         SET status = 'canceled', completed_at = ?, updated_at = ?
+         WHERE id = ? AND status IN ('pending', 'scheduled')`
+      )
+      .run(now, now, id);
+    if (!result.changes) {
+      throw new Error(`Publish job cannot be canceled: ${id}`);
+    }
+    return this.requireJob(id);
+  }
+
   finishJob(
     id: string,
     status: "published" | "failed" | "needs_user",

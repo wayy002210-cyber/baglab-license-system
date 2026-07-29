@@ -30,6 +30,15 @@ async function create() {
   });
   dialogOpen.value = false; await load(); ElMessage.success("发布任务已创建");
 }
+async function cancel(job: Job) {
+  try {
+    await window.autocut.cancelPublishJob(job.id);
+    await load();
+    ElMessage.success("发布任务已取消");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "发布任务取消失败");
+  }
+}
 const accountName = (id:string) => accounts.value.find(a => a.id === id)?.name ?? "已删除账号";
 onMounted(load);
 </script>
@@ -44,6 +53,16 @@ onMounted(load);
         <el-table-column label="发布时间" min-width="180"><template #default="{row}">{{ row.scheduledAt ? new Date(row.scheduledAt).toLocaleString() : "立即发布" }}</template></el-table-column>
         <el-table-column prop="attemptCount" label="尝试" width="80" />
         <el-table-column prop="errorMessage" label="错误" min-width="180" />
+        <el-table-column label="操作" width="90">
+          <template #default="{row}">
+            <el-button
+              v-if="row.status === 'pending' || row.status === 'scheduled'"
+              text
+              type="danger"
+              @click="cancel(row)"
+            >取消</el-button>
+          </template>
+        </el-table-column>
         <template #empty><el-empty description="暂无待发布内容" /></template>
       </el-table>
     </section>

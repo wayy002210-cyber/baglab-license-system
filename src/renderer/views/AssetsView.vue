@@ -56,6 +56,10 @@ function formatDuration(value: number | null): string {
   return `${minutes}:${seconds}`;
 }
 
+function thumbnailUrl(asset: Asset): string {
+  return `autocut-media://asset/${asset.id}`;
+}
+
 onMounted(load);
 </script>
 
@@ -118,6 +122,17 @@ onMounted(load);
       size="680px"
     >
       <el-table :data="assets" height="calc(100vh - 150px)">
+        <el-table-column label="预览" width="92">
+          <template #default="{ row }">
+            <img
+              v-if="row.thumbnailPath"
+              class="asset-thumbnail"
+              :src="thumbnailUrl(row)"
+              alt=""
+            />
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="fileName" label="文件" min-width="210" />
         <el-table-column label="时长" width="80">
           <template #default="{ row }">{{ formatDuration(row.durationSec) }}</template>
@@ -213,6 +228,14 @@ onMounted(load);
 }
 .category--recommended .category__preview {
   background: #f7f9fd;
+}
+.asset-thumbnail {
+  display: block;
+  width: 68px;
+  height: 42px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #edf2f8;
 }
 @media (max-width: 1180px) {
   .category-grid {

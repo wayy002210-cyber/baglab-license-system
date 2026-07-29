@@ -119,4 +119,27 @@ describe("PublishRepository", () => {
     expect(result.attemptCount).toBe(1);
     expect(result.screenshotPath).toBe("D:/logs/check.png");
   });
+
+  it("cancels a queued job and never claims it afterward", () => {
+    seedTask("task-cancel");
+    const account = repository.createAccount({
+      name: "待发布账号",
+      platform: "douyin",
+      userDataDir: "D:/profiles/cancel"
+    });
+    const job = repository.createJob({
+      taskId: "task-cancel",
+      accountId: account.id,
+      title: "取消测试",
+      topics: [],
+      scheduledAt: null,
+      idempotencyKey: "cancel-job"
+    });
+
+    const canceled = repository.cancelJob(job.id);
+
+    expect(canceled.status).toBe("canceled");
+    expect(canceled.completedAt).not.toBeNull();
+    expect(repository.claimNextDue(new Date().toISOString())).toBeNull();
+  });
 });

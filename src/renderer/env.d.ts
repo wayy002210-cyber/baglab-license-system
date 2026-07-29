@@ -57,6 +57,7 @@ declare global {
           rotation: number;
           fileSize: number;
           fingerprint: string;
+          thumbnailPath: string | null;
           status: string;
           errorMessage: string | null;
         }>
@@ -154,6 +155,7 @@ declare global {
         scheduledAt: string | null;
         coverPath?: string | null;
       }): Promise<PublishJob>;
+      cancelPublishJob(id: string): Promise<PublishJob>;
       exportDiagnostics(): Promise<string | null>;
       getMediaSettings(): Promise<MediaSettings>;
       saveMediaSettings(input: MediaSettings): Promise<MediaSettings>;

@@ -30,6 +30,10 @@ class Probe(Protocol):
     def probe(self, path: Path) -> dict: ...
 
 
+class Thumbnailer(Protocol):
+    def create(self, path: Path, fingerprint: str) -> Path: ...
+
+
 class Ffprobe:
     def __init__(self, executable: str = "ffprobe") -> None:
         self.executable = executable
@@ -62,6 +66,45 @@ class Ffprobe:
             raise ProbeFailure("ffprobe returned invalid JSON") from error
 
 
+class FfmpegThumbnailer:
+    def __init__(self, cache_dir: Path, executable: str = "ffmpeg") -> None:
+        self.cache_dir = cache_dir
+        self.executable = executable
+
+    def create(self, path: Path, fingerprint: str) -> Path:
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        output = self.cache_dir / f"{fingerprint}.jpg"
+        if output.is_file():
+            return output
+        process = subprocess.run(
+            [
+                self.executable,
+                "-v",
+                "error",
+                "-ss",
+                "1",
+                "-i",
+                str(path),
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=480:-2",
+                "-y",
+                str(output),
+            ],
+            capture_output=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if process.returncode != 0 or not output.is_file():
+            output.unlink(missing_ok=True)
+            raise ProbeFailure((process.stderr.strip() or "thumbnail failed")[:500])
+        return output
+
+
 class ScannedAsset(BaseModel):
     file_name: str
     file_path: str
@@ -73,6 +116,7 @@ class ScannedAsset(BaseModel):
     rotation: int = 0
     file_size: int
     fingerprint: str
+    thumbnail_path: str | None = None
     status: str
     error_message: str | None = None
 
@@ -109,8 +153,9 @@ def _fingerprint(path: Path) -> str:
 
 
 class AssetScanner:
-    def __init__(self, probe: Probe) -> None:
+    def __init__(self, probe: Probe, thumbnailer: Thumbnailer | None = None) -> None:
         self.probe = probe
+        self.thumbnailer = thumbnailer
 
     def scan(self, root: Path) -> ScanResult:
         if not root.is_dir():
@@ -137,6 +182,15 @@ class AssetScanner:
                 if not video:
                     raise ProbeFailure("video stream not found")
                 format_data = data.get("format", {})
+                fingerprint = _fingerprint(path)
+                thumbnail_path = None
+                if self.thumbnailer:
+                    try:
+                        thumbnail_path = str(
+                            self.thumbnailer.create(path, fingerprint).resolve()
+                        )
+                    except (ProbeFailure, OSError, ValueError):
+                        pass
                 assets.append(
                     ScannedAsset(
                         file_name=path.name,
@@ -148,7 +202,8 @@ class AssetScanner:
                         codec=video.get("codec_name"),
                         rotation=int(video.get("tags", {}).get("rotate", 0)),
                         file_size=path.stat().st_size,
-                        fingerprint=_fingerprint(path),
+                        fingerprint=fingerprint,
+                        thumbnail_path=thumbnail_path,
                         status="ready",
                     )
                 )

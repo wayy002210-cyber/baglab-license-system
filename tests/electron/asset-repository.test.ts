@@ -24,6 +24,7 @@ describe("AssetRepository", () => {
           rotation: 0,
           fileSize: 100,
           fingerprint: "old",
+          thumbnailPath: "D:/cache/old.jpg",
           status: "ready",
           errorMessage: null
         }
@@ -44,6 +45,7 @@ describe("AssetRepository", () => {
           rotation: 0,
           fileSize: 120,
           fingerprint: "new",
+          thumbnailPath: "D:/cache/new.jpg",
           status: "ready",
           errorMessage: null
         }
@@ -57,6 +59,11 @@ describe("AssetRepository", () => {
       assetCount: 1,
       invalidCount: 0
     });
-    expect(repository.listAssets(categories[0].id)[0].fileName).toBe("new.mp4");
+    const stored = repository.listAssets(categories[0].id)[0];
+    expect(stored.fileName).toBe("new.mp4");
+    expect(stored.thumbnailPath).toBe(
+      "D:/cache/new.jpg"
+    );
+    expect(repository.getAsset(stored.id)?.id).toBe(stored.id);
   });
 });

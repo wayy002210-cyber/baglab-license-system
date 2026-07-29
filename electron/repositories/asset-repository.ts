@@ -12,6 +12,7 @@ export type ScannedAssetInput = {
   rotation: number;
   fileSize: number;
   fingerprint: string;
+  thumbnailPath: string | null;
   status: string;
   errorMessage: string | null;
 };
@@ -48,6 +49,7 @@ type AssetRow = {
   rotation: number;
   file_size: number;
   fingerprint: string;
+  thumbnail_path: string | null;
   status: string;
   error_message: string | null;
 };
@@ -78,9 +80,9 @@ export class AssetRepository {
       const insert = this.database.prepare(
         `INSERT INTO assets(
            id, category_id, file_path, duration_sec, width, height, fps,
-           codec, rotation, file_size, fingerprint, status, error_message,
+           codec, rotation, file_size, fingerprint, thumbnail_path, status, error_message,
            probed_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       for (const asset of input.assets) {
         insert.run(
@@ -95,6 +97,7 @@ export class AssetRepository {
           asset.rotation,
           asset.fileSize,
           asset.fingerprint,
+          asset.thumbnailPath,
           asset.status,
           asset.errorMessage,
           now
@@ -147,7 +150,18 @@ export class AssetRepository {
          ORDER BY file_path COLLATE NOCASE`
       )
       .all(categoryId) as AssetRow[];
-    return rows.map((row) => ({
+    return rows.map(mapAsset);
+  }
+
+  getAsset(id: string): AssetRecord | null {
+    const row = this.database
+      .prepare("SELECT * FROM assets WHERE id = ?")
+      .get(id) as AssetRow | undefined;
+    return row ? mapAsset(row) : null;
+  }
+}
+
+const mapAsset = (row: AssetRow): AssetRecord => ({
       id: row.id,
       categoryId: row.category_id,
       fileName: row.file_path.replaceAll("\\", "/").split("/").at(-1) ?? "",
@@ -160,8 +174,7 @@ export class AssetRepository {
       rotation: row.rotation,
       fileSize: row.file_size,
       fingerprint: row.fingerprint,
+      thumbnailPath: row.thumbnail_path,
       status: row.status,
       errorMessage: row.error_message
-    }));
-  }
-}
+    });

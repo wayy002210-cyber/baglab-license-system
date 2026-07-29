@@ -22,6 +22,43 @@ class FixtureProbe:
         }
 
 
+class FixtureThumbnailer:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Path, str]] = []
+
+    def create(self, path: Path, fingerprint: str) -> Path:
+        self.calls.append((path, fingerprint))
+        thumbnail = path.parent / f"{fingerprint}.jpg"
+        thumbnail.write_bytes(b"jpg")
+        return thumbnail
+
+
+class BrokenThumbnailer:
+    def create(self, path: Path, fingerprint: str) -> Path:
+        raise ProbeFailure("thumbnail failed")
+
+
+def test_scan_generates_a_cached_thumbnail_for_ready_video(tmp_path: Path) -> None:
+    video = tmp_path / "one.mp4"
+    video.write_bytes(b"video")
+    thumbnailer = FixtureThumbnailer()
+
+    result = AssetScanner(FixtureProbe(), thumbnailer=thumbnailer).scan(tmp_path)
+
+    assert len(thumbnailer.calls) == 1
+    assert result.assets[0].thumbnail_path is not None
+    assert Path(result.assets[0].thumbnail_path).read_bytes() == b"jpg"
+
+
+def test_thumbnail_failure_does_not_invalidate_a_readable_video(tmp_path: Path) -> None:
+    (tmp_path / "one.mp4").write_bytes(b"video")
+
+    result = AssetScanner(FixtureProbe(), thumbnailer=BrokenThumbnailer()).scan(tmp_path)
+
+    assert result.assets[0].status == "ready"
+    assert result.assets[0].thumbnail_path is None
+
+
 def test_scan_returns_normalized_metadata_and_ignores_unsupported_files(
     tmp_path: Path,
 ) -> None:
