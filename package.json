@@ -17,6 +17,7 @@
     "test:python": "python -m pytest backend/tests -q",
     "lint": "eslint .",
     "check": "npm run typecheck && npm test && npm run test:python && npm run build"
+    ,"brand:assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-brand-assets.ps1"
     ,"prepare:runtime": "node scripts/prepare-runtime.mjs"
     ,"dist:win": "npm run check && npm run prepare:runtime && node scripts/build-installer.mjs"
   },
@@ -34,7 +35,7 @@
     ],
     "win": {
       "target": ["nsis"],
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "artifactName": "袋研官矩阵混剪工作台-${version}-${arch}.${ext}",
       "executableName": "袋研官矩阵混剪工作台"
     },

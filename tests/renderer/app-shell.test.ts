@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import AppShell from "../../src/renderer/layouts/AppShell.vue";
 
 describe("AppShell", () => {
-  it("renders the eight product modules", () => {
+  it("renders the ten product modules in creation order", () => {
     const wrapper = mount(AppShell, {
       global: {
         plugins: [createTestingPinia({ createSpy: vi.fn })]
@@ -14,7 +14,9 @@ describe("AppShell", () => {
       "工作台",
       "账号档案",
       "素材中心",
-      "镜头模板",
+      "文案生成",
+      "音频制作",
+      "镜头剪辑",
       "任务中心",
       "发布账号",
       "发布排期",
@@ -29,6 +31,13 @@ describe("AppShell", () => {
 
     expect(wrapper.text()).toContain("袋研官矩阵混剪工作台");
     expect(wrapper.find('img[alt="袋研官"]').exists()).toBe(true);
+    expect(wrapper.find('img[src*="bag-lab-avatar"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain("AUTOCUT");
+  });
+
+  it("uses the sidebar as the only workflow navigation", () => {
+    const wrapper = mount(AppShell);
+    expect(wrapper.find('nav[aria-label="主导航"]').exists()).toBe(true);
+    expect(wrapper.find('[aria-label="创作步骤"]').exists()).toBe(false);
   });
 });

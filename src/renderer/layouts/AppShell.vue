@@ -3,20 +3,24 @@ import {
   Calendar,
   Collection,
   DataAnalysis,
+  EditPen,
   Files,
+  Microphone,
   Setting,
   User,
   VideoCamera,
   VideoPlay
 } from "@element-plus/icons-vue";
-import logoUrl from "../assets/bag-lab-logo.png";
+import logoUrl from "../assets/bag-lab-avatar.png";
 import { PRODUCT_NAME } from "../../shared/product-copy";
 
 const modules = [
   { label: "工作台", path: "/", icon: DataAnalysis },
   { label: "账号档案", path: "/personas", icon: User },
   { label: "素材中心", path: "/assets", icon: Files },
-  { label: "镜头模板", path: "/templates", icon: Collection },
+  { label: "文案生成", path: "/copywriting", icon: EditPen },
+  { label: "音频制作", path: "/audio", icon: Microphone },
+  { label: "镜头剪辑", path: "/templates", icon: Collection },
   { label: "任务中心", path: "/tasks", icon: VideoPlay },
   { label: "发布账号", path: "/publish-accounts", icon: VideoCamera },
   { label: "发布排期", path: "/schedule", icon: Calendar },
@@ -70,18 +74,18 @@ const modules = [
   min-height: 100vh;
   display: grid;
   grid-template-columns: 236px minmax(0, 1fr);
-  background: #f4f7fc;
-  color: #18243d;
+  background: var(--page-bg);
+  color: var(--brand-black);
 }
 .sidebar {
   margin: 18px 0 18px 18px;
   padding: 22px 16px;
   border-radius: 24px;
-  background: linear-gradient(180deg, #233653, #17263f);
-  color: #dce6f7;
+  background: var(--brand-black);
+  color: #fff;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 18px 45px rgba(23, 38, 63, 0.2);
+  box-shadow: 0 18px 45px rgba(16, 16, 16, 0.16);
 }
 .brand {
   display: flex;
@@ -90,10 +94,10 @@ const modules = [
   padding: 2px 10px 24px;
 }
 .brand__mark {
-  width: 48px;
-  height: 38px;
-  border-radius: 8px;
-  object-fit: contain;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  object-fit: cover;
 }
 .brand strong,
 .brand small {
@@ -101,7 +105,7 @@ const modules = [
 }
 .brand small {
   margin-top: 3px;
-  color: #91a4c2;
+  color: #b7b7b7;
 }
 nav {
   display: grid;
@@ -113,19 +117,19 @@ nav {
   gap: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  color: #aebdd4;
+  color: #c9c9c9;
   text-decoration: none;
 }
 .nav-item:hover,
 .nav-item.router-link-active {
-  background: rgba(91, 141, 239, 0.2);
-  color: #fff;
+  background: var(--brand-yellow);
+  color: var(--brand-black);
 }
 .sidebar__footer {
   margin-top: auto;
   padding: 12px;
   font-size: 13px;
-  color: #91a4c2;
+  color: #aaa;
 }
 .status-dot {
   display: inline-block;
@@ -133,7 +137,7 @@ nav {
   height: 8px;
   margin-right: 7px;
   border-radius: 50%;
-  background: #4fd69c;
+  background: var(--brand-yellow);
 }
 .workspace {
   min-width: 0;
