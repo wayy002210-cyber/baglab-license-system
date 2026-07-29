@@ -61,11 +61,25 @@ function rebuildSegments(): void {
 }
 
 async function load(): Promise<void> {
-  const [, loadedVoices, loadedCapabilities] = await Promise.all([
+  const [, loadedCapabilities] = await Promise.all([
     state.load(),
-    window.autocut.listVoices(),
     window.autocut.getVoiceCapabilities()
   ]);
+  let loadedVoices: Array<{ voiceId: string; name: string; kind: string }> = [];
+  try {
+    loadedVoices = await window.autocut.listVoices();
+  } catch {
+    loadedVoices = [
+      {
+        voiceId: state.draft.value.voice?.voiceId || "male-qn-qingse",
+        name: state.draft.value.voice?.voiceId
+          ? `已选音色 · ${state.draft.value.voice.voiceId}`
+          : "青涩男声（默认）",
+        kind: state.draft.value.voice?.source || "system"
+      }
+    ];
+    ElMessage.warning("在线音色列表暂时不可用，已保留默认音色和声音克隆功能");
+  }
   voices.value = loadedVoices;
   capabilities.value = loadedCapabilities;
   model.value = loadedCapabilities.models[0] ?? model.value;
