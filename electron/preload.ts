@@ -134,6 +134,41 @@ const synthesisResultSchema = z.object({
   cacheHit: z.boolean(),
   sha256: z.string().length(64)
 });
+const taskStatusSchema = z.enum([
+  "draft",
+  "queued",
+  "preparing_copy",
+  "generating_voice",
+  "selecting_assets",
+  "composing",
+  "encoding",
+  "completed",
+  "failed",
+  "canceled"
+]);
+const taskSchema = z.object({
+  id: z.string().uuid(),
+  templateId: z.string().min(1),
+  personaId: z.string().min(1),
+  status: taskStatusSchema,
+  progress: z.number().min(0).max(100),
+  seed: z.number().int(),
+  snapshot: z.record(z.string(), z.unknown()),
+  outputPath: z.string().nullable(),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  createdAt: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  updatedAt: z.string()
+});
+const createTaskBatchSchema = z.object({
+  templateId: z.string().min(1),
+  personaId: z.string().min(1),
+  count: z.number().int().min(1).max(20),
+  seed: z.number().int(),
+  snapshot: z.record(z.string(), z.unknown())
+});
 
 contextBridge.exposeInMainWorld("autocut", {
   backendStatus: async () =>
@@ -238,5 +273,24 @@ contextBridge.exposeInMainWorld("autocut", {
         "voices:synthesize",
         synthesisRequestSchema.parse(input)
       )
+    ),
+  listTasks: async () =>
+    z.array(taskSchema).parse(await ipcRenderer.invoke("tasks:list")),
+  createTaskBatch: async (input: unknown) =>
+    z
+      .array(taskSchema)
+      .parse(
+        await ipcRenderer.invoke(
+          "tasks:createBatch",
+          createTaskBatchSchema.parse(input)
+        )
+      ),
+  cancelTask: async (id: string) =>
+    taskSchema.parse(
+      await ipcRenderer.invoke("tasks:cancel", z.string().uuid().parse(id))
+    ),
+  retryTask: async (id: string) =>
+    taskSchema.parse(
+      await ipcRenderer.invoke("tasks:retry", z.string().uuid().parse(id))
     )
 });

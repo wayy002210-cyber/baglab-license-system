@@ -113,6 +113,16 @@ declare global {
         cacheHit: boolean;
         sha256: string;
       }>;
+      listTasks(): Promise<GenerationTask[]>;
+      createTaskBatch(input: {
+        templateId: string;
+        personaId: string;
+        count: number;
+        seed: number;
+        snapshot: Record<string, unknown>;
+      }): Promise<GenerationTask[]>;
+      cancelTask(id: string): Promise<GenerationTask>;
+      retryTask(id: string): Promise<GenerationTask>;
     };
   }
 }
@@ -138,6 +148,33 @@ type VideoTemplate = Omit<TemplateInput, "shots"> & {
   version: number;
   shots: Array<TemplateShotInput & { id: string; index: number }>;
   createdAt: string;
+  updatedAt: string;
+};
+
+type GenerationTask = {
+  id: string;
+  templateId: string;
+  personaId: string;
+  status:
+    | "draft"
+    | "queued"
+    | "preparing_copy"
+    | "generating_voice"
+    | "selecting_assets"
+    | "composing"
+    | "encoding"
+    | "completed"
+    | "failed"
+    | "canceled";
+  progress: number;
+  seed: number;
+  snapshot: Record<string, unknown>;
+  outputPath: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
   updatedAt: string;
 };
 

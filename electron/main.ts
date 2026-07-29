@@ -25,6 +25,10 @@ import {
   TemplateRepository,
   type TemplateInput
 } from "./repositories/template-repository.js";
+import {
+  TaskRepository,
+  type CreateTaskBatchInput
+} from "./repositories/task-repository.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -44,6 +48,11 @@ function assetRepository(): AssetRepository {
 function templateRepository(): TemplateRepository {
   if (!database) throw new Error("Database is not ready");
   return new TemplateRepository(database);
+}
+
+function taskRepository(): TaskRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new TaskRepository(database);
 }
 let backendState:
   | { status: "starting" | "ready"; baseUrl: string; token: string }
@@ -238,6 +247,16 @@ ipcMain.handle("templates:duplicate", (_event, id: string) =>
 ipcMain.handle("templates:delete", (_event, id: string) => ({
   deleted: templateRepository().delete(id)
 }));
+ipcMain.handle("tasks:list", () => taskRepository().list());
+ipcMain.handle("tasks:createBatch", (_event, input: CreateTaskBatchInput) =>
+  taskRepository().createBatch(input)
+);
+ipcMain.handle("tasks:cancel", (_event, id: string) =>
+  taskRepository().cancel(id)
+);
+ipcMain.handle("tasks:retry", (_event, id: string) =>
+  taskRepository().retry(id)
+);
 ipcMain.handle("copywriting:rewrite", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");
@@ -309,6 +328,7 @@ app.whenReady().then(async () => {
   database = new Database(resolve(app.getPath("userData"), "autocut.sqlite3"));
   applyMigrations(database);
   ensureBuiltInTemplate(templateRepository());
+  taskRepository().recoverInterrupted();
   await startBackend();
   createWindow();
 });
