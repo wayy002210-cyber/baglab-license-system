@@ -239,13 +239,19 @@ async function runNextPublishJob(): Promise<void> {
       }
     );
     const result = (await response.json()) as {
-      status?: "published" | "failed" | "needs_user";
+      status?: "published" | "failed" | "needs_user" | "canceled";
       errorMessage?: string | null;
       screenshotPath?: string | null;
       detail?: string;
     };
     if (!response.ok || !result.status) {
       throw new Error(result.detail || `发布服务失败 (${response.status})`);
+    }
+    const current = publishRepository().getJob(job.id);
+    if (current?.status === "canceled") return;
+    if (result.status === "canceled") {
+      publishRepository().cancelJob(job.id);
+      return;
     }
     publishRepository().finishJob(job.id, result.status, {
       errorMessage: result.errorMessage ?? undefined,
@@ -265,6 +271,7 @@ async function runNextPublishJob(): Promise<void> {
       publishRepository().updateAccountStatus(account.id, "needs_user");
     }
   } catch (error) {
+    if (publishRepository().getJob(job.id)?.status === "canceled") return;
     publishRepository().finishJob(job.id, "failed", {
       errorMessage: error instanceof Error ? error.message : "发布失败"
     });
@@ -663,9 +670,27 @@ ipcMain.handle(
       ].join(":")
     })
 );
-ipcMain.handle("publishJobs:cancel", (_event, id: string) =>
-  publishRepository().cancelJob(id)
-);
+ipcMain.handle("publishJobs:cancel", async (_event, id: string) => {
+  const job = publishRepository().getJob(id);
+  if (!job) throw new Error(`Publish job not found: ${id}`);
+  if (job.status === "publishing") {
+    if (backendState.status !== "ready") {
+      throw new Error("本地发布服务尚未就绪，无法安全取消执行中的任务");
+    }
+    const response = await fetch(
+      `${backendState.baseUrl}/publish/jobs/${id}/cancel`,
+      {
+        method: "POST",
+        headers: { "X-Autocut-Token": backendState.token }
+      }
+    );
+    if (!response.ok) {
+      const result = (await response.json()) as { detail?: string };
+      throw new Error(result.detail || "发布已经提交到平台，不能再安全取消");
+    }
+  }
+  return publishRepository().cancelJob(id);
+});
 ipcMain.handle("diagnostics:export", async () => {
   if (!window || !database) throw new Error("应用尚未就绪");
   const selection = await dialog.showSaveDialog(window, {

@@ -193,7 +193,7 @@ export class PublishRepository {
       .prepare(
         `UPDATE publish_jobs
          SET status = 'canceled', completed_at = ?, updated_at = ?
-         WHERE id = ? AND status IN ('pending', 'scheduled')`
+         WHERE id = ? AND status IN ('pending', 'scheduled', 'publishing')`
       )
       .run(now, now, id);
     if (!result.changes) {

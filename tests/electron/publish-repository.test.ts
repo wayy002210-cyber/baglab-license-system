@@ -142,4 +142,26 @@ describe("PublishRepository", () => {
     expect(canceled.completedAt).not.toBeNull();
     expect(repository.claimNextDue(new Date().toISOString())).toBeNull();
   });
+
+  it("marks a claimed job canceled when backend stops before submission", () => {
+    seedTask("task-active-cancel");
+    const account = repository.createAccount({
+      name: "执行中账号",
+      platform: "xiaohongshu",
+      userDataDir: "D:/profiles/active-cancel"
+    });
+    const job = repository.createJob({
+      taskId: "task-active-cancel",
+      accountId: account.id,
+      title: "执行中取消",
+      topics: [],
+      scheduledAt: null,
+      idempotencyKey: "active-cancel"
+    });
+    repository.claim(job.id);
+
+    const canceled = repository.cancelJob(job.id);
+
+    expect(canceled.status).toBe("canceled");
+  });
 });

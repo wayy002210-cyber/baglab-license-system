@@ -100,8 +100,15 @@ class GenerationTaskRuntime(Protocol):
 class Publisher(Protocol):
     def check_account(self, *, platform: Platform, user_data_dir: str) -> str: ...
     def publish(
-        self, *, platform: Platform, user_data_dir: str, request: PublishRequest
+        self,
+        *,
+        job_id: str,
+        platform: Platform,
+        user_data_dir: str,
+        request: PublishRequest,
     ) -> PublishResult: ...
+
+    def cancel(self, job_id: str) -> bool: ...
 
 
 def create_app(
@@ -344,10 +351,24 @@ def create_app(
             payload.model_dump(mode="json", by_alias=True)
         )
         return publisher.publish(
+            job_id=job_id,
             platform=payload.platform,
             user_data_dir=payload.user_data_dir,
             request=request,
         )
+
+    @app.post(
+        "/publish/jobs/{job_id}/cancel",
+        status_code=202,
+        dependencies=[Depends(authorize)],
+    )
+    def cancel_publish_job(job_id: str) -> dict[str, str]:
+        if not publisher.cancel(job_id):
+            raise HTTPException(
+                status_code=409,
+                detail="Publish submission has already started",
+            )
+        return {"status": "canceling", "jobId": job_id}
 
     return app
 

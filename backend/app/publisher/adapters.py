@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,7 +19,7 @@ class PublishRequest(BaseModel):
 
 class PublishResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    status: Literal["published", "failed", "needs_user"]
+    status: Literal["published", "failed", "needs_user", "canceled"]
     error_code: str | None = Field(default=None, alias="errorCode")
     error_message: str | None = Field(default=None, alias="errorMessage")
     screenshot_path: str | None = Field(default=None, alias="screenshotPath")
@@ -37,6 +38,35 @@ class PublisherPage(Protocol):
     def screenshot(self, path: str) -> None: ...
 
 
+class PublishCancelled(RuntimeError):
+    pass
+
+
+class PublishCancellation:
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._canceled = False
+        self._submitted = False
+
+    def cancel(self) -> bool:
+        with self._lock:
+            if self._submitted:
+                return False
+            self._canceled = True
+            return True
+
+    def raise_if_canceled(self) -> None:
+        with self._lock:
+            if self._canceled:
+                raise PublishCancelled("Publish canceled before submission")
+
+    def mark_submitted(self) -> None:
+        with self._lock:
+            if self._canceled:
+                raise PublishCancelled("Publish canceled before submission")
+            self._submitted = True
+
+
 class PublisherAdapter:
     upload_selectors = [
         'input[type=file][accept*="video"]',
@@ -47,8 +77,13 @@ class PublisherAdapter:
     publish_selectors: list[str]
 
     def publish(
-        self, page: PublisherPage, request: PublishRequest
+        self,
+        page: PublisherPage,
+        request: PublishRequest,
+        *,
+        cancellation: PublishCancellation | None = None,
     ) -> PublishResult:
+        control = cancellation or PublishCancellation()
         if page.is_login_required():
             return self._needs_user(page, request, "LOGIN_REQUIRED", "登录已失效")
         if page.has_human_challenge():
@@ -56,13 +91,17 @@ class PublisherAdapter:
                 page, request, "HUMAN_CHALLENGE", "需要验证码或人工确认"
             )
         try:
+            control.raise_if_canceled()
             page.upload(self.upload_selectors, request.video_path)
+            control.raise_if_canceled()
             copy = request.title
             if request.topics:
                 copy += "\n" + " ".join(f"#{topic.lstrip('#')}" for topic in request.topics)
             page.fill(self.title_selectors, copy)
+            control.raise_if_canceled()
             if request.cover_path:
                 self._set_cover(page, request.cover_path)
+            control.mark_submitted()
             page.click(self.publish_selectors)
             if page.has_human_challenge():
                 return self._needs_user(
@@ -71,6 +110,13 @@ class PublisherAdapter:
             if not page.wait_for_publish_success():
                 return self._failure(page, request, "PUBLISH_NOT_CONFIRMED")
             return PublishResult(status="published", currentUrl=page.url)
+        except PublishCancelled as error:
+            return PublishResult(
+                status="canceled",
+                errorCode="PUBLISH_CANCELED",
+                errorMessage=str(error),
+                currentUrl=page.url,
+            )
         except Exception as error:
             return self._failure(page, request, str(error))
 

@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from app.publisher.adapters import DouyinPublisher, PublishRequest, XiaohongshuPublisher
+from app.publisher.adapters import (
+    DouyinPublisher,
+    PublishCancellation,
+    PublishRequest,
+    XiaohongshuPublisher,
+)
+from app.publisher.service import PublishingService
 
 
 class FakePage:
@@ -55,3 +61,55 @@ def test_expired_login_is_not_reported_as_publish_failure(tmp_path: Path) -> Non
 
     assert result.status == "needs_user"
     assert result.error_code == "LOGIN_REQUIRED"
+
+
+def test_cancel_before_submit_never_clicks_publish(tmp_path: Path) -> None:
+    page = FakePage()
+    cancellation = PublishCancellation()
+    cancellation.cancel()
+
+    result = DouyinPublisher().publish(
+        page,
+        request(tmp_path),
+        cancellation=cancellation,
+    )
+
+    assert result.status == "canceled"
+    assert not any(action[0] == "click" for action in page.actions)
+
+
+def test_cancel_is_rejected_after_submission_begins() -> None:
+    cancellation = PublishCancellation()
+
+    cancellation.mark_submitted()
+
+    assert cancellation.cancel() is False
+
+
+class FakeSession:
+    def __init__(self, page):
+        self.page = page
+
+    def __enter__(self):
+        return self.page
+
+    def __exit__(self, exc_type, exc, traceback):
+        return None
+
+
+def test_service_remembers_cancel_that_arrives_before_publish(
+    tmp_path: Path,
+) -> None:
+    page = FakePage()
+    service = PublishingService(session_factory=lambda _directory: FakeSession(page))
+
+    assert service.cancel("job-before-start") is True
+    result = service.publish(
+        job_id="job-before-start",
+        platform="douyin",
+        user_data_dir="D:/profile",
+        request=request(tmp_path),
+    )
+
+    assert result.status == "canceled"
+    assert not any(action[0] == "click" for action in page.actions)

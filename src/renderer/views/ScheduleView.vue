@@ -56,7 +56,7 @@ onMounted(load);
         <el-table-column label="操作" width="90">
           <template #default="{row}">
             <el-button
-              v-if="row.status === 'pending' || row.status === 'scheduled'"
+              v-if="['pending', 'scheduled', 'publishing'].includes(row.status)"
               text
               type="danger"
               @click="cancel(row)"
