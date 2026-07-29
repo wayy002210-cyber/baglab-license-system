@@ -288,6 +288,13 @@ contextBridge.exposeInMainWorld("autocut", {
           z.string().uuid().parse(id)
         )
       ),
+  exportTemplate: async (id: string) => z.string().nullable().parse(
+    await ipcRenderer.invoke("templates:export", z.string().uuid().parse(id))
+  ),
+  importTemplate: async () => {
+    const result = await ipcRenderer.invoke("templates:import");
+    return result === null ? null : videoTemplateSchema.parse(result);
+  },
   rewriteCopywriting: async (input: unknown) =>
     z
       .object({ shots: z.array(rewrittenShotSchema) })
@@ -306,6 +313,9 @@ contextBridge.exposeInMainWorld("autocut", {
         synthesisRequestSchema.parse(input)
       )
     ),
+  previewVoice: async (input: unknown) => z.string().startsWith("data:audio/").parse(
+    await ipcRenderer.invoke("voices:preview", synthesisRequestSchema.parse(input))
+  ),
   listTasks: async () =>
     z.array(taskSchema).parse(await ipcRenderer.invoke("tasks:list")),
   createTaskBatch: async (input: unknown) =>

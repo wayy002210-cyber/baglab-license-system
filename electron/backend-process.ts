@@ -7,6 +7,7 @@ export type BackendLaunchInput = {
   port: number;
   packaged?: boolean;
   resourceDirectory?: string;
+  dataDirectory?: string;
 };
 
 export type BackendLaunchConfig = {
@@ -33,6 +34,12 @@ export function createBackendLaunchConfig(
             AUTOCUT_FFMPEG: `${input.resourceDirectory}/bin/ffmpeg.exe`,
             AUTOCUT_FFPROBE: `${input.resourceDirectory}/bin/ffprobe.exe`,
             PLAYWRIGHT_BROWSERS_PATH: `${input.resourceDirectory}/ms-playwright`
+          }
+        : {}),
+      ...(input.dataDirectory
+        ? {
+            AUTOCUT_VOICE_CACHE: `${input.dataDirectory}/cache/voice`,
+            AUTOCUT_WORK_DIRECTORY: `${input.dataDirectory}/work`
           }
         : {}),
       PYTHONUTF8: "1"

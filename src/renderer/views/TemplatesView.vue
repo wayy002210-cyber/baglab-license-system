@@ -144,6 +144,19 @@ async function removeTemplate(template: VideoTemplate): Promise<void> {
   await load();
 }
 
+async function exportTemplate(template: VideoTemplate): Promise<void> {
+  const path = await window.autocut.exportTemplate(template.id);
+  if (path) ElMessage.success("模板已导出");
+}
+
+async function importTemplate(): Promise<void> {
+  const imported = await window.autocut.importTemplate();
+  if (imported) {
+    await load();
+    ElMessage.success("模板已导入");
+  }
+}
+
 function categoryName(id: string | null): string {
   return categories.value.find((category) => category.id === id)?.name ?? "未绑定";
 }
@@ -159,6 +172,9 @@ onMounted(load);
       action="新建模板"
       @action="openCreate"
     />
+    <div class="template-tools">
+      <el-button @click="importTemplate">导入模板 JSON</el-button>
+    </div>
     <section v-loading="loading" class="template-grid">
       <article v-for="template in templates" :key="template.id" class="surface template-card">
         <div class="template-card__preview">
@@ -178,6 +194,7 @@ onMounted(load);
         <footer>
           <el-button text :icon="Edit" @click="openEdit(template)">编辑</el-button>
           <el-button text :icon="CopyDocument" @click="duplicate(template.id)">复制</el-button>
+          <el-button text @click="exportTemplate(template)">导出</el-button>
           <el-button text type="danger" :icon="Delete" @click="removeTemplate(template)">删除</el-button>
         </footer>
       </article>
@@ -276,6 +293,11 @@ onMounted(load);
 </template>
 
 <style scoped>
+.template-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -12px;
+}
 .template-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(260px, 1fr));

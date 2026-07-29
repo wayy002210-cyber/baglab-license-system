@@ -74,6 +74,8 @@ declare global {
       updateTemplate(id: string, input: TemplateInput): Promise<VideoTemplate>;
       duplicateTemplate(id: string): Promise<VideoTemplate>;
       deleteTemplate(id: string): Promise<{ deleted: boolean }>;
+      exportTemplate(id: string): Promise<string | null>;
+      importTemplate(): Promise<VideoTemplate | null>;
       rewriteCopywriting(input: {
         sourceText: string;
         personaName: string;
@@ -113,6 +115,13 @@ declare global {
         cacheHit: boolean;
         sha256: string;
       }>;
+      previewVoice(input: {
+        text: string;
+        voiceId: string;
+        speed?: number;
+        volume?: number;
+        pitch?: number;
+      }): Promise<string>;
       listTasks(): Promise<GenerationTask[]>;
       createTaskBatch(input: {
         templateId: string;

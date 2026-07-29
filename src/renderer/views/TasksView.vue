@@ -14,6 +14,7 @@ const voices = ref<Array<{ voiceId: string; name: string; kind: string }>>([]);
 const loading = ref(false);
 const dialogOpen = ref(false);
 const creating = ref(false);
+const previewTask = ref<Task | null>(null);
 const form = reactive({
   personaId: "",
   templateId: "",
@@ -112,6 +113,18 @@ async function createTasks(): Promise<void> {
     creating.value = false;
   }
 }
+async function previewSelectedVoice(): Promise<void> {
+  if (!form.voiceId) return void ElMessage.warning("请先选择音色");
+  try {
+    const source = await window.autocut.previewVoice({
+      text: "你好，这是一段混剪工作台音色试听。",
+      voiceId: form.voiceId
+    });
+    await new Audio(source).play();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "试听失败");
+  }
+}
 
 async function cancelTask(task: Task): Promise<void> {
   try {
@@ -138,6 +151,9 @@ async function deleteTask(task: Task): Promise<void> {
 }
 async function openOutput(task: Task): Promise<void> {
   await window.autocut.openTaskOutput(task.id);
+}
+function preview(task: Task): void {
+  previewTask.value = task;
 }
 
 function snapshotName(task: Task, key: "persona" | "template"): string {
@@ -221,6 +237,7 @@ onBeforeUnmount(() => {
               重试
             </el-button>
             <el-button v-if="row.status === 'completed'" link type="primary" @click="openOutput(row)">打开成片</el-button>
+            <el-button v-if="row.status === 'completed'" link type="primary" @click="preview(row)">预览</el-button>
             <el-button v-if="!isActive(row)" link type="danger" @click="deleteTask(row)">删除记录</el-button>
           </template>
         </el-table-column>
@@ -257,14 +274,17 @@ onBeforeUnmount(() => {
           <span class="form-tip">每条任务拥有独立且可复现的随机种子</span>
         </el-form-item>
         <el-form-item label="配音音色">
-          <el-select v-model="form.voiceId" placeholder="选择 MiniMax 音色">
-            <el-option
-              v-for="voice in voices"
-              :key="voice.voiceId"
-              :label="voice.name"
-              :value="voice.voiceId"
-            />
-          </el-select>
+          <div class="voice-row">
+            <el-select v-model="form.voiceId" placeholder="选择 MiniMax 音色">
+              <el-option
+                v-for="voice in voices"
+                :key="voice.voiceId"
+                :label="voice.name"
+                :value="voice.voiceId"
+              />
+            </el-select>
+            <el-button @click="previewSelectedVoice">试听</el-button>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -273,6 +293,22 @@ onBeforeUnmount(() => {
           加入队列
         </el-button>
       </template>
+    </el-dialog>
+    <el-dialog
+      :model-value="Boolean(previewTask)"
+      title="成片预览"
+      width="430px"
+      destroy-on-close
+      @close="previewTask = null"
+    >
+      <div class="phone-preview">
+        <video
+          v-if="previewTask"
+          :src="`autocut-media://task/${previewTask.id}`"
+          controls
+          autoplay
+        />
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -290,6 +326,11 @@ onBeforeUnmount(() => {
   font-size: 12px;
   margin-top: 5px;
 }
+.voice-row {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+}
 
 .error-text {
   color: #d45353;
@@ -302,5 +343,19 @@ onBeforeUnmount(() => {
 
 .form-tip {
   margin-left: 12px;
+}
+.phone-preview {
+  width: 320px;
+  aspect-ratio: 9 / 16;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 28px;
+  background: #10131a;
+  box-shadow: 0 18px 42px rgba(26, 38, 62, 0.24);
+}
+.phone-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 </style>

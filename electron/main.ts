@@ -1,8 +1,17 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  shell,
+  protocol,
+  net
+} from "electron";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { basename, join, resolve } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import Database from "better-sqlite3";
 import keytar from "keytar";
@@ -52,6 +61,12 @@ let database: Database.Database | null = null;
 let publishScheduler: ReturnType<typeof setInterval> | null = null;
 let logger: JsonLogger | null = null;
 let logPath = "";
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "autocut-media",
+    privileges: { secure: true, standard: true, stream: true, supportFetchAPI: true }
+  }
+]);
 const credentials = new CredentialStore(keytar);
 
 function personaRepository(): PersonaRepository {
@@ -256,7 +271,8 @@ async function startBackend(): Promise<void> {
     sessionToken: token,
     port,
     packaged: app.isPackaged,
-    resourceDirectory: app.isPackaged ? process.resourcesPath : undefined
+    resourceDirectory: app.isPackaged ? process.resourcesPath : undefined,
+    dataDirectory: app.getPath("userData")
   });
   backendState = {
     status: "starting",
@@ -457,6 +473,39 @@ ipcMain.handle("templates:duplicate", (_event, id: string) =>
 ipcMain.handle("templates:delete", (_event, id: string) => ({
   deleted: templateRepository().delete(id)
 }));
+ipcMain.handle("templates:export", async (_event, id: string) => {
+  if (!window) throw new Error("应用窗口尚未就绪");
+  const template = templateRepository().list().find((item) => item.id === id);
+  if (!template) throw new Error("模板不存在");
+  const result = await dialog.showSaveDialog(window, {
+    title: "导出镜头模板",
+    defaultPath: `${template.name}.autocut-template.json`,
+    filters: [{ name: "AutoCut 模板", extensions: ["json"] }]
+  });
+  if (result.canceled || !result.filePath) return null;
+  const { id: _id, version: _version, canvas: _canvas, createdAt: _createdAt,
+    updatedAt: _updatedAt, shots, ...base } = template;
+  writeFileSync(
+    result.filePath,
+    JSON.stringify({
+      ...base,
+      shots: shots.map(({ id: _shotId, index: _index, ...shot }) => shot)
+    }, null, 2),
+    "utf8"
+  );
+  return result.filePath;
+});
+ipcMain.handle("templates:import", async () => {
+  if (!window) throw new Error("应用窗口尚未就绪");
+  const result = await dialog.showOpenDialog(window, {
+    title: "导入镜头模板",
+    properties: ["openFile"],
+    filters: [{ name: "AutoCut 模板", extensions: ["json"] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const input = JSON.parse(readFileSync(result.filePaths[0], "utf8")) as TemplateInput;
+  return templateRepository().create(input);
+});
 ipcMain.handle("tasks:list", () => taskRepository().list());
 ipcMain.handle("tasks:createBatch", (_event, input: CreateTaskBatchInput) => {
   const media = settingsRepository().getMediaSettings();
@@ -652,6 +701,29 @@ ipcMain.handle("voices:synthesize", async (_event, payload: unknown) => {
   }
   return result;
 });
+ipcMain.handle("voices:preview", async (_event, payload: unknown) => {
+  if (backendState.status !== "ready") throw new Error("本地 AI 服务尚未就绪");
+  const apiKey = await credentials.get("minimax");
+  if (!apiKey) throw new Error("请先在系统设置中配置 MiniMax API Key");
+  const response = await fetch(`${backendState.baseUrl}/voices/synthesize`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Autocut-Token": backendState.token,
+      "X-MiniMax-Key": apiKey
+    },
+    body: JSON.stringify(payload)
+  });
+  const result = (await response.json()) as {
+    audioPath?: string;
+    detail?: string;
+  };
+  if (!response.ok || !result.audioPath) {
+    throw new Error(result.detail || "音色试听生成失败");
+  }
+  const audio = readFileSync(result.audioPath);
+  return `data:audio/mpeg;base64,${audio.toString("base64")}`;
+});
 ipcMain.handle(
   "credentials:delete",
   async (_event, name: CredentialName) => ({
@@ -667,6 +739,14 @@ app.whenReady().then(async () => {
   applyMigrations(database);
   ensureBuiltInTemplate(templateRepository());
   taskRepository().recoverInterrupted();
+  protocol.handle("autocut-media", (request) => {
+    const taskId = new URL(request.url).pathname.split("/").filter(Boolean).at(-1);
+    const task = taskId ? taskRepository().get(taskId) : null;
+    if (!task?.outputPath || !existsSync(task.outputPath)) {
+      return new Response("Not found", { status: 404 });
+    }
+    return net.fetch(pathToFileURL(task.outputPath).toString());
+  });
   await startBackend();
   publishScheduler = setInterval(() => void runNextPublishJob(), 15_000);
   void runNextPublishJob();
