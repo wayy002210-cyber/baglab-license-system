@@ -16,7 +16,7 @@ const executable = join(
   root,
   "release",
   "win-unpacked",
-  "全自动混剪工作台.exe"
+  "袋研官矩阵混剪工作台.exe"
 );
 
 try {

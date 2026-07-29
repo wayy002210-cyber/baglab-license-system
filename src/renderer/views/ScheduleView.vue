@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
+import { toUserMessage } from "../lib/user-error";
 type Job = Awaited<ReturnType<typeof window.autocut.listPublishJobs>>[number];
 type Account = Awaited<ReturnType<typeof window.autocut.listPublishAccounts>>[number];
 type Task = Awaited<ReturnType<typeof window.autocut.listTasks>>[number];
@@ -36,7 +37,7 @@ async function cancel(job: Job) {
     await load();
     ElMessage.success("发布任务已取消");
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "发布任务取消失败");
+    ElMessage.error(toUserMessage(error, "发布任务取消失败"));
   }
 }
 const accountName = (id:string) => accounts.value.find(a => a.id === id)?.name ?? "已删除账号";

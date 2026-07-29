@@ -9,13 +9,16 @@ if (!installDirectory.startsWith(`${releaseDirectory}\\`)) {
   throw new Error("Unsafe smoke-test install directory");
 }
 rmSync(installDirectory, { recursive: true, force: true });
-const installer = join(releaseDirectory, "AutoCut-Studio-0.1.0-x64.exe");
+const installer = join(
+  releaseDirectory,
+  "袋研官矩阵混剪工作台-0.1.0-x64.exe"
+);
 const installed = spawnSync(
   installer,
   ["/S", `/D=${installDirectory}`],
   { windowsHide: true, stdio: "inherit" }
 );
-const executable = join(installDirectory, "全自动混剪工作台.exe");
+const executable = join(installDirectory, "袋研官矩阵混剪工作台.exe");
 if (installed.status !== 0 && !existsSync(executable)) {
   throw new Error(`Installer exited with ${installed.status}`);
 }

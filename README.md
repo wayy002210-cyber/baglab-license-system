@@ -20,7 +20,7 @@ $env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-bu
 npm run dist:win
 ```
 
-安装包输出到 `release/AutoCut-Studio-0.1.0-x64.exe`。安装包自带 Python 后端、FFmpeg、ffprobe 与 Chromium。
+安装包输出到 `release/袋研官矩阵混剪工作台-0.1.0-x64.exe`。安装包自带 Python 后端、FFmpeg、ffprobe 与 Chromium。
 
 最终离线验收使用：
 

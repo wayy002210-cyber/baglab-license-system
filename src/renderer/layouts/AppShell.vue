@@ -9,6 +9,8 @@ import {
   VideoCamera,
   VideoPlay
 } from "@element-plus/icons-vue";
+import logoUrl from "../assets/bag-lab-logo.png";
+import { PRODUCT_NAME } from "../../shared/product-copy";
 
 const modules = [
   { label: "工作台", path: "/", icon: DataAnalysis },
@@ -26,10 +28,10 @@ const modules = [
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand__mark">A</div>
+        <img class="brand__mark" :src="logoUrl" alt="袋研官" />
         <div>
-          <strong>AUTOCUT</strong>
-          <small>智能混剪工作台</small>
+          <strong>袋研官</strong>
+          <small>矩阵混剪工作台</small>
         </div>
       </div>
       <nav aria-label="主导航">
@@ -52,7 +54,7 @@ const modules = [
       <header class="topbar">
         <div>
           <p>全自动内容生产</p>
-          <h1>AUTOCUT STUDIO</h1>
+          <h1>{{ PRODUCT_NAME }}</h1>
         </div>
         <el-tag type="success" effect="light" round>本地模式</el-tag>
       </header>
@@ -88,14 +90,10 @@ const modules = [
   padding: 2px 10px 24px;
 }
 .brand__mark {
-  display: grid;
-  place-items: center;
-  width: 38px;
+  width: 48px;
   height: 38px;
-  border-radius: 12px;
-  background: #5b8def;
-  color: white;
-  font-weight: 800;
+  border-radius: 8px;
+  object-fit: contain;
 }
 .brand strong,
 .brand small {

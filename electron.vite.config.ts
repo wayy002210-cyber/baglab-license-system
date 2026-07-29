@@ -12,7 +12,16 @@ export default defineConfig({
   preload: {
     build: {
       outDir: "dist-electron/preload",
-      lib: { entry: resolve("electron/preload.ts") }
+      externalizeDeps: {
+        exclude: ["zod"]
+      },
+      lib: { entry: resolve("electron/preload.ts") },
+      rollupOptions: {
+        // Sandboxed preload scripts can import Electron, but cannot resolve
+        // arbitrary Node packages at runtime. Bundle Zod and every other
+        // preload dependency into the generated module.
+        external: ["electron"]
+      }
     }
   },
   renderer: {

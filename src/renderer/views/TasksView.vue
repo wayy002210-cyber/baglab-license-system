@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
+import { toUserMessage } from "../lib/user-error";
 
 type Task = Awaited<ReturnType<typeof window.autocut.listTasks>>[number];
 type Persona = Awaited<ReturnType<typeof window.autocut.listPersonas>>[number];
@@ -108,7 +109,7 @@ async function createTasks(): Promise<void> {
     dialogOpen.value = false;
     ElMessage.success(`已创建 ${created.length} 个任务`);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "创建任务失败");
+    ElMessage.error(toUserMessage(error, "创建任务失败"));
   } finally {
     creating.value = false;
   }
@@ -122,7 +123,7 @@ async function previewSelectedVoice(): Promise<void> {
     });
     await new Audio(source).play();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "试听失败");
+    ElMessage.error(toUserMessage(error, "试听失败"));
   }
 }
 
@@ -131,7 +132,7 @@ async function cancelTask(task: Task): Promise<void> {
     await window.autocut.cancelTask(task.id);
     await load();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "取消失败");
+    ElMessage.error(toUserMessage(error, "取消失败"));
   }
 }
 
@@ -141,7 +142,7 @@ async function retryTask(task: Task): Promise<void> {
     await load();
     ElMessage.success("任务已重新加入队列");
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "重试失败");
+    ElMessage.error(toUserMessage(error, "重试失败"));
   }
 }
 async function deleteTask(task: Task): Promise<void> {

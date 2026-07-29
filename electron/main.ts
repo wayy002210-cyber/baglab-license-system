@@ -5,7 +5,8 @@ import {
   ipcMain,
   shell,
   protocol,
-  net
+  net,
+  Menu
 } from "electron";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
@@ -55,6 +56,8 @@ import {
   defaultMediaSettings,
   type MediaSettings
 } from "./repositories/settings-repository.js";
+import { createChineseMenuTemplate } from "./application-menu.js";
+import { PRODUCT_NAME } from "../src/shared/product-copy.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -130,7 +133,7 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
   }
   const settings = settingsRepository().getMediaSettings();
   const outputPath = join(
-    settings.outputDirectory || join(app.getPath("videos"), "AutoCut"),
+    settings.outputDirectory || join(app.getPath("videos"), "袋研官混剪成片"),
     `${task.id}.mp4`
   );
   const headers = {
@@ -372,6 +375,7 @@ async function startBackend(): Promise<void> {
 
 function createWindow(): void {
   window = new BrowserWindow({
+    title: PRODUCT_NAME,
     width: 1440,
     height: 900,
     minWidth: 900,
@@ -548,7 +552,7 @@ ipcMain.handle("templates:export", async (_event, id: string) => {
   const result = await dialog.showSaveDialog(window, {
     title: "导出镜头模板",
     defaultPath: `${template.name}.autocut-template.json`,
-    filters: [{ name: "AutoCut 模板", extensions: ["json"] }]
+    filters: [{ name: "袋研官混剪模板", extensions: ["json"] }]
   });
   if (result.canceled || !result.filePath) return null;
   const { id: _id, version: _version, canvas: _canvas, createdAt: _createdAt,
@@ -568,7 +572,7 @@ ipcMain.handle("templates:import", async () => {
   const result = await dialog.showOpenDialog(window, {
     title: "导入镜头模板",
     properties: ["openFile"],
-    filters: [{ name: "AutoCut 模板", extensions: ["json"] }]
+    filters: [{ name: "袋研官混剪模板", extensions: ["json"] }]
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const input = JSON.parse(readFileSync(result.filePaths[0], "utf8")) as TemplateInput;
@@ -594,7 +598,7 @@ ipcMain.handle("settings:getMedia", () => {
     ...defaultMediaSettings,
     ...current,
     outputDirectory:
-      current.outputDirectory || join(app.getPath("videos"), "AutoCut"),
+      current.outputDirectory || join(app.getPath("videos"), "袋研官混剪成片"),
     workDirectory:
       current.workDirectory || join(app.getPath("userData"), "work")
   };
@@ -821,6 +825,8 @@ ipcMain.handle(
 );
 
 app.whenReady().then(async () => {
+  app.setName(PRODUCT_NAME);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(createChineseMenuTemplate()));
   logPath = join(app.getPath("userData"), "logs", "electron.jsonl");
   logger = new JsonLogger(logPath);
   logger.write("info", "application.start", { version: app.getVersion() });

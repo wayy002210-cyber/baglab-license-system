@@ -23,4 +23,12 @@ describe("AppShell", () => {
       expect(wrapper.text()).toContain(label);
     }
   });
+
+  it("renders the Bag Lab product name and logo without legacy branding", () => {
+    const wrapper = mount(AppShell);
+
+    expect(wrapper.text()).toContain("袋研官矩阵混剪工作台");
+    expect(wrapper.find('img[alt="袋研官"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("AUTOCUT");
+  });
 });

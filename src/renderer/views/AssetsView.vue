@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { FolderOpened, VideoPlay } from "@element-plus/icons-vue";
 import PageIntro from "../components/PageIntro.vue";
+import { toUserMessage } from "../lib/user-error";
 
 type Category = Awaited<ReturnType<typeof window.autocut.listAssetCategories>>[number];
 type Asset = Awaited<ReturnType<typeof window.autocut.listAssets>>[number];
@@ -35,7 +36,7 @@ async function scanFolder(): Promise<void> {
     await load();
     ElMessage.success(`已扫描“${result.name}”，发现 ${result.assetCount} 个视频`);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "素材扫描失败");
+    ElMessage.error(toUserMessage(error, "素材扫描失败"));
   } finally {
     scanning.value = false;
   }

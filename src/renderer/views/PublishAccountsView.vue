@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
+import { toUserMessage } from "../lib/user-error";
 
 type Account = Awaited<ReturnType<typeof window.autocut.listPublishAccounts>>[number];
 const accounts = ref<Account[]>([]);
@@ -26,7 +27,7 @@ async function remove(account: Account) {
 async function check(account: Account) {
   ElMessage.info("已打开独立浏览器，请在需要时完成扫码登录");
   try { await window.autocut.checkPublishAccount(account.id); await load(); }
-  catch (error) { ElMessage.error(error instanceof Error ? error.message : "检测失败"); }
+  catch (error) { ElMessage.error(toUserMessage(error, "检测失败")); }
 }
 onMounted(load);
 </script>

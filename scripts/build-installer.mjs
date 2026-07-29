@@ -17,6 +17,17 @@ const nativeVerifier = join(
   "scripts",
   "verify-packaged-native-modules.mjs"
 );
+const preloadVerifier = join(root, "scripts", "verify-preload-bundle.mjs");
+
+const preloadVerification = spawnSync(process.execPath, [preloadVerifier], {
+  stdio: "inherit",
+  windowsHide: true
+});
+if (preloadVerification.status !== 0) {
+  throw new Error(
+    `preload bundle verification failed with exit code ${preloadVerification.status}`
+  );
+}
 
 const rebuild = spawnSync(
   process.execPath,

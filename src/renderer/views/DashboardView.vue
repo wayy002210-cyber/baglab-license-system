@@ -32,7 +32,7 @@ onMounted(async()=>{
 <template>
   <div class="page">
     <section class="hero surface">
-      <div><span class="eyebrow">LOCAL-FIRST CONTENT ENGINE</span><h2>把素材库变成持续生产力</h2><p>分类素材、结构化分镜、智能配音与自动发布，一条生产线完成。</p>
+      <div><span class="eyebrow">本地优先内容生产引擎</span><h2>把素材库变成持续生产力</h2><p>分类素材、结构化分镜、智能配音与自动发布，一条生产线完成。</p>
         <div class="hero-actions"><el-button type="primary" size="large" round @click="router.push('/tasks')">创建生成任务</el-button><el-button size="large" round @click="router.push('/assets')">管理素材</el-button></div>
       </div><div class="hero-visual"><div class="orbit one"/><div class="orbit two"/><div class="play">▶</div></div>
     </section>
