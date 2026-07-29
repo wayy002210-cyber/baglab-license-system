@@ -205,6 +205,28 @@ const mediaSettingsSchema = z.object({
   bgmPath: z.string().nullable(),
   bgmVolume: z.number().min(0).max(1)
 });
+const copyModelSettingsSchema = z.object({
+  defaultModel: z.string().trim().min(1),
+  temperature: z.number().min(0).max(2),
+  candidateModels: z.array(z.string().trim().min(1)).min(1)
+});
+const referenceScriptStructureSchema = z.object({
+  hook: z.string(),
+  narrative: z.string(),
+  cta: z.string()
+});
+const referenceScriptInputSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  industry: z.string().trim().max(80),
+  tags: z.array(z.string().trim().min(1)),
+  content: z.string().trim().min(1).max(20_000),
+  structure: referenceScriptStructureSchema
+});
+const referenceScriptSchema = referenceScriptInputSchema.extend({
+  id: z.string().uuid(),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
 
 contextBridge.exposeInMainWorld("autocut", {
   backendStatus: async () =>
@@ -264,6 +286,37 @@ contextBridge.exposeInMainWorld("autocut", {
     const result = await ipcRenderer.invoke("draft:duplicate");
     return result === null ? null : creationDraftSchema.parse(result);
   },
+  listReferenceScripts: async () =>
+    z
+      .array(referenceScriptSchema)
+      .parse(await ipcRenderer.invoke("referenceScripts:list")),
+  createReferenceScript: async (input: unknown) =>
+    referenceScriptSchema.parse(
+      await ipcRenderer.invoke(
+        "referenceScripts:create",
+        referenceScriptInputSchema.parse(input)
+      )
+    ),
+  deleteReferenceScript: async (id: string) =>
+    z
+      .object({ deleted: z.boolean() })
+      .parse(
+        await ipcRenderer.invoke(
+          "referenceScripts:delete",
+          z.string().uuid().parse(id)
+        )
+      ),
+  searchReferenceScripts: async (input: unknown) =>
+    z.array(referenceScriptSchema).parse(
+      await ipcRenderer.invoke(
+        "referenceScripts:search",
+        z.object({
+          industry: z.string(),
+          query: z.string(),
+          limit: z.number().int().min(1).max(5)
+        }).parse(input)
+      )
+    ),
   listAssetCategories: async () =>
     z
       .array(assetCategorySchema)
@@ -398,6 +451,17 @@ contextBridge.exposeInMainWorld("autocut", {
   saveMediaSettings: async (input: unknown) => mediaSettingsSchema.parse(
     await ipcRenderer.invoke("settings:saveMedia", mediaSettingsSchema.parse(input))
   ),
+  getCopyModelSettings: async () =>
+    copyModelSettingsSchema.parse(
+      await ipcRenderer.invoke("settings:getCopyModel")
+    ),
+  saveCopyModelSettings: async (input: unknown) =>
+    copyModelSettingsSchema.parse(
+      await ipcRenderer.invoke(
+        "settings:saveCopyModel",
+        copyModelSettingsSchema.parse(input)
+      )
+    ),
   selectSettingsPath: async (kind: unknown) => z.string().nullable().parse(
     await ipcRenderer.invoke(
       "settings:selectPath",

@@ -37,6 +37,14 @@ declare global {
       saveCreationDraft(input: CreationDraft): Promise<CreationDraft>;
       clearCreationDraft(): Promise<{ cleared: boolean }>;
       duplicateCreationDraft(): Promise<CreationDraft | null>;
+      listReferenceScripts(): Promise<ReferenceScript[]>;
+      createReferenceScript(input: ReferenceScriptInput): Promise<ReferenceScript>;
+      deleteReferenceScript(id: string): Promise<{ deleted: boolean }>;
+      searchReferenceScripts(input: {
+        industry: string;
+        query: string;
+        limit: number;
+      }): Promise<ReferenceScript[]>;
       listAssetCategories(): Promise<
         Array<{
           id: string;
@@ -163,6 +171,8 @@ declare global {
       exportDiagnostics(): Promise<string | null>;
       getMediaSettings(): Promise<MediaSettings>;
       saveMediaSettings(input: MediaSettings): Promise<MediaSettings>;
+      getCopyModelSettings(): Promise<CopyModelSettings>;
+      saveCopyModelSettings(input: CopyModelSettings): Promise<CopyModelSettings>;
       selectSettingsPath(
         kind: "output" | "work" | "bgm"
       ): Promise<string | null>;
@@ -246,6 +256,23 @@ type MediaSettings = {
   fontFamily: string;
   bgmPath: string | null;
   bgmVolume: number;
+};
+type CopyModelSettings = {
+  defaultModel: string;
+  temperature: number;
+  candidateModels: string[];
+};
+type ReferenceScriptInput = {
+  title: string;
+  industry: string;
+  tags: string[];
+  content: string;
+  structure: { hook: string; narrative: string; cta: string };
+};
+type ReferenceScript = ReferenceScriptInput & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export {};

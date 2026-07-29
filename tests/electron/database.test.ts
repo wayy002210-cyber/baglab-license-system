@@ -18,6 +18,7 @@ describe("database migrations", () => {
       "personas",
       "publish_accounts",
       "publish_jobs",
+      "reference_scripts",
       "schema_migrations",
       "task_shots",
       "template_shots",

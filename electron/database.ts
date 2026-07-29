@@ -169,6 +169,17 @@ CREATE TABLE IF NOT EXISTS creation_drafts (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS reference_scripts (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  industry TEXT NOT NULL DEFAULT '',
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  content TEXT NOT NULL,
+  structure_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 export function applyMigrations(database: Database.Database): void {

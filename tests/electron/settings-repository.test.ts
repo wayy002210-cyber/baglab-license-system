@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { applyMigrations } from "../../electron/database";
 import {
   SettingsRepository,
+  defaultCopyModelSettings,
   defaultMediaSettings
 } from "../../electron/repositories/settings-repository";
 
@@ -34,6 +35,28 @@ describe("SettingsRepository", () => {
       repository.saveMediaSettings({
         ...defaultMediaSettings,
         videoBitrateMbps: 0
+      })
+    ).toThrow();
+    database.close();
+  });
+
+  it("persists a default copywriting model and candidate models", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const repository = new SettingsRepository(database);
+
+    expect(repository.getCopyModelSettings()).toEqual(defaultCopyModelSettings);
+    const saved = repository.saveCopyModelSettings({
+      defaultModel: "deepseek-v3",
+      temperature: 0.8,
+      candidateModels: ["deepseek-v3", "qwen-plus"]
+    });
+
+    expect(repository.getCopyModelSettings()).toEqual(saved);
+    expect(() =>
+      repository.saveCopyModelSettings({
+        ...saved,
+        temperature: 2.1
       })
     ).toThrow();
     database.close();

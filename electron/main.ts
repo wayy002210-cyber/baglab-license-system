@@ -60,6 +60,11 @@ import { createChineseMenuTemplate } from "./application-menu.js";
 import { PRODUCT_NAME } from "../src/shared/product-copy.js";
 import type { CreationDraft } from "../src/shared/contracts.js";
 import { CreationDraftRepository } from "./repositories/creation-draft-repository.js";
+import {
+  ReferenceScriptRepository,
+  type ReferenceScriptInput
+} from "./repositories/reference-script-repository.js";
+import type { CopyModelSettings } from "./repositories/settings-repository.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -115,6 +120,10 @@ function settingsRepository(): SettingsRepository {
 function creationDraftRepository(): CreationDraftRepository {
   if (!database) throw new Error("Database is not ready");
   return new CreationDraftRepository(database);
+}
+function referenceScriptRepository(): ReferenceScriptRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new ReferenceScriptRepository(database);
 }
 
 async function runGenerationTask(task: GenerationTask): Promise<void> {
@@ -479,6 +488,24 @@ ipcMain.handle("draft:clear", () => {
   return { cleared: true };
 });
 ipcMain.handle("draft:duplicate", () => creationDraftRepository().duplicate());
+ipcMain.handle("referenceScripts:list", () =>
+  referenceScriptRepository().list()
+);
+ipcMain.handle(
+  "referenceScripts:create",
+  (_event, input: ReferenceScriptInput) =>
+    referenceScriptRepository().create(input)
+);
+ipcMain.handle("referenceScripts:delete", (_event, id: string) => ({
+  deleted: referenceScriptRepository().delete(id)
+}));
+ipcMain.handle(
+  "referenceScripts:search",
+  (
+    _event,
+    input: { industry: string; query: string; limit: number }
+  ) => referenceScriptRepository().search(input)
+);
 ipcMain.handle("assets:listCategories", () =>
   assetRepository().listCategories()
 );
@@ -620,6 +647,14 @@ ipcMain.handle("settings:getMedia", () => {
 });
 ipcMain.handle("settings:saveMedia", (_event, input: MediaSettings) =>
   settingsRepository().saveMediaSettings(input)
+);
+ipcMain.handle("settings:getCopyModel", () =>
+  settingsRepository().getCopyModelSettings()
+);
+ipcMain.handle(
+  "settings:saveCopyModel",
+  (_event, input: CopyModelSettings) =>
+    settingsRepository().saveCopyModelSettings(input)
 );
 ipcMain.handle(
   "settings:selectPath",

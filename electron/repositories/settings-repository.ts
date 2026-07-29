@@ -10,6 +10,12 @@ export type MediaSettings = {
   bgmVolume: number;
 };
 
+export type CopyModelSettings = {
+  defaultModel: string;
+  temperature: number;
+  candidateModels: string[];
+};
+
 export const defaultMediaSettings: MediaSettings = {
   outputDirectory: "",
   workDirectory: "",
@@ -18,6 +24,12 @@ export const defaultMediaSettings: MediaSettings = {
   fontFamily: "Microsoft YaHei",
   bgmPath: null,
   bgmVolume: 0.16
+};
+
+export const defaultCopyModelSettings: CopyModelSettings = {
+  defaultModel: "deepseek-v3",
+  temperature: 0.7,
+  candidateModels: ["deepseek-v3", "qwen-plus"]
 };
 
 export class SettingsRepository {
@@ -67,5 +79,32 @@ export class SettingsRepository {
       throw new RangeError("BGM volume must be between 0 and 1");
     }
     return this.set("media", { ...settings });
+  }
+
+  getCopyModelSettings(): CopyModelSettings {
+    return this.get("copy-model", defaultCopyModelSettings);
+  }
+
+  saveCopyModelSettings(settings: CopyModelSettings): CopyModelSettings {
+    const models = [...new Set(settings.candidateModels.map((model) => model.trim()))]
+      .filter(Boolean);
+    if (!settings.defaultModel.trim()) {
+      throw new Error("Default copywriting model is required");
+    }
+    if (!models.includes(settings.defaultModel.trim())) {
+      throw new Error("Default model must be included in candidate models");
+    }
+    if (
+      !Number.isFinite(settings.temperature) ||
+      settings.temperature < 0 ||
+      settings.temperature > 2
+    ) {
+      throw new RangeError("Temperature must be between 0 and 2");
+    }
+    return this.set("copy-model", {
+      defaultModel: settings.defaultModel.trim(),
+      temperature: settings.temperature,
+      candidateModels: models
+    });
   }
 }

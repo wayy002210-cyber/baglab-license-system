@@ -10,6 +10,8 @@ describe("packaged preload bridge", () => {
 
     expect(preload).toContain('exposeInMainWorld("autocut"');
     expect(preload).toContain("selectAndScanAssets");
+    expect(preload).toContain("getCopyModelSettings");
+    expect(preload).toContain("listReferenceScripts");
     expect(preload).toMatch(/require\(["']electron["']\)/);
     expect(preload).not.toMatch(/^\s*import\s/m);
     expect(preload).not.toMatch(/from\s+["']zod["']/);

@@ -1,14 +1,24 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { Key, Monitor, VideoCamera } from "@element-plus/icons-vue";
+import { Key, Monitor, Reading, VideoCamera } from "@element-plus/icons-vue";
 import PageIntro from "../components/PageIntro.vue";
+import ReferenceScriptsPanel from "../components/copywriting/ReferenceScriptsPanel.vue";
 
 type MediaSettings = Awaited<ReturnType<typeof window.autocut.getMediaSettings>>;
 const credentialStatus = reactive({ bailian: false, minimax: false });
 const secrets = reactive({ bailian: "", minimax: "" });
 const savingCredential = ref<"bailian" | "minimax" | null>(null);
 const savingMedia = ref(false);
+const savingCopyModel = ref(false);
+const referenceScripts = ref<
+  Awaited<ReturnType<typeof window.autocut.listReferenceScripts>>
+>([]);
+const copyModel = reactive({
+  defaultModel: "deepseek-v3",
+  temperature: 0.7,
+  candidateModels: ["deepseek-v3", "qwen-plus"]
+});
 const media = reactive<MediaSettings>({
   outputDirectory: "", workDirectory: "", encoder: "auto",
   videoBitrateMbps: 8, fontFamily: "Microsoft YaHei",
@@ -16,8 +26,16 @@ const media = reactive<MediaSettings>({
 });
 
 async function load(): Promise<void> {
-  Object.assign(credentialStatus, await window.autocut.credentialStatus());
-  Object.assign(media, await window.autocut.getMediaSettings());
+  const [credentials, mediaSettings, copySettings, scripts] = await Promise.all([
+    window.autocut.credentialStatus(),
+    window.autocut.getMediaSettings(),
+    window.autocut.getCopyModelSettings(),
+    window.autocut.listReferenceScripts()
+  ]);
+  Object.assign(credentialStatus, credentials);
+  Object.assign(media, mediaSettings);
+  Object.assign(copyModel, copySettings);
+  referenceScripts.value = scripts;
 }
 async function saveCredential(name: "bailian" | "minimax"): Promise<void> {
   if (!secrets[name].trim()) return void ElMessage.warning("请输入 API Key");
@@ -49,6 +67,34 @@ async function saveMedia(): Promise<void> {
 async function exportDiagnostics(): Promise<void> {
   const path = await window.autocut.exportDiagnostics();
   if (path) ElMessage.success(`诊断包已导出：${path}`);
+}
+async function saveCopyModel(): Promise<void> {
+  savingCopyModel.value = true;
+  try {
+    Object.assign(
+      copyModel,
+      await window.autocut.saveCopyModelSettings({
+        ...copyModel,
+        candidateModels: [...copyModel.candidateModels]
+      })
+    );
+    ElMessage.success("文案模型设置已保存");
+  } finally {
+    savingCopyModel.value = false;
+  }
+}
+async function createReferenceScript(
+  input: Parameters<typeof window.autocut.createReferenceScript>[0]
+): Promise<void> {
+  await window.autocut.createReferenceScript(input);
+  referenceScripts.value = await window.autocut.listReferenceScripts();
+  ElMessage.success("参考脚本已加入本地脚本库");
+}
+async function deleteReferenceScript(id: string): Promise<void> {
+  await window.autocut.deleteReferenceScript(id);
+  referenceScripts.value = referenceScripts.value.filter(
+    (script) => script.id !== id
+  );
 }
 onMounted(load);
 </script>
@@ -87,6 +133,64 @@ onMounted(load);
         </el-form>
       </article>
 
+      <article class="surface settings-card copy-card">
+        <header>
+          <div class="settings-icon"><el-icon><Reading /></el-icon></div>
+          <div>
+            <h3>文案模型与参考脚本</h3>
+            <p>通过百炼调用通义或 DeepSeek，优秀脚本仅保存在本机</p>
+          </div>
+        </header>
+        <el-form label-position="top">
+          <div class="form-row">
+            <el-form-item label="默认模型">
+              <el-select
+                v-model="copyModel.defaultModel"
+                allow-create
+                filterable
+              >
+                <el-option
+                  v-for="model in copyModel.candidateModels"
+                  :key="model"
+                  :label="model"
+                  :value="model"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="创作温度">
+              <el-input-number
+                v-model="copyModel.temperature"
+                :min="0"
+                :max="2"
+                :step="0.1"
+              />
+            </el-form-item>
+          </div>
+          <el-form-item label="候选模型">
+            <el-select
+              v-model="copyModel.candidateModels"
+              multiple
+              allow-create
+              filterable
+              default-first-option
+            />
+          </el-form-item>
+          <el-button
+            type="primary"
+            :loading="savingCopyModel"
+            @click="saveCopyModel"
+          >
+            保存文案模型
+          </el-button>
+        </el-form>
+        <el-divider />
+        <ReferenceScriptsPanel
+          :scripts="referenceScripts"
+          @create="createReferenceScript"
+          @delete="deleteReferenceScript"
+        />
+      </article>
+
       <article class="surface settings-card">
         <header><div class="settings-icon"><el-icon><Monitor /></el-icon></div><div><h3>故障诊断</h3><p>不包含密钥、Cookie 或任务快照</p></div></header>
         <el-button type="primary" plain @click="exportDiagnostics">导出脱敏诊断包</el-button>
@@ -96,5 +200,5 @@ onMounted(load);
 </template>
 
 <style scoped>
-.settings-grid{display:grid;grid-template-columns:1fr 1.4fr;gap:18px;align-items:start}.settings-card{padding:24px}.media-card{grid-row:span 2}header{display:flex;gap:13px;align-items:center;margin-bottom:22px}.settings-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;color:#5b8def;background:#eaf1ff;font-size:20px}header h3,header p{margin:0}header p{margin-top:4px;color:#8995a7;font-size:12px}.credential{margin-top:16px;padding:16px;border:1px solid #e7ebf2;border-radius:15px;background:#fafbfd}.credential-title{display:flex;justify-content:space-between;margin-bottom:12px}.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.el-select{width:100%}@media(max-width:1050px){.settings-grid{grid-template-columns:1fr}.media-card{grid-row:auto}}
+.settings-grid{display:grid;grid-template-columns:1fr 1.4fr;gap:18px;align-items:start}.settings-card{padding:24px}.media-card{grid-row:span 2}.copy-card{grid-column:1 / -1}header{display:flex;gap:13px;align-items:center;margin-bottom:22px}.settings-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;color:var(--brand-black);background:var(--brand-yellow);font-size:20px}header h3,header p{margin:0}header p{margin-top:4px;color:var(--text-muted);font-size:12px}.credential{margin-top:16px;padding:16px;border:1px solid var(--border);border-radius:15px;background:var(--surface-muted)}.credential-title{display:flex;justify-content:space-between;margin-bottom:12px}.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.el-select{width:100%}@media(max-width:1050px){.settings-grid{grid-template-columns:1fr}.media-card{grid-row:auto}.copy-card{grid-column:auto}}
 </style>
