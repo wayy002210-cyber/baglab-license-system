@@ -23,6 +23,11 @@ async function remove(account: Account) {
   await ElMessageBox.confirm(`删除账号“${account.name}”？`, "确认删除");
   await window.autocut.deletePublishAccount(account.id); await load();
 }
+async function check(account: Account) {
+  ElMessage.info("已打开独立浏览器，请在需要时完成扫码登录");
+  try { await window.autocut.checkPublishAccount(account.id); await load(); }
+  catch (error) { ElMessage.error(error instanceof Error ? error.message : "检测失败"); }
+}
 onMounted(load);
 </script>
 
@@ -39,7 +44,7 @@ onMounted(load);
         </el-tag>
         <p>独立登录目录已创建</p>
         <div class="actions">
-          <el-button type="primary" disabled>打开登录（适配器接入中）</el-button>
+          <el-button type="primary" @click="check(account)">登录 / 检测</el-button>
           <el-button link type="danger" @click="remove(account)">删除</el-button>
         </div>
       </article>

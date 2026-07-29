@@ -74,6 +74,12 @@ export class PublishRepository {
         .all() as AccountRow[]
     ).map(mapAccount);
   }
+  getAccount(id: string): PublishAccount | null {
+    const row = this.database.prepare(
+      "SELECT * FROM publish_accounts WHERE id = ?"
+    ).get(id) as AccountRow | undefined;
+    return row ? mapAccount(row) : null;
+  }
 
   updateAccountStatus(
     id: string,
@@ -138,6 +144,12 @@ export class PublishRepository {
         .prepare("SELECT * FROM publish_jobs ORDER BY created_at DESC")
         .all() as JobRow[]
     ).map(mapJob);
+  }
+  getJob(id: string): PublishJob | null {
+    const row = this.database.prepare(
+      "SELECT * FROM publish_jobs WHERE id = ?"
+    ).get(id) as JobRow | undefined;
+    return row ? mapJob(row) : null;
   }
 
   claimNextDue(now: string): PublishJob | null {

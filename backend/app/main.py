@@ -27,6 +27,8 @@ from app.tasks.runtime import (
 from app.tasks.worker import GenerationWorker, TaskEvent, TaskExecutionRequest
 from app.tasks.pipeline import AudioDurationProbe, GenerationPipeline
 from app.tasks.secure_runtime import SecurePipelineRuntime
+from app.publisher.adapters import PublishRequest, PublishResult
+from app.publisher.service import Platform, PublishingService
 
 
 class CreateTaskRequest(BaseModel):
@@ -36,6 +38,16 @@ class CreateTaskRequest(BaseModel):
 
 class ScanAssetsRequest(BaseModel):
     folder_path: str = Field(alias="folderPath", min_length=1)
+
+
+class PublishAccountCheckRequest(BaseModel):
+    platform: Platform
+    user_data_dir: str = Field(alias="userDataDir", min_length=1)
+
+
+class RunPublishRequest(PublishRequest):
+    platform: Platform
+    user_data_dir: str = Field(alias="userDataDir", min_length=1)
 
 
 class Scanner(Protocol):
@@ -80,6 +92,13 @@ class GenerationTaskRuntime(Protocol):
     ) -> AsyncIterator[tuple[int, TaskEvent]]: ...
 
 
+class Publisher(Protocol):
+    def check_account(self, *, platform: Platform, user_data_dir: str) -> str: ...
+    def publish(
+        self, *, platform: Platform, user_data_dir: str, request: PublishRequest
+    ) -> PublishResult: ...
+
+
 def create_app(
     session_token: str | None = None,
     asset_scanner: Scanner | None = None,
@@ -87,6 +106,7 @@ def create_app(
     voice_service: VoiceProvider | None = None,
     encoder_detector: VideoEncoderDetector | None = None,
     task_runtime: GenerationTaskRuntime | None = None,
+    publishing_service: Publisher | None = None,
 ) -> FastAPI:
     token = session_token or os.environ.get("AUTOCUT_SESSION_TOKEN")
     if not token:
@@ -114,6 +134,7 @@ def create_app(
             tts_semaphore=tts_semaphore,
         )
     )
+    publisher = publishing_service or PublishingService()
 
     def authorize(x_autocut_token: str | None = Header(default=None)) -> None:
         if x_autocut_token != token:
@@ -279,6 +300,36 @@ def create_app(
         if not x_minimax_key:
             raise HTTPException(status_code=401, detail="MiniMax API key is required")
         return voice.synthesize(api_key=x_minimax_key, request=payload)
+
+    @app.post(
+        "/publish/accounts/{account_id}/check",
+        dependencies=[Depends(authorize)],
+    )
+    def check_publish_account(
+        account_id: str, payload: PublishAccountCheckRequest
+    ) -> dict[str, str]:
+        status = publisher.check_account(
+            platform=payload.platform,
+            user_data_dir=payload.user_data_dir,
+        )
+        return {"accountId": account_id, "status": status}
+
+    @app.post(
+        "/publish/jobs/{job_id}/run",
+        response_model=PublishResult,
+        dependencies=[Depends(authorize)],
+    )
+    def run_publish_job(
+        job_id: str, payload: RunPublishRequest
+    ) -> PublishResult:
+        request = PublishRequest.model_validate(
+            payload.model_dump(mode="json", by_alias=True)
+        )
+        return publisher.publish(
+            platform=payload.platform,
+            user_data_dir=payload.user_data_dir,
+            request=request,
+        )
 
     return app
 

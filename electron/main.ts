@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { basename, join, resolve } from "node:path";
+import { existsSync } from "node:fs";
 import type { ChildProcess } from "node:child_process";
 import Database from "better-sqlite3";
 import keytar from "keytar";
@@ -40,6 +41,7 @@ import {
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
 let database: Database.Database | null = null;
+let publishScheduler: ReturnType<typeof setInterval> | null = null;
 const credentials = new CredentialStore(keytar);
 
 function personaRepository(): PersonaRepository {
@@ -148,6 +150,61 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
     }
   }
 }
+
+async function runNextPublishJob(): Promise<void> {
+  if (backendState.status !== "ready") return;
+  const job = publishRepository().claimNextDue(new Date().toISOString());
+  if (!job) return;
+  const account = publishRepository().getAccount(job.accountId);
+  const task = taskRepository().get(job.taskId);
+  if (!account || !task?.outputPath || !existsSync(task.outputPath)) {
+    publishRepository().finishJob(job.id, "failed", {
+      errorMessage: "发布账号或成片文件不存在"
+    });
+    return;
+  }
+  try {
+    const response = await fetch(
+      `${backendState.baseUrl}/publish/jobs/${job.id}/run`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Autocut-Token": backendState.token
+        },
+        body: JSON.stringify({
+          platform: account.platform,
+          userDataDir: account.userDataDir,
+          videoPath: task.outputPath,
+          title: job.title,
+          topics: job.topics,
+          coverPath: job.coverPath,
+          screenshotDir: join(app.getPath("userData"), "logs", "publish", job.id)
+        })
+      }
+    );
+    const result = (await response.json()) as {
+      status?: "published" | "failed" | "needs_user";
+      errorMessage?: string | null;
+      screenshotPath?: string | null;
+      detail?: string;
+    };
+    if (!response.ok || !result.status) {
+      throw new Error(result.detail || `发布服务失败 (${response.status})`);
+    }
+    publishRepository().finishJob(job.id, result.status, {
+      errorMessage: result.errorMessage ?? undefined,
+      screenshotPath: result.screenshotPath ?? undefined
+    });
+    if (result.status === "needs_user") {
+      publishRepository().updateAccountStatus(account.id, "needs_user");
+    }
+  } catch (error) {
+    publishRepository().finishJob(job.id, "failed", {
+      errorMessage: error instanceof Error ? error.message : "发布失败"
+    });
+  }
+}
 let backendState:
   | { status: "starting" | "ready"; baseUrl: string; token: string }
   | { status: "stopped" | "failed"; message: string } = {
@@ -246,6 +303,33 @@ ipcMain.handle(
     return { configured: true };
   }
 );
+ipcMain.handle("publishAccounts:check", async (_event, id: string) => {
+  if (backendState.status !== "ready") throw new Error("本地发布服务尚未就绪");
+  const account = publishRepository().getAccount(id);
+  if (!account) throw new Error("发布账号不存在");
+  const response = await fetch(
+    `${backendState.baseUrl}/publish/accounts/${id}/check`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Autocut-Token": backendState.token
+      },
+      body: JSON.stringify({
+        platform: account.platform,
+        userDataDir: account.userDataDir
+      })
+    }
+  );
+  const result = (await response.json()) as {
+    status?: "unknown" | "connected" | "expired" | "needs_user";
+    detail?: string;
+  };
+  if (!response.ok || !result.status) {
+    throw new Error(result.detail || "账号状态检测失败");
+  }
+  return publishRepository().updateAccountStatus(id, result.status);
+});
 ipcMain.handle("personas:list", () => personaRepository().list());
 ipcMain.handle(
   "personas:create",
@@ -481,6 +565,8 @@ app.whenReady().then(async () => {
   ensureBuiltInTemplate(templateRepository());
   taskRepository().recoverInterrupted();
   await startBackend();
+  publishScheduler = setInterval(() => void runNextPublishJob(), 15_000);
+  void runNextPublishJob();
   createWindow();
 });
 
@@ -493,4 +579,6 @@ app.on("before-quit", () => {
   backend = null;
   database?.close();
   database = null;
+  if (publishScheduler) clearInterval(publishScheduler);
+  publishScheduler = null;
 });
