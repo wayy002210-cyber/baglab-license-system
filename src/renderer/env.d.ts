@@ -69,8 +69,37 @@ declare global {
         invalidCount: number;
         lastScannedAt: string | null;
       } | null>;
+      listTemplates(): Promise<VideoTemplate[]>;
+      createTemplate(input: TemplateInput): Promise<VideoTemplate>;
+      updateTemplate(id: string, input: TemplateInput): Promise<VideoTemplate>;
+      duplicateTemplate(id: string): Promise<VideoTemplate>;
+      deleteTemplate(id: string): Promise<{ deleted: boolean }>;
     };
   }
 }
+
+type TemplateShotInput = {
+  role: "hook" | "problem" | "proof" | "solution" | "cta" | "custom";
+  assetCategoryId: string | null;
+  copywriting: string;
+  durationMode: "voice" | "fixed" | "auto";
+  durationSec: number | null;
+  muteOriginal: boolean;
+};
+
+type TemplateInput = {
+  name: string;
+  description: string;
+  shots: TemplateShotInput[];
+};
+
+type VideoTemplate = Omit<TemplateInput, "shots"> & {
+  id: string;
+  canvas: { width: 1080; height: 1920; fps: 30 };
+  version: number;
+  shots: Array<TemplateShotInput & { id: string; index: number }>;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export {};

@@ -20,6 +20,11 @@ import {
   AssetRepository,
   type ScannedAssetInput
 } from "./repositories/asset-repository.js";
+import {
+  ensureBuiltInTemplate,
+  TemplateRepository,
+  type TemplateInput
+} from "./repositories/template-repository.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -34,6 +39,11 @@ function personaRepository(): PersonaRepository {
 function assetRepository(): AssetRepository {
   if (!database) throw new Error("Database is not ready");
   return new AssetRepository(database);
+}
+
+function templateRepository(): TemplateRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new TemplateRepository(database);
 }
 let backendState:
   | { status: "starting" | "ready"; baseUrl: string; token: string }
@@ -213,6 +223,21 @@ ipcMain.handle("assets:selectAndScan", async () => {
     assets
   });
 });
+ipcMain.handle("templates:list", () => templateRepository().list());
+ipcMain.handle("templates:create", (_event, input: TemplateInput) =>
+  templateRepository().create(input)
+);
+ipcMain.handle(
+  "templates:update",
+  (_event, id: string, input: TemplateInput) =>
+    templateRepository().update(id, input)
+);
+ipcMain.handle("templates:duplicate", (_event, id: string) =>
+  templateRepository().duplicate(id)
+);
+ipcMain.handle("templates:delete", (_event, id: string) => ({
+  deleted: templateRepository().delete(id)
+}));
 ipcMain.handle(
   "credentials:delete",
   async (_event, name: CredentialName) => ({
@@ -223,6 +248,7 @@ ipcMain.handle(
 app.whenReady().then(async () => {
   database = new Database(resolve(app.getPath("userData"), "autocut.sqlite3"));
   applyMigrations(database);
+  ensureBuiltInTemplate(templateRepository());
   await startBackend();
   createWindow();
 });

@@ -201,3 +201,85 @@ export class TemplateRepository {
     };
   }
 }
+
+export function ensureBuiltInTemplate(repository: TemplateRepository): void {
+  if (repository.list().length > 0) return;
+  repository.create({
+    name: "工厂 / 门店口播模板",
+    description: "九镜头竖屏口播结构：钩子、痛点、证明、方案与行动引导",
+    shots: [
+      {
+        role: "hook",
+        assetCategoryId: null,
+        copywriting: "用一句结果或反常识观点抓住注意力",
+        durationMode: "voice",
+        durationSec: null,
+        muteOriginal: true
+      },
+      {
+        role: "problem",
+        assetCategoryId: null,
+        copywriting: "指出目标客户正在遇到的核心问题",
+        durationMode: "voice",
+        durationSec: null,
+        muteOriginal: true
+      },
+      {
+        role: "proof",
+        assetCategoryId: null,
+        copywriting: "展示工厂、门店或团队的真实依据",
+        durationMode: "voice",
+        durationSec: null,
+        muteOriginal: true
+      },
+      {
+        role: "solution",
+        assetCategoryId: null,
+        copywriting: "解释解决方案的第一步",
+        durationMode: "voice",
+        durationSec: null,
+        muteOriginal: true
+      },
+      {
+        role: "solution",
+        assetCategoryId: null,
+        copywriting: "解释解决方案的第二步",
+        durationMode: "voice",
+        durationSec: null,
+        muteOriginal: true
+      },
+      {
+        role: "proof",
+        assetCategoryId: null,
+        copywriting: "补充过程、数据或客户反馈",
+        durationMode: "voice",
+        durationSec: null,
+        muteOriginal: true
+      },
+      {
+        role: "solution",
+        assetCategoryId: null,
+        copywriting: "说明客户最终能获得的结果",
+        durationMode: "voice",
+        durationSec: null,
+        muteOriginal: true
+      },
+      {
+        role: "proof",
+        assetCategoryId: null,
+        copywriting: "用一句可信承诺收束价值",
+        durationMode: "voice",
+        durationSec: null,
+        muteOriginal: true
+      },
+      {
+        role: "cta",
+        assetCategoryId: null,
+        copywriting: "给出明确、克制的行动引导",
+        durationMode: "voice",
+        durationSec: null,
+        muteOriginal: true
+      }
+    ]
+  });
+}

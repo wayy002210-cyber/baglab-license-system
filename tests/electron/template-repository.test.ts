@@ -1,7 +1,10 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { applyMigrations } from "../../electron/database";
-import { TemplateRepository } from "../../electron/repositories/template-repository";
+import {
+  ensureBuiltInTemplate,
+  TemplateRepository
+} from "../../electron/repositories/template-repository";
 
 describe("TemplateRepository", () => {
   it("saves ordered shots and returns an immutable task snapshot", () => {
@@ -64,5 +67,18 @@ describe("TemplateRepository", () => {
         ]
       })
     ).toThrow("Fixed-duration shot requires a positive duration");
+  });
+
+  it("seeds the built-in template only once with nine shots", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const repository = new TemplateRepository(database);
+
+    ensureBuiltInTemplate(repository);
+    ensureBuiltInTemplate(repository);
+
+    expect(repository.list()).toHaveLength(1);
+    expect(repository.list()[0].shots).toHaveLength(9);
+    expect(repository.list()[0].shots.at(-1)?.role).toBe("cta");
   });
 });

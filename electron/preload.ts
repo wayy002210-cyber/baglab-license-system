@@ -48,6 +48,46 @@ const assetSchema = z.object({
   status: z.string(),
   errorMessage: z.string().nullable()
 });
+const templateShotInputSchema = z
+  .object({
+    role: z.enum(["hook", "problem", "proof", "solution", "cta", "custom"]),
+    assetCategoryId: z.string().uuid().nullable(),
+    copywriting: z.string(),
+    durationMode: z.enum(["voice", "fixed", "auto"]),
+    durationSec: z.number().positive().nullable(),
+    muteOriginal: z.boolean()
+  })
+  .superRefine((shot, context) => {
+    if (shot.durationMode === "fixed" && shot.durationSec === null) {
+      context.addIssue({
+        code: "custom",
+        message: "固定时长镜头必须设置时长",
+        path: ["durationSec"]
+      });
+    }
+  });
+const templateInputSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(500),
+  shots: z.array(templateShotInputSchema).min(1).max(30)
+});
+const videoTemplateSchema = templateInputSchema.extend({
+  id: z.string().uuid(),
+  canvas: z.object({
+    width: z.literal(1080),
+    height: z.literal(1920),
+    fps: z.literal(30)
+  }),
+  version: z.number().int().positive(),
+  shots: z.array(
+    templateShotInputSchema.extend({
+      id: z.string().uuid(),
+      index: z.number().int().nonnegative()
+    })
+  ),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
 
 contextBridge.exposeInMainWorld("autocut", {
   backendStatus: async () =>
@@ -107,5 +147,32 @@ contextBridge.exposeInMainWorld("autocut", {
   selectAndScanAssets: async () => {
     const result = await ipcRenderer.invoke("assets:selectAndScan");
     return result === null ? null : assetCategorySchema.parse(result);
-  }
+  },
+  listTemplates: async () =>
+    z.array(videoTemplateSchema).parse(await ipcRenderer.invoke("templates:list")),
+  createTemplate: async (input: unknown) =>
+    videoTemplateSchema.parse(
+      await ipcRenderer.invoke("templates:create", templateInputSchema.parse(input))
+    ),
+  updateTemplate: async (id: string, input: unknown) =>
+    videoTemplateSchema.parse(
+      await ipcRenderer.invoke(
+        "templates:update",
+        z.string().uuid().parse(id),
+        templateInputSchema.parse(input)
+      )
+    ),
+  duplicateTemplate: async (id: string) =>
+    videoTemplateSchema.parse(
+      await ipcRenderer.invoke("templates:duplicate", z.string().uuid().parse(id))
+    ),
+  deleteTemplate: async (id: string) =>
+    z
+      .object({ deleted: z.boolean() })
+      .parse(
+        await ipcRenderer.invoke(
+          "templates:delete",
+          z.string().uuid().parse(id)
+        )
+      )
 });
