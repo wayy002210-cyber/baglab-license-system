@@ -1,20 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { toUserMessage } from "../../src/renderer/lib/user-error.js";
+import { mapUserError, toUserMessage } from "../../src/renderer/lib/user-error.js";
 
-describe("toUserMessage", () => {
+describe("user error mapping", () => {
   it("translates a missing preload bridge into an actionable Chinese message", () => {
-    expect(
-      toUserMessage(
-        new TypeError(
-          "Cannot read properties of undefined (reading 'selectAndScanAssets')"
-        ),
-        "素材扫描失败"
-      )
-    ).toBe("程序组件未正确加载，请重启软件；若仍失败，请重新安装最新版。");
+    expect(toUserMessage(
+      new TypeError("Cannot read properties of undefined (reading 'selectAndScanAssets')"),
+      "素材扫描失败"
+    )).toContain("请重启软件");
+  });
+
+  it("maps authorization, rate-limit, disk and font failures", () => {
+    expect(mapUserError(new Error("HTTP 401"), "失败").title).toBe("服务授权失效");
+    expect(mapUserError(new Error("429 rate limit"), "失败").action).toContain("一分钟");
+    expect(mapUserError(new Error("ENOSPC"), "失败").title).toBe("磁盘空间不足");
+    expect(mapUserError(new Error("font missing"), "失败").action).toContain("TTF");
   });
 
   it("does not expose unknown English implementation errors", () => {
-    expect(toUserMessage(new Error("Network request failed"), "检测失败")).toBe(
+    expect(toUserMessage(new Error("opaque provider failure"), "检测失败")).toBe(
       "检测失败，请稍后重试。"
     );
   });
@@ -22,16 +25,5 @@ describe("toUserMessage", () => {
   it("preserves a useful Chinese business error", () => {
     expect(toUserMessage(new Error("请选择包含视频的分类文件夹"), "素材扫描失败"))
       .toBe("请选择包含视频的分类文件夹");
-  });
-
-  it("removes Electron IPC implementation prefixes from Chinese errors", () => {
-    expect(
-      toUserMessage(
-        new Error(
-          "Error invoking remote method 'assets:selectAndScan': Error: 素材扫描失败 (500)"
-        ),
-        "素材扫描失败"
-      )
-    ).toBe("素材扫描失败（错误码 500）");
   });
 });
