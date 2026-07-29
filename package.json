@@ -23,6 +23,7 @@
   "build": {
     "appId": "com.innovessel.autocut",
     "productName": "全自动混剪工作台",
+    "npmRebuild": false,
     "directories": { "output": "release" },
     "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
     "asarUnpack": ["node_modules/better-sqlite3/**/*", "node_modules/keytar/**/*"],

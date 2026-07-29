@@ -22,26 +22,39 @@ if (installed.status !== 0 && !existsSync(executable)) {
 if (!existsSync(executable)) throw new Error("Installed executable is missing");
 
 const child = spawn(executable, [], {
-  windowsHide: true,
+  windowsHide: false,
   stdio: ["ignore", "pipe", "pipe"]
 });
 let stderr = "";
 child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
-const outcome = await Promise.race([
-  new Promise((resolveResult) =>
-    child.once("exit", (code) => resolveResult({ exited: true, code }))
-  ),
-  new Promise((resolveResult) =>
-    setTimeout(() => resolveResult({ exited: false }), 10_000)
-  )
-]);
-if (outcome.exited) {
-  throw new Error(`Installed app exited early (${outcome.code}): ${stderr}`);
+try {
+  let visible = false;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (child.exitCode !== null) {
+      throw new Error(`Installed app exited early (${child.exitCode}): ${stderr}`);
+    }
+    const windowProbe = spawnSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-Command",
+        `(Get-Process -Id ${child.pid}).MainWindowHandle`
+      ],
+      { encoding: "utf8", windowsHide: true }
+    );
+    visible = Number(windowProbe.stdout.trim()) > 0;
+    if (visible) break;
+    await new Promise((resolveResult) => setTimeout(resolveResult, 500));
+  }
+  if (!visible) {
+    throw new Error(`Installed app did not display a visible window: ${stderr}`);
+  }
+  process.stdout.write("NSIS install and visible-window check passed\n");
+} finally {
+  if (child.pid) {
+    spawnSync("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+      windowsHide: true,
+      stdio: "ignore"
+    });
+  }
 }
-if (child.pid) {
-  spawnSync("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
-    windowsHide: true,
-    stdio: "ignore"
-  });
-}
-process.stdout.write("NSIS install and installed-app launch check passed\n");

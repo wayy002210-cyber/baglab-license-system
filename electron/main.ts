@@ -48,6 +48,7 @@ import {
   type PublishPlatform
 } from "./repositories/publish-repository.js";
 import { JsonLogger } from "./logger.js";
+import { reportStartupFailure } from "./startup.js";
 import { exportDiagnosticBundle } from "./diagnostics.js";
 import {
   SettingsRepository,
@@ -61,6 +62,16 @@ let database: Database.Database | null = null;
 let publishScheduler: ReturnType<typeof setInterval> | null = null;
 let logger: JsonLogger | null = null;
 let logPath = "";
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+app.on("second-instance", () => {
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+});
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "autocut-media",
@@ -375,6 +386,17 @@ function createWindow(): void {
     }
   });
   window.once("ready-to-show", () => window?.show());
+  window.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, validatedUrl) => {
+      logger?.write("error", "renderer.load_failed", {
+        errorCode,
+        errorDescription,
+        validatedUrl
+      });
+      window?.show();
+    }
+  );
   const developmentUrl = process.env.ELECTRON_RENDERER_URL;
   if (developmentUrl) {
     void window.loadURL(developmentUrl);
@@ -827,6 +849,13 @@ app.whenReady().then(async () => {
   publishScheduler = setInterval(() => void runNextPublishJob(), 15_000);
   void runNextPublishJob();
   createWindow();
+}).catch((error: unknown) => {
+  reportStartupFailure(
+    error,
+    logger,
+    (title, content) => dialog.showErrorBox(title, content)
+  );
+  app.quit();
 });
 
 app.on("window-all-closed", () => {
