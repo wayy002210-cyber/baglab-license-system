@@ -31,11 +31,34 @@ class SubtitleClip:
 
 
 @dataclass(frozen=True)
+class TitleClip:
+    start_sec: float
+    end_sec: float
+    text: str
+
+
+@dataclass(frozen=True)
+class TextStyle:
+    font_family: str = "Microsoft YaHei"
+    font_size: int = 58
+    primary_color: str = "#FFFFFF"
+    outline_color: str = "#101010"
+    outline_width: float = 4
+    shadow_color: str = "#80000000"
+    shadow_x: float = 1
+    shadow_y: float = 1
+    alignment: int = 2
+    margin_v: int = 170
+    font_path: Path | None = None
+
+
+@dataclass(frozen=True)
 class Project:
     output_path: Path
     video_clips: list[VideoClip]
     voice_clips: list[AudioClip] = field(default_factory=list)
     subtitles: list[SubtitleClip] = field(default_factory=list)
+    titles: list[TitleClip] = field(default_factory=list)
     bgm_path: Path | None = None
     width: int = 1080
     height: int = 1920
@@ -43,6 +66,8 @@ class Project:
     bgm_volume: float = 0.16
     video_bitrate_mbps: float = 8
     font_family: str = "Microsoft YaHei"
+    subtitle_style: TextStyle | None = None
+    title_style: TextStyle | None = None
 
     @property
     def duration_sec(self) -> float:
@@ -207,6 +232,9 @@ class Exporter:
                 project.output_path.with_suffix(".ass"),
                 project.subtitles,
                 font_family=project.font_family,
+                titles=project.titles,
+                subtitle_style=project.subtitle_style,
+                title_style=project.title_style,
             )
         selected_encoder = encoder or EncoderDetector(
             ffmpeg=self.ffmpeg, runner=self.runner
@@ -268,7 +296,21 @@ def write_ass_subtitles(
     subtitles: list[SubtitleClip],
     *,
     font_family: str = "Microsoft YaHei",
+    titles: list[TitleClip] | None = None,
+    subtitle_style: TextStyle | None = None,
+    title_style: TextStyle | None = None,
 ) -> None:
+    subtitle_style = subtitle_style or TextStyle(font_family=font_family)
+    title_style = title_style or TextStyle(
+        font_family=font_family,
+        font_size=82,
+        primary_color="#FFE600",
+        alignment=8,
+        margin_v=120,
+    )
+    titles = titles or []
+    subtitle_ass = _ass_style("Subtitle", subtitle_style)
+    title_ass = _ass_style("Title", title_style)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -277,18 +319,44 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Alignment, MarginL, MarginR, MarginV, Outline, Shadow
-Style: Default,{font_family},58,&H00FFFFFF,&H00101010,&H80000000,-1,2,80,80,170,4,1
+{subtitle_ass}
+{title_ass}
 
 [Events]
 Format: Layer, Start, End, Style, Text
 """
     lines = [
         f"Dialogue: 0,{_ass_time(item.start_sec)},{_ass_time(item.end_sec)},"
-        f"Default,{_escape_ass_text(item.text)}"
+        f"Subtitle,{_escape_ass_text(item.text)}"
         for item in subtitles
     ]
+    lines.extend(
+        f"Dialogue: 1,{_ass_time(item.start_sec)},{_ass_time(item.end_sec)},"
+        f"Title,{_escape_ass_text(item.text)}"
+        for item in titles
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _ass_style(name: str, style: TextStyle) -> str:
+    shadow = max(abs(style.shadow_x), abs(style.shadow_y))
+    return (
+        f"Style: {name},{style.font_family},{style.font_size},"
+        f"{_ass_color(style.primary_color)},{_ass_color(style.outline_color)},"
+        f"{_ass_color(style.shadow_color)},-1,{style.alignment},80,80,"
+        f"{style.margin_v},{style.outline_width:g},{shadow:g}"
+    )
+
+
+def _ass_color(color: str) -> str:
+    value = color.removeprefix("#")
+    if len(value) == 6:
+        value = "00" + value
+    if len(value) != 8:
+        raise ValueError(f"Invalid text color: {color}")
+    red, green, blue, alpha = value[0:2], value[2:4], value[4:6], value[6:8]
+    return f"&H{alpha}{blue}{green}{red}"
 
 
 def _ass_time(seconds: float) -> str:

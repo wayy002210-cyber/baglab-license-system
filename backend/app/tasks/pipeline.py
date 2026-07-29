@@ -18,6 +18,7 @@ from app.timeline.exporter import (
     Project,
     SubtitleClip,
     VideoClip,
+    TextStyle,
 )
 from app.tasks.worker import GenerationWorker, TaskExecutionRequest
 from app.voice.service import SynthesisRequest
@@ -243,6 +244,8 @@ class GenerationPipeline:
                     "fontFamily", "Microsoft YaHei"
                 )
             ),
+            subtitle_style=_text_style(request.snapshot.get("subtitleStyle")),
+            title_style=_text_style(request.snapshot.get("titleStyle")),
         )
         return {**context, "project": project}
 
@@ -257,3 +260,21 @@ class GenerationPipeline:
             cancel_event=self.cancel_events[request.task_id],
         )
         return context
+
+
+def _text_style(value: dict[str, Any] | None) -> TextStyle | None:
+    if not value:
+        return None
+    return TextStyle(
+        font_family=str(value.get("fontFamily", "Microsoft YaHei")),
+        font_size=int(value.get("fontSize", 58)),
+        primary_color=str(value.get("primaryColor", "#FFFFFF")),
+        outline_color=str(value.get("outlineColor", "#101010")),
+        outline_width=float(value.get("outlineWidth", 4)),
+        shadow_color=str(value.get("shadowColor", "#80000000")),
+        shadow_x=float(value.get("shadowX", 1)),
+        shadow_y=float(value.get("shadowY", 1)),
+        alignment=int(value.get("alignment", 2)),
+        margin_v=int(value.get("marginV", 170)),
+        font_path=Path(value["fontPath"]) if value.get("fontPath") else None,
+    )

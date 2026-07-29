@@ -12,6 +12,8 @@ from app.timeline.exporter import (
     VideoClip,
     write_ass_subtitles,
     ExportCanceledError,
+    TextStyle,
+    TitleClip,
 )
 
 
@@ -91,6 +93,45 @@ def test_ass_writer_escapes_user_text_and_uses_portrait_canvas(tmp_path: Path) -
     assert "PlayResY: 1920" in content
     assert r"价格\{透明\}\\下一行" in content
     assert "0:00:01.25,0:00:03.50" in content
+
+
+def test_ass_writer_supports_independent_title_and_subtitle_styles(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "styled.ass"
+    write_ass_subtitles(
+        output,
+        [SubtitleClip(start_sec=0, end_sec=2, text="正文字幕")],
+        titles=[TitleClip(start_sec=0, end_sec=1.5, text="顶部标题")],
+        subtitle_style=TextStyle(
+            font_family="Microsoft YaHei",
+            font_size=66,
+            primary_color="#FFFFFF",
+            outline_color="#000000",
+            outline_width=5,
+            shadow_color="#66000000",
+            shadow_x=2,
+            shadow_y=3,
+            alignment=2,
+            margin_v=180,
+        ),
+        title_style=TextStyle(
+            font_family="Microsoft YaHei",
+            font_size=82,
+            primary_color="#FFE600",
+            outline_color="#111111",
+            outline_width=3,
+            shadow_color="#66000000",
+            shadow_x=1,
+            shadow_y=2,
+            alignment=8,
+            margin_v=120,
+        ),
+    )
+    content = output.read_text(encoding="utf-8")
+    assert "Style: Subtitle,Microsoft YaHei,66" in content
+    assert "Style: Title,Microsoft YaHei,82" in content
+    assert "Dialogue: 1,0:00:00.00,0:00:01.50,Title,顶部标题" in content
 
 
 def test_encoder_detector_prefers_available_hardware_in_priority_order() -> None:
