@@ -123,6 +123,25 @@ declare global {
       }): Promise<GenerationTask[]>;
       cancelTask(id: string): Promise<GenerationTask>;
       retryTask(id: string): Promise<GenerationTask>;
+      listPublishAccounts(): Promise<PublishAccount[]>;
+      createPublishAccount(input: {
+        name: string;
+        platform: "douyin" | "xiaohongshu";
+      }): Promise<PublishAccount>;
+      setPublishAccountStatus(
+        id: string,
+        status: PublishAccount["linkStatus"]
+      ): Promise<PublishAccount>;
+      deletePublishAccount(id: string): Promise<{ deleted: boolean }>;
+      listPublishJobs(): Promise<PublishJob[]>;
+      createPublishJob(input: {
+        taskId: string;
+        accountId: string;
+        title: string;
+        topics: string[];
+        scheduledAt: string | null;
+        coverPath?: string | null;
+      }): Promise<PublishJob>;
     };
   }
 }
@@ -176,6 +195,24 @@ type GenerationTask = {
   startedAt: string | null;
   completedAt: string | null;
   updatedAt: string;
+};
+type PublishAccount = {
+  id: string;
+  name: string;
+  platform: "douyin" | "xiaohongshu";
+  userDataDir: string;
+  linkStatus: "unknown" | "connected" | "expired" | "needs_user";
+  lastCheckedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+type PublishJob = {
+  id: string; taskId: string; accountId: string; title: string; topics: string[];
+  coverPath: string | null;
+  status: "pending" | "scheduled" | "publishing" | "published" | "failed" | "needs_user" | "canceled";
+  scheduledAt: string | null; startedAt: string | null; completedAt: string | null;
+  errorMessage: string | null; screenshotPath: string | null; attemptCount: number;
+  idempotencyKey: string; createdAt: string; updatedAt: string;
 };
 
 export {};

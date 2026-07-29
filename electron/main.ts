@@ -32,6 +32,10 @@ import {
   type TaskStatus
 } from "./repositories/task-repository.js";
 import { SseParser } from "./sse-parser.js";
+import {
+  PublishRepository,
+  type PublishPlatform
+} from "./repositories/publish-repository.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -56,6 +60,10 @@ function templateRepository(): TemplateRepository {
 function taskRepository(): TaskRepository {
   if (!database) throw new Error("Database is not ready");
   return new TaskRepository(database);
+}
+function publishRepository(): PublishRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new PublishRepository(database);
 }
 
 async function runGenerationTask(task: GenerationTask): Promise<void> {
@@ -353,6 +361,53 @@ ipcMain.handle("tasks:retry", (_event, id: string) => {
   void runGenerationTask(task);
   return task;
 });
+ipcMain.handle("publishAccounts:list", () =>
+  publishRepository().listAccounts()
+);
+ipcMain.handle(
+  "publishAccounts:create",
+  (_event, input: { name: string; platform: PublishPlatform }) =>
+    publishRepository().createAccount({
+      ...input,
+      userDataDir: join(
+        app.getPath("userData"),
+        "browser-profiles",
+        input.platform,
+        randomBytes(12).toString("hex")
+      )
+    })
+);
+ipcMain.handle(
+  "publishAccounts:setStatus",
+  (_event, id: string, status: "unknown" | "connected" | "expired" | "needs_user") =>
+    publishRepository().updateAccountStatus(id, status)
+);
+ipcMain.handle("publishAccounts:delete", (_event, id: string) => ({
+  deleted: publishRepository().deleteAccount(id)
+}));
+ipcMain.handle("publishJobs:list", () => publishRepository().listJobs());
+ipcMain.handle(
+  "publishJobs:create",
+  (
+    _event,
+    input: {
+      taskId: string;
+      accountId: string;
+      title: string;
+      topics: string[];
+      scheduledAt: string | null;
+      coverPath?: string | null;
+    }
+  ) =>
+    publishRepository().createJob({
+      ...input,
+      idempotencyKey: [
+        input.taskId,
+        input.accountId,
+        input.scheduledAt ?? "now"
+      ].join(":")
+    })
+);
 ipcMain.handle("copywriting:rewrite", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");

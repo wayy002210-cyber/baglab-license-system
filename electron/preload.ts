@@ -169,6 +169,29 @@ const createTaskBatchSchema = z.object({
   seed: z.number().int(),
   snapshot: z.record(z.string(), z.unknown())
 });
+const publishPlatformSchema = z.enum(["douyin", "xiaohongshu"]);
+const accountLinkStatusSchema = z.enum([
+  "unknown", "connected", "expired", "needs_user"
+]);
+const publishAccountSchema = z.object({
+  id: z.string().uuid(), name: z.string(), platform: publishPlatformSchema,
+  userDataDir: z.string(), linkStatus: accountLinkStatusSchema,
+  lastCheckedAt: z.string().nullable(), createdAt: z.string(), updatedAt: z.string()
+});
+const publishJobSchema = z.object({
+  id: z.string().uuid(), taskId: z.string(), accountId: z.string().uuid(),
+  title: z.string(), topics: z.array(z.string()), coverPath: z.string().nullable(),
+  status: z.enum(["pending", "scheduled", "publishing", "published", "failed", "needs_user", "canceled"]),
+  scheduledAt: z.string().nullable(), startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(), errorMessage: z.string().nullable(),
+  screenshotPath: z.string().nullable(), attemptCount: z.number().int().nonnegative(),
+  idempotencyKey: z.string(), createdAt: z.string(), updatedAt: z.string()
+});
+const createPublishJobSchema = z.object({
+  taskId: z.string().min(1), accountId: z.string().uuid(), title: z.string().trim().min(1),
+  topics: z.array(z.string()), scheduledAt: z.string().nullable(),
+  coverPath: z.string().nullable().optional()
+});
 
 contextBridge.exposeInMainWorld("autocut", {
   backendStatus: async () =>
@@ -292,5 +315,27 @@ contextBridge.exposeInMainWorld("autocut", {
   retryTask: async (id: string) =>
     taskSchema.parse(
       await ipcRenderer.invoke("tasks:retry", z.string().uuid().parse(id))
-    )
+    ),
+  listPublishAccounts: async () => z.array(publishAccountSchema).parse(
+    await ipcRenderer.invoke("publishAccounts:list")
+  ),
+  createPublishAccount: async (input: unknown) => publishAccountSchema.parse(
+    await ipcRenderer.invoke("publishAccounts:create", z.object({
+      name: z.string().trim().min(1), platform: publishPlatformSchema
+    }).parse(input))
+  ),
+  setPublishAccountStatus: async (id: string, status: unknown) =>
+    publishAccountSchema.parse(await ipcRenderer.invoke(
+      "publishAccounts:setStatus", z.string().uuid().parse(id),
+      accountLinkStatusSchema.parse(status)
+    )),
+  deletePublishAccount: async (id: string) => z.object({ deleted: z.boolean() }).parse(
+    await ipcRenderer.invoke("publishAccounts:delete", z.string().uuid().parse(id))
+  ),
+  listPublishJobs: async () => z.array(publishJobSchema).parse(
+    await ipcRenderer.invoke("publishJobs:list")
+  ),
+  createPublishJob: async (input: unknown) => publishJobSchema.parse(
+    await ipcRenderer.invoke("publishJobs:create", createPublishJobSchema.parse(input))
+  )
 });
