@@ -805,6 +805,44 @@ ipcMain.handle("copywriting:rewrite", async (_event, payload: unknown) => {
   }
   return result;
 });
+async function postCopywriting(
+  path: "topics" | "generate" | "compliance",
+  payload: unknown,
+  includeApiKey: boolean
+): Promise<unknown> {
+  if (backendState.status !== "ready") {
+    throw new Error("本地 AI 服务尚未就绪，请稍后重试");
+  }
+  const apiKey = includeApiKey ? await credentials.get("bailian") : null;
+  if (includeApiKey && !apiKey) {
+    throw new Error("请先在系统设置中配置百炼 API Key");
+  }
+  const response = await fetch(`${backendState.baseUrl}/copywriting/${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Autocut-Token": backendState.token,
+      ...(apiKey ? { "X-Bailian-Key": apiKey } : {})
+    },
+    body: JSON.stringify(payload)
+  });
+  const result = (await response.json()) as { detail?: string };
+  if (!response.ok) {
+    throw new Error(
+      result.detail || `文案服务请求失败 (${response.status})，请稍后重试`
+    );
+  }
+  return result;
+}
+ipcMain.handle("copywriting:topics", (_event, payload: unknown) =>
+  postCopywriting("topics", payload, true)
+);
+ipcMain.handle("copywriting:generate", (_event, payload: unknown) =>
+  postCopywriting("generate", payload, true)
+);
+ipcMain.handle("copywriting:compliance", (_event, payload: unknown) =>
+  postCopywriting("compliance", payload, false)
+);
 ipcMain.handle("voices:list", async () => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");

@@ -112,6 +112,25 @@ declare global {
           muteOriginal: boolean;
         }>;
       }>;
+      generateTopics(input: CopywritingContext): Promise<{
+        topics: CopywritingTopic[];
+      }>;
+      generateCopywriting(
+        input: CopywritingContext & {
+          bannedWords: string[];
+          topic: string;
+          minLength: number;
+          maxLength: number;
+        }
+      ): Promise<{ text: string }>;
+      checkCopywritingCompliance(input: {
+        text: string;
+        personaBannedWords: string[];
+      }): Promise<{
+        originalText: string;
+        issues: ComplianceIssue[];
+        disclaimer: string;
+      }>;
       listVoices(): Promise<
         Array<{ voiceId: string; name: string; kind: string }>
       >;
@@ -261,6 +280,29 @@ type CopyModelSettings = {
   defaultModel: string;
   temperature: number;
   candidateModels: string[];
+};
+type CopywritingContext = {
+  model: string;
+  personaName: string;
+  industry: string;
+  brandFacts: string[];
+  tone: string;
+  cta: string;
+  referenceScripts: string[];
+};
+type CopywritingTopic = {
+  id: string;
+  title: string;
+  angle: string;
+  hook: string;
+};
+type ComplianceIssue = {
+  term: string;
+  start: number;
+  end: number;
+  riskType: string;
+  explanation: string;
+  suggestion: string;
 };
 type ReferenceScriptInput = {
   title: string;

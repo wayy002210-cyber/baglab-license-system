@@ -21,6 +21,15 @@ from app.copywriting.service import (
     RewriteResult,
     StructuredOutputError,
 )
+from app.copywriting.compliance import ComplianceRequest, ComplianceResult
+from app.copywriting.topic_service import (
+    ContentCreationService,
+    CopywritingGenerationRequest,
+    CopywritingResult,
+    TopicGenerationRequest,
+    TopicResult,
+    TopicService,
+)
 from app.voice.minimax import MiniMaxTTS
 from app.voice.service import SynthesisRequest, SynthesisResult, VoiceService
 from app.timeline.exporter import EncoderDetector, Exporter
@@ -63,6 +72,18 @@ class Copywriter(Protocol):
     def rewrite(
         self, *, api_key: str, model: str, request: RewriteRequest
     ) -> RewriteResult: ...
+
+
+class ContentCreator(Protocol):
+    def generate_topics(
+        self, *, api_key: str, request: TopicGenerationRequest
+    ) -> TopicResult: ...
+
+    def generate_copywriting(
+        self, *, api_key: str, request: CopywritingGenerationRequest
+    ) -> CopywritingResult: ...
+
+    def check_compliance(self, request: ComplianceRequest) -> ComplianceResult: ...
 
 
 class VoiceProvider(Protocol):
@@ -115,6 +136,7 @@ def create_app(
     session_token: str | None = None,
     asset_scanner: Scanner | None = None,
     copywriting_service: Copywriter | None = None,
+    content_creation_service: ContentCreator | None = None,
     voice_service: VoiceProvider | None = None,
     encoder_detector: VideoEncoderDetector | None = None,
     task_runtime: GenerationTaskRuntime | None = None,
@@ -140,6 +162,9 @@ def create_app(
         ),
     )
     copywriter = copywriting_service or CopywritingService(BailianChat())
+    content_creator = content_creation_service or ContentCreationService(
+        TopicService(BailianChat())
+    )
     voice = voice_service or VoiceService(
         MiniMaxTTS(),
         cache_dir=Path(
@@ -304,6 +329,52 @@ def create_app(
             )
         except StructuredOutputError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.post(
+        "/copywriting/topics",
+        response_model=TopicResult,
+        dependencies=[Depends(authorize)],
+    )
+    def generate_topics(
+        payload: TopicGenerationRequest,
+        x_bailian_key: str | None = Header(default=None),
+    ) -> TopicResult:
+        if not x_bailian_key:
+            raise HTTPException(status_code=401, detail="请先配置百炼 API Key")
+        try:
+            return content_creator.generate_topics(
+                api_key=x_bailian_key, request=payload
+            )
+        except StructuredOutputError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.post(
+        "/copywriting/generate",
+        response_model=CopywritingResult,
+        dependencies=[Depends(authorize)],
+    )
+    def generate_copywriting(
+        payload: CopywritingGenerationRequest,
+        x_bailian_key: str | None = Header(default=None),
+    ) -> CopywritingResult:
+        if not x_bailian_key:
+            raise HTTPException(status_code=401, detail="请先配置百炼 API Key")
+        try:
+            return content_creator.generate_copywriting(
+                api_key=x_bailian_key, request=payload
+            )
+        except StructuredOutputError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.post(
+        "/copywriting/compliance",
+        response_model=ComplianceResult,
+        dependencies=[Depends(authorize)],
+    )
+    def check_copywriting_compliance(
+        payload: ComplianceRequest,
+    ) -> ComplianceResult:
+        return content_creator.check_compliance(payload)
 
     @app.get("/voices", dependencies=[Depends(authorize)])
     def list_voices(

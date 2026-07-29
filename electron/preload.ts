@@ -227,6 +227,40 @@ const referenceScriptSchema = referenceScriptInputSchema.extend({
   createdAt: z.string(),
   updatedAt: z.string()
 });
+const contentContextSchema = z.object({
+  model: z.string().trim().min(1),
+  personaName: z.string().trim().min(1),
+  industry: z.string(),
+  brandFacts: z.array(z.string()),
+  tone: z.string(),
+  cta: z.string(),
+  referenceScripts: z.array(z.string()).max(5)
+});
+const topicSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  angle: z.string().min(1),
+  hook: z.string().min(1)
+});
+const topicRequestSchema = contentContextSchema;
+const generateCopywritingRequestSchema = contentContextSchema.extend({
+  bannedWords: z.array(z.string()),
+  topic: z.string().trim().min(1),
+  minLength: z.number().int().min(50).max(1000),
+  maxLength: z.number().int().min(200).max(2000)
+});
+const complianceIssueSchema = z.object({
+  term: z.string(),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  riskType: z.string(),
+  explanation: z.string(),
+  suggestion: z.string()
+});
+const complianceRequestSchema = z.object({
+  text: z.string().min(1).max(20_000),
+  personaBannedWords: z.array(z.string())
+});
 
 contextBridge.exposeInMainWorld("autocut", {
   backendStatus: async () =>
@@ -375,6 +409,37 @@ contextBridge.exposeInMainWorld("autocut", {
         await ipcRenderer.invoke(
           "copywriting:rewrite",
           rewriteRequestSchema.parse(input)
+        )
+      ),
+  generateTopics: async (input: unknown) =>
+    z
+      .object({ topics: z.array(topicSchema).length(5) })
+      .parse(
+        await ipcRenderer.invoke(
+          "copywriting:topics",
+          topicRequestSchema.parse(input)
+        )
+      ),
+  generateCopywriting: async (input: unknown) =>
+    z
+      .object({ text: z.string().min(1) })
+      .parse(
+        await ipcRenderer.invoke(
+          "copywriting:generate",
+          generateCopywritingRequestSchema.parse(input)
+        )
+      ),
+  checkCopywritingCompliance: async (input: unknown) =>
+    z
+      .object({
+        originalText: z.string(),
+        issues: z.array(complianceIssueSchema),
+        disclaimer: z.string()
+      })
+      .parse(
+        await ipcRenderer.invoke(
+          "copywriting:compliance",
+          complianceRequestSchema.parse(input)
         )
       ),
   listVoices: async () =>

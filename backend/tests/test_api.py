@@ -3,6 +3,8 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.media.asset_scanner import ScanResult, ScannedAsset
 from app.copywriting.service import RewriteResult
+from app.copywriting.compliance import ComplianceResult
+from app.copywriting.topic_service import CopywritingResult, TopicResult
 
 
 def test_health_requires_session_token() -> None:
@@ -112,3 +114,84 @@ def test_copywriting_rewrite_requires_bailian_key() -> None:
 
     assert response.status_code == 200
     assert response.json()["shots"][0]["copywriting"] == "十年工厂经验，帮你少走弯路。"
+
+
+def test_content_creation_endpoints_use_selected_bailian_model() -> None:
+    class ContentCreation:
+        def generate_topics(self, *, api_key, request):
+            assert api_key == "bailian-secret"
+            assert request.model == "deepseek-v3"
+            return TopicResult(
+                topics=[
+                    {
+                        "id": str(index),
+                        "title": f"选题{index}",
+                        "angle": f"角度{index}",
+                        "hook": f"钩子{index}",
+                    }
+                    for index in range(5)
+                ]
+            )
+
+        def generate_copywriting(self, *, api_key, request):
+            assert api_key == "bailian-secret"
+            return CopywritingResult(text="工" * 220)
+
+        def check_compliance(self, request):
+            return ComplianceResult(
+                originalText=request.text,
+                issues=[],
+                disclaimer="风险提示仅用于内容检查，不构成法律结论。",
+            )
+
+    client = TestClient(
+        create_app(
+            session_token="secret",
+            content_creation_service=ContentCreation(),
+        )
+    )
+    headers = {
+        "X-Autocut-Token": "secret",
+        "X-Bailian-Key": "bailian-secret",
+    }
+    topic_payload = {
+        "model": "deepseek-v3",
+        "personaName": "袋研官",
+        "industry": "工厂",
+        "brandFacts": ["自有工厂"],
+        "tone": "专业",
+        "cta": "欢迎咨询",
+        "referenceScripts": [],
+    }
+
+    assert client.post(
+        "/copywriting/topics",
+        headers={"X-Autocut-Token": "secret"},
+        json=topic_payload,
+    ).status_code == 401
+    topics = client.post(
+        "/copywriting/topics", headers=headers, json=topic_payload
+    )
+    assert topics.status_code == 200
+    assert len(topics.json()["topics"]) == 5
+
+    generated = client.post(
+        "/copywriting/generate",
+        headers=headers,
+        json={
+            **topic_payload,
+            "topic": "工厂获客",
+            "bannedWords": [],
+            "minLength": 200,
+            "maxLength": 1000,
+        },
+    )
+    assert generated.status_code == 200
+    assert len(generated.json()["text"]) == 220
+
+    compliance = client.post(
+        "/copywriting/compliance",
+        headers={"X-Autocut-Token": "secret"},
+        json={"text": "普通文案", "personaBannedWords": []},
+    )
+    assert compliance.status_code == 200
