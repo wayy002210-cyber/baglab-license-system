@@ -1,14 +1,16 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 const token = "packaged-backend-verification-token";
 const port = 43199;
-const executable = join(
-  process.cwd(),
-  "build-resources",
-  "backend",
-  "autocut-backend.exe"
-);
+const executable =
+  process.env.AUTOCUT_BACKEND_VERIFY_EXECUTABLE ??
+  join(
+    process.cwd(),
+    "build-resources",
+    "backend",
+    "autocut-backend.exe"
+  );
 const child = spawn(executable, [], {
   env: {
     ...process.env,
@@ -17,6 +19,10 @@ const child = spawn(executable, [], {
   },
   windowsHide: true,
   stdio: ["ignore", "pipe", "pipe"]
+});
+let stderr = "";
+child.stderr.on("data", (chunk) => {
+  stderr += chunk.toString();
 });
 
 try {
@@ -36,11 +42,15 @@ try {
       // One-file PyInstaller startup can take several seconds.
     }
   }
-  if (!verified) throw new Error("Packaged backend health check failed");
+  if (!verified) {
+    throw new Error(
+      `Packaged backend health check failed: ${stderr.trim() || "no stderr"}`
+    );
+  }
   process.stdout.write("Packaged backend health check passed\n");
 } finally {
   if (child.pid) {
-    spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+    spawnSync("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
       windowsHide: true,
       stdio: "ignore"
     });

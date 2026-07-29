@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 const executable = join(
@@ -27,7 +27,7 @@ if (outcome.exited) {
   throw new Error(`Packaged app exited early (${outcome.code}): ${stderr}`);
 }
 if (child.pid) {
-  spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+  spawnSync("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
     windowsHide: true,
     stdio: "ignore"
   });

@@ -39,7 +39,7 @@ if (outcome.exited) {
   throw new Error(`Installed app exited early (${outcome.code}): ${stderr}`);
 }
 if (child.pid) {
-  spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+  spawnSync("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
     windowsHide: true,
     stdio: "ignore"
   });
