@@ -18,4 +18,11 @@ describe("redactSensitive", () => {
     expect(redactSensitive("request Authorization: Bearer abc.def.ghi failed"))
       .toBe("request Authorization: [REDACTED] failed");
   });
+
+  it("serializes error name and message for diagnostics", () => {
+    expect(redactSensitive(new Error("encoder unavailable"))).toEqual({
+      name: "Error",
+      message: "encoder unavailable"
+    });
+  });
 });

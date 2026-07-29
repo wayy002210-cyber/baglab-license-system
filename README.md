@@ -22,9 +22,19 @@ npm run dist:win
 
 安装包输出到 `release/AutoCut-Studio-0.1.0-x64.exe`。安装包自带 Python 后端、FFmpeg、ffprobe 与 Chromium。
 
+最终离线验收使用：
+
+```powershell
+npm run check
+node scripts/verify-packaged-backend.mjs
+node scripts/verify-unpacked-app.mjs
+node scripts/verify-installer.mjs
+```
+
 详细信息见：
 
 - [开发说明](docs/开发说明.md)
 - [架构说明](docs/架构说明.md)
 - [用户操作手册](docs/用户操作手册.md)
 - [故障排查手册](docs/故障排查手册.md)
+- [外部服务验收清单](docs/外部服务验收清单.md)

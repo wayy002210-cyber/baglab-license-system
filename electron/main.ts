@@ -98,6 +98,7 @@ function settingsRepository(): SettingsRepository {
 }
 
 async function runGenerationTask(task: GenerationTask): Promise<void> {
+  logger?.write("info", "generation.start", { taskId: task.id });
   if (backendState.status !== "ready") {
     taskRepository().transition(task.id, "failed", {
       errorCode: "BACKEND_UNAVAILABLE",
@@ -150,6 +151,7 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
     const reader = stream.body.getReader();
     const decoder = new TextDecoder();
     const parser = new SseParser();
+    let lastStatus: TaskStatus | null = null;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -167,6 +169,20 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
           errorCode: payload.errorCode ?? undefined,
           errorMessage: payload.errorMessage ?? undefined
         });
+        if (payload.status !== lastStatus) {
+          logger?.write(
+            payload.status === "failed" ? "error" : "info",
+            "generation.stage",
+            {
+              taskId: task.id,
+              status: payload.status,
+              progress: payload.progress,
+              errorCode: payload.errorCode,
+              errorMessage: payload.errorMessage
+            }
+          );
+          lastStatus = payload.status;
+        }
       }
     }
   } catch (error) {
@@ -176,6 +192,10 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
         errorCode: "WORKER_CONNECTION_FAILED",
         errorMessage: error instanceof Error ? error.message : "任务执行失败"
       });
+      logger?.write("error", "generation.connection_failed", {
+        taskId: task.id,
+        error
+      });
     }
   }
 }
@@ -184,12 +204,18 @@ async function runNextPublishJob(): Promise<void> {
   if (backendState.status !== "ready") return;
   const job = publishRepository().claimNextDue(new Date().toISOString());
   if (!job) return;
+  logger?.write("info", "publish.claimed", {
+    jobId: job.id,
+    accountId: job.accountId,
+    taskId: job.taskId
+  });
   const account = publishRepository().getAccount(job.accountId);
   const task = taskRepository().get(job.taskId);
   if (!account || !task?.outputPath || !existsSync(task.outputPath)) {
     publishRepository().finishJob(job.id, "failed", {
       errorMessage: "发布账号或成片文件不存在"
     });
+    logger?.write("error", "publish.invalid_input", { jobId: job.id });
     return;
   }
   try {
@@ -225,6 +251,16 @@ async function runNextPublishJob(): Promise<void> {
       errorMessage: result.errorMessage ?? undefined,
       screenshotPath: result.screenshotPath ?? undefined
     });
+    logger?.write(
+      result.status === "published" ? "info" : "warn",
+      "publish.finished",
+      {
+        jobId: job.id,
+        status: result.status,
+        errorMessage: result.errorMessage,
+        screenshotPath: result.screenshotPath
+      }
+    );
     if (result.status === "needs_user") {
       publishRepository().updateAccountStatus(account.id, "needs_user");
     }
@@ -232,6 +268,7 @@ async function runNextPublishJob(): Promise<void> {
     publishRepository().finishJob(job.id, "failed", {
       errorMessage: error instanceof Error ? error.message : "发布失败"
     });
+    logger?.write("error", "publish.failed", { jobId: job.id, error });
   }
 }
 let backendState:
