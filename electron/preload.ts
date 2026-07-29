@@ -340,5 +340,8 @@ contextBridge.exposeInMainWorld("autocut", {
   ),
   createPublishJob: async (input: unknown) => publishJobSchema.parse(
     await ipcRenderer.invoke("publishJobs:create", createPublishJobSchema.parse(input))
+  ),
+  exportDiagnostics: async () => z.string().nullable().parse(
+    await ipcRenderer.invoke("diagnostics:export")
   )
 });

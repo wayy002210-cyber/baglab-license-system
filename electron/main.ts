@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { basename, join, resolve } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { ChildProcess } from "node:child_process";
 import Database from "better-sqlite3";
 import keytar from "keytar";
@@ -37,11 +37,15 @@ import {
   PublishRepository,
   type PublishPlatform
 } from "./repositories/publish-repository.js";
+import { JsonLogger } from "./logger.js";
+import { exportDiagnosticBundle } from "./diagnostics.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
 let database: Database.Database | null = null;
 let publishScheduler: ReturnType<typeof setInterval> | null = null;
+let logger: JsonLogger | null = null;
+let logPath = "";
 const credentials = new CredentialStore(keytar);
 
 function personaRepository(): PersonaRepository {
@@ -492,6 +496,23 @@ ipcMain.handle(
       ].join(":")
     })
 );
+ipcMain.handle("diagnostics:export", async () => {
+  if (!window || !database) throw new Error("应用尚未就绪");
+  const selection = await dialog.showSaveDialog(window, {
+    title: "导出脱敏诊断包",
+    defaultPath: `autocut-diagnostics-${Date.now()}.json.gz`,
+    filters: [{ name: "Gzip JSON", extensions: ["gz"] }]
+  });
+  if (selection.canceled || !selection.filePath) return null;
+  const logs = existsSync(logPath)
+    ? readFileSync(logPath, "utf8").split(/\r?\n/).slice(-2000)
+    : [];
+  exportDiagnosticBundle(database, selection.filePath, {
+    applicationVersion: app.getVersion(),
+    logs
+  });
+  return selection.filePath;
+});
 ipcMain.handle("copywriting:rewrite", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");
@@ -560,6 +581,9 @@ ipcMain.handle(
 );
 
 app.whenReady().then(async () => {
+  logPath = join(app.getPath("userData"), "logs", "electron.jsonl");
+  logger = new JsonLogger(logPath);
+  logger.write("info", "application.start", { version: app.getVersion() });
   database = new Database(resolve(app.getPath("userData"), "autocut.sqlite3"));
   applyMigrations(database);
   ensureBuiltInTemplate(templateRepository());

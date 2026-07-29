@@ -34,6 +34,11 @@ async function clear(name: "bailian" | "minimax"): Promise<void> {
   ElMessage.success("凭据已清除");
 }
 
+async function exportDiagnostics(): Promise<void> {
+  const path = await window.autocut.exportDiagnostics();
+  if (path) ElMessage.success(`诊断包已导出：${path}`);
+}
+
 onMounted(loadStatus);
 </script>
 
@@ -126,6 +131,18 @@ onMounted(loadStatus);
           :closable="false"
           show-icon
         />
+      </article>
+      <article class="surface settings-card">
+        <header>
+          <div class="settings-icon"><el-icon><Monitor /></el-icon></div>
+          <div>
+            <h3>故障诊断</h3>
+            <p>导出脱敏日志与任务元数据，不包含密钥、Cookie 或任务快照</p>
+          </div>
+        </header>
+        <el-button type="primary" plain @click="exportDiagnostics">
+          导出诊断包
+        </el-button>
       </article>
     </section>
   </div>

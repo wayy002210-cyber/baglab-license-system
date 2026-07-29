@@ -143,6 +143,7 @@ declare global {
         scheduledAt: string | null;
         coverPath?: string | null;
       }): Promise<PublishJob>;
+      exportDiagnostics(): Promise<string | null>;
     };
   }
 }
