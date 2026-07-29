@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
-from typing import Protocol
+from typing import AsyncIterator, Protocol
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from app.media.asset_scanner import AssetScanner, Ffprobe, ScanResult
 from app.copywriting.bailian import BailianChat
@@ -17,6 +19,12 @@ from app.copywriting.service import (
 from app.voice.minimax import MiniMaxTTS
 from app.voice.service import SynthesisRequest, SynthesisResult, VoiceService
 from app.timeline.exporter import EncoderDetector
+from app.tasks.runtime import (
+    TaskAlreadyRunningError,
+    TaskNotFoundError,
+    TaskRuntime,
+)
+from app.tasks.worker import GenerationWorker, TaskEvent, TaskExecutionRequest
 
 
 class CreateTaskRequest(BaseModel):
@@ -50,12 +58,27 @@ class VideoEncoderDetector(Protocol):
     def detect(self) -> str: ...
 
 
+class GenerationTaskRuntime(Protocol):
+    async def start(self, request: TaskExecutionRequest) -> None: ...
+
+    def latest(self, task_id: str) -> TaskEvent: ...
+
+    def cancel(self, task_id: str) -> None: ...
+
+    async def retry(self, task_id: str) -> None: ...
+
+    def stream(
+        self, task_id: str, cursor: int = 0
+    ) -> AsyncIterator[tuple[int, TaskEvent]]: ...
+
+
 def create_app(
     session_token: str | None = None,
     asset_scanner: Scanner | None = None,
     copywriting_service: Copywriter | None = None,
     voice_service: VoiceProvider | None = None,
     encoder_detector: VideoEncoderDetector | None = None,
+    task_runtime: GenerationTaskRuntime | None = None,
 ) -> FastAPI:
     token = session_token or os.environ.get("AUTOCUT_SESSION_TOKEN")
     if not token:
@@ -71,6 +94,7 @@ def create_app(
         ),
     )
     video_encoder_detector = encoder_detector or EncoderDetector()
+    generation_runtime = task_runtime or TaskRuntime(GenerationWorker(stages={}))
 
     def authorize(x_autocut_token: str | None = Header(default=None)) -> None:
         if x_autocut_token != token:
@@ -91,6 +115,90 @@ def create_app(
     @app.post("/tasks", status_code=201, dependencies=[Depends(authorize)])
     def create_task(payload: CreateTaskRequest) -> dict[str, object]:
         return {"status": "queued", "count": payload.count}
+
+    @app.post(
+        "/tasks/{task_id}/run",
+        status_code=202,
+        dependencies=[Depends(authorize)],
+    )
+    async def run_task(
+        task_id: str, payload: TaskExecutionRequest
+    ) -> dict[str, str]:
+        if task_id != payload.task_id:
+            raise HTTPException(status_code=400, detail="Task ID mismatch")
+        try:
+            await generation_runtime.start(payload)
+        except TaskAlreadyRunningError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return {"status": "accepted", "taskId": task_id}
+
+    @app.get(
+        "/tasks/{task_id}",
+        response_model=TaskEvent,
+        dependencies=[Depends(authorize)],
+    )
+    def task_status(task_id: str) -> TaskEvent:
+        try:
+            return generation_runtime.latest(task_id)
+        except TaskNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post(
+        "/tasks/{task_id}/cancel",
+        status_code=202,
+        dependencies=[Depends(authorize)],
+    )
+    def cancel_task(task_id: str) -> dict[str, str]:
+        try:
+            generation_runtime.cancel(task_id)
+        except TaskNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {"status": "canceling", "taskId": task_id}
+
+    @app.post(
+        "/tasks/{task_id}/retry",
+        status_code=202,
+        dependencies=[Depends(authorize)],
+    )
+    async def retry_task(task_id: str) -> dict[str, str]:
+        try:
+            await generation_runtime.retry(task_id)
+        except TaskNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except TaskAlreadyRunningError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return {"status": "accepted", "taskId": task_id}
+
+    @app.get(
+        "/tasks/{task_id}/events",
+        dependencies=[Depends(authorize)],
+    )
+    def task_events(
+        task_id: str,
+        last_event_id: int = Header(default=0, alias="Last-Event-ID"),
+    ) -> StreamingResponse:
+        async def generate():
+            try:
+                async for event_id, event in generation_runtime.stream(
+                    task_id, last_event_id
+                ):
+                    payload = json.dumps(
+                        event.model_dump(mode="json", by_alias=True),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                    yield f"id: {event_id}\nevent: task\ndata: {payload}\n\n"
+            except TaskNotFoundError:
+                yield (
+                    "event: error\ndata: "
+                    '{"error":"Task not found"}\n\n'
+                )
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.post(
         "/assets/scan",
