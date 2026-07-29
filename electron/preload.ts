@@ -192,6 +192,15 @@ const createPublishJobSchema = z.object({
   topics: z.array(z.string()), scheduledAt: z.string().nullable(),
   coverPath: z.string().nullable().optional()
 });
+const mediaSettingsSchema = z.object({
+  outputDirectory: z.string(),
+  workDirectory: z.string(),
+  encoder: z.enum(["auto", "h264_nvenc", "h264_qsv", "h264_amf", "libx264"]),
+  videoBitrateMbps: z.number().min(1).max(50),
+  fontFamily: z.string().min(1),
+  bgmPath: z.string().nullable(),
+  bgmVolume: z.number().min(0).max(1)
+});
 
 contextBridge.exposeInMainWorld("autocut", {
   backendStatus: async () =>
@@ -316,6 +325,12 @@ contextBridge.exposeInMainWorld("autocut", {
     taskSchema.parse(
       await ipcRenderer.invoke("tasks:retry", z.string().uuid().parse(id))
     ),
+  openTaskOutput: async (id: string) => z.object({ opened: z.boolean() }).parse(
+    await ipcRenderer.invoke("tasks:openOutput", z.string().uuid().parse(id))
+  ),
+  deleteTask: async (id: string) => z.object({ deleted: z.boolean() }).parse(
+    await ipcRenderer.invoke("tasks:delete", z.string().uuid().parse(id))
+  ),
   listPublishAccounts: async () => z.array(publishAccountSchema).parse(
     await ipcRenderer.invoke("publishAccounts:list")
   ),
@@ -343,5 +358,17 @@ contextBridge.exposeInMainWorld("autocut", {
   ),
   exportDiagnostics: async () => z.string().nullable().parse(
     await ipcRenderer.invoke("diagnostics:export")
+  ),
+  getMediaSettings: async () => mediaSettingsSchema.parse(
+    await ipcRenderer.invoke("settings:getMedia")
+  ),
+  saveMediaSettings: async (input: unknown) => mediaSettingsSchema.parse(
+    await ipcRenderer.invoke("settings:saveMedia", mediaSettingsSchema.parse(input))
+  ),
+  selectSettingsPath: async (kind: unknown) => z.string().nullable().parse(
+    await ipcRenderer.invoke(
+      "settings:selectPath",
+      z.enum(["output", "work", "bgm"]).parse(kind)
+    )
   )
 });

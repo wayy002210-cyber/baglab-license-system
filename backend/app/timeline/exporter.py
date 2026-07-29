@@ -39,6 +39,8 @@ class Project:
     height: int = 1920
     fps: int = 30
     bgm_volume: float = 0.16
+    video_bitrate_mbps: float = 8
+    font_family: str = "Microsoft YaHei"
 
     @property
     def duration_sec(self) -> float:
@@ -164,11 +166,11 @@ class Exporter:
                 "-preset",
                 "medium" if encoder == "libx264" else "p4",
                 "-b:v",
-                "8M",
+                f"{project.video_bitrate_mbps:g}M",
                 "-maxrate",
-                "10M",
+                f"{project.video_bitrate_mbps + 2:g}M",
                 "-bufsize",
-                "16M",
+                f"{project.video_bitrate_mbps * 2:g}M",
                 "-c:a",
                 "aac",
                 "-b:a",
@@ -190,7 +192,9 @@ class Exporter:
         project.output_path.parent.mkdir(parents=True, exist_ok=True)
         if project.subtitles:
             write_ass_subtitles(
-                project.output_path.with_suffix(".ass"), project.subtitles
+                project.output_path.with_suffix(".ass"),
+                project.subtitles,
+                font_family=project.font_family,
             )
         selected_encoder = encoder or EncoderDetector(
             ffmpeg=self.ffmpeg, runner=self.runner
@@ -213,8 +217,13 @@ class Exporter:
             )
 
 
-def write_ass_subtitles(path: Path, subtitles: list[SubtitleClip]) -> None:
-    header = """[Script Info]
+def write_ass_subtitles(
+    path: Path,
+    subtitles: list[SubtitleClip],
+    *,
+    font_family: str = "Microsoft YaHei",
+) -> None:
+    header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
@@ -222,7 +231,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Alignment, MarginL, MarginR, MarginV, Outline, Shadow
-Style: Default,Microsoft YaHei,58,&H00FFFFFF,&H00101010,&H80000000,-1,2,80,80,170,4,1
+Style: Default,{font_family},58,&H00FFFFFF,&H00101010,&H80000000,-1,2,80,80,170,4,1
 
 [Events]
 Format: Layer, Start, End, Style, Text

@@ -198,11 +198,27 @@ class GenerationPipeline:
                 if request.snapshot.get("bgmPath")
                 else None
             ),
+            bgm_volume=float(
+                request.snapshot.get("media", {}).get("bgmVolume", 0.16)
+            ),
+            video_bitrate_mbps=float(
+                request.snapshot.get("media", {}).get("videoBitrateMbps", 8)
+            ),
+            font_family=str(
+                request.snapshot.get("media", {}).get(
+                    "fontFamily", "Microsoft YaHei"
+                )
+            ),
         )
         return {**context, "project": project}
 
     async def encode(
         self, request: TaskExecutionRequest, context: dict[str, Any]
     ) -> dict[str, Any]:
-        await asyncio.to_thread(self.exporter.export, context["project"])
+        encoder = request.snapshot.get("media", {}).get("encoder", "auto")
+        await asyncio.to_thread(
+            self.exporter.export,
+            context["project"],
+            encoder=None if encoder == "auto" else encoder,
+        )
         return context

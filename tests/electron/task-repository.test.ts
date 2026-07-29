@@ -114,4 +114,15 @@ describe("TaskRepository", () => {
     expect(recovered?.status).toBe("failed");
     expect(recovered?.errorCode).toBe("APP_INTERRUPTED");
   });
+
+  it("deletes terminal records but protects active tasks", () => {
+    const [task] = repository.createBatch({
+      templateId: "template-1", personaId: "persona-1",
+      count: 1, seed: 1, snapshot: {}
+    });
+    expect(() => repository.delete(task.id)).toThrow(/active/i);
+    repository.cancel(task.id);
+    expect(repository.delete(task.id)).toBe(true);
+    expect(repository.get(task.id)).toBeNull();
+  });
 });

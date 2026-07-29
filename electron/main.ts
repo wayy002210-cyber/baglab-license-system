@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { basename, join, resolve } from "node:path";
@@ -40,6 +40,11 @@ import {
 } from "./repositories/publish-repository.js";
 import { JsonLogger } from "./logger.js";
 import { exportDiagnosticBundle } from "./diagnostics.js";
+import {
+  SettingsRepository,
+  defaultMediaSettings,
+  type MediaSettings
+} from "./repositories/settings-repository.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -72,6 +77,10 @@ function publishRepository(): PublishRepository {
   if (!database) throw new Error("Database is not ready");
   return new PublishRepository(database);
 }
+function settingsRepository(): SettingsRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new SettingsRepository(database);
+}
 
 async function runGenerationTask(task: GenerationTask): Promise<void> {
   if (backendState.status !== "ready") {
@@ -92,9 +101,9 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
     });
     return;
   }
+  const settings = settingsRepository().getMediaSettings();
   const outputPath = join(
-    app.getPath("videos"),
-    "AutoCut",
+    settings.outputDirectory || join(app.getPath("videos"), "AutoCut"),
     `${task.id}.mp4`
   );
   const headers = {
@@ -450,10 +459,50 @@ ipcMain.handle("templates:delete", (_event, id: string) => ({
 }));
 ipcMain.handle("tasks:list", () => taskRepository().list());
 ipcMain.handle("tasks:createBatch", (_event, input: CreateTaskBatchInput) => {
-  const tasks = taskRepository().createBatch(input);
+  const media = settingsRepository().getMediaSettings();
+  const tasks = taskRepository().createBatch({
+    ...input,
+    snapshot: {
+      ...input.snapshot,
+      media,
+      bgmPath: media.bgmPath
+    }
+  });
   for (const task of tasks) void runGenerationTask(task);
   return tasks;
 });
+ipcMain.handle("settings:getMedia", () => {
+  const current = settingsRepository().getMediaSettings();
+  return {
+    ...defaultMediaSettings,
+    ...current,
+    outputDirectory:
+      current.outputDirectory || join(app.getPath("videos"), "AutoCut"),
+    workDirectory:
+      current.workDirectory || join(app.getPath("userData"), "work")
+  };
+});
+ipcMain.handle("settings:saveMedia", (_event, input: MediaSettings) =>
+  settingsRepository().saveMediaSettings(input)
+);
+ipcMain.handle(
+  "settings:selectPath",
+  async (_event, kind: "output" | "work" | "bgm") => {
+    if (!window) throw new Error("应用窗口尚未就绪");
+    const result =
+      kind === "bgm"
+        ? await dialog.showOpenDialog(window, {
+            title: "选择背景音乐",
+            properties: ["openFile"],
+            filters: [{ name: "音频", extensions: ["mp3", "wav", "m4a", "aac"] }]
+          })
+        : await dialog.showOpenDialog(window, {
+            title: kind === "output" ? "选择成片目录" : "选择工作目录",
+            properties: ["openDirectory"]
+          });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  }
+);
 ipcMain.handle("tasks:cancel", async (_event, id: string) => {
   if (backendState.status === "ready") {
     await fetch(`${backendState.baseUrl}/tasks/${id}/cancel`, {
@@ -468,6 +517,17 @@ ipcMain.handle("tasks:retry", (_event, id: string) => {
   void runGenerationTask(task);
   return task;
 });
+ipcMain.handle("tasks:openOutput", (_event, id: string) => {
+  const task = taskRepository().get(id);
+  if (!task?.outputPath || !existsSync(task.outputPath)) {
+    throw new Error("成片文件不存在");
+  }
+  shell.showItemInFolder(task.outputPath);
+  return { opened: true };
+});
+ipcMain.handle("tasks:delete", (_event, id: string) => ({
+  deleted: taskRepository().delete(id)
+}));
 ipcMain.handle("publishAccounts:list", () =>
   publishRepository().listAccounts()
 );

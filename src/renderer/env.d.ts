@@ -123,6 +123,8 @@ declare global {
       }): Promise<GenerationTask[]>;
       cancelTask(id: string): Promise<GenerationTask>;
       retryTask(id: string): Promise<GenerationTask>;
+      openTaskOutput(id: string): Promise<{ opened: boolean }>;
+      deleteTask(id: string): Promise<{ deleted: boolean }>;
       listPublishAccounts(): Promise<PublishAccount[]>;
       createPublishAccount(input: {
         name: string;
@@ -144,6 +146,11 @@ declare global {
         coverPath?: string | null;
       }): Promise<PublishJob>;
       exportDiagnostics(): Promise<string | null>;
+      getMediaSettings(): Promise<MediaSettings>;
+      saveMediaSettings(input: MediaSettings): Promise<MediaSettings>;
+      selectSettingsPath(
+        kind: "output" | "work" | "bgm"
+      ): Promise<string | null>;
     };
   }
 }
@@ -215,6 +222,15 @@ type PublishJob = {
   scheduledAt: string | null; startedAt: string | null; completedAt: string | null;
   errorMessage: string | null; screenshotPath: string | null; attemptCount: number;
   idempotencyKey: string; createdAt: string; updatedAt: string;
+};
+type MediaSettings = {
+  outputDirectory: string;
+  workDirectory: string;
+  encoder: "auto" | "h264_nvenc" | "h264_qsv" | "h264_amf" | "libx264";
+  videoBitrateMbps: number;
+  fontFamily: string;
+  bgmPath: string | null;
+  bgmVolume: number;
 };
 
 export {};

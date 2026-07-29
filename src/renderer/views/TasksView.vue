@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
 
 type Task = Awaited<ReturnType<typeof window.autocut.listTasks>>[number];
@@ -131,6 +131,14 @@ async function retryTask(task: Task): Promise<void> {
     ElMessage.error(error instanceof Error ? error.message : "重试失败");
   }
 }
+async function deleteTask(task: Task): Promise<void> {
+  await ElMessageBox.confirm("只删除任务记录，不删除已生成的视频文件。", "删除任务");
+  await window.autocut.deleteTask(task.id);
+  await load();
+}
+async function openOutput(task: Task): Promise<void> {
+  await window.autocut.openTaskOutput(task.id);
+}
 
 function snapshotName(task: Task, key: "persona" | "template"): string {
   const value = task.snapshot[key];
@@ -194,7 +202,7 @@ onBeforeUnmount(() => {
             <span class="error-text">{{ row.errorMessage || "—" }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="isActive(row)"
@@ -212,6 +220,8 @@ onBeforeUnmount(() => {
             >
               重试
             </el-button>
+            <el-button v-if="row.status === 'completed'" link type="primary" @click="openOutput(row)">打开成片</el-button>
+            <el-button v-if="!isActive(row)" link type="danger" @click="deleteTask(row)">删除记录</el-button>
           </template>
         </el-table-column>
         <template #empty>

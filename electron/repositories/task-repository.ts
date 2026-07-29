@@ -215,6 +215,17 @@ export class TaskRepository {
     return result.changes;
   }
 
+  delete(id: string): boolean {
+    const task = this.require(id);
+    if (!TERMINAL_STATUSES.includes(task.status)) {
+      throw new InvalidTaskTransitionError("Cannot delete an active task");
+    }
+    return (
+      this.database.prepare("DELETE FROM generation_tasks WHERE id = ?").run(id)
+        .changes > 0
+    );
+  }
+
   private require(id: string): GenerationTask {
     const task = this.get(id);
     if (!task) throw new Error(`Task not found: ${id}`);
