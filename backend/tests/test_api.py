@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.media.asset_scanner import ScanResult, ScannedAsset
+from app.copywriting.service import RewriteResult
 
 
 def test_health_requires_session_token() -> None:
@@ -59,3 +60,55 @@ def test_asset_scan_returns_structured_probe_results(tmp_path) -> None:
 
     assert response.status_code == 200
     assert response.json()["assets"][0]["duration_sec"] == 2.5
+
+
+def test_copywriting_rewrite_requires_bailian_key() -> None:
+    class Copywriting:
+        def rewrite(self, *, api_key, model, request):
+            assert api_key == "bailian-secret"
+            assert model == "qwen-plus"
+            return RewriteResult(
+                shots=[
+                    {
+                        "index": 0,
+                        "role": "hook",
+                        "assetCategoryId": "people",
+                        "copywriting": "十年工厂经验，帮你少走弯路。",
+                        "durationMode": "voice",
+                        "muteOriginal": True,
+                    }
+                ]
+            )
+
+    client = TestClient(
+        create_app(session_token="secret", copywriting_service=Copywriting())
+    )
+    payload = {
+        "sourceText": "我们有十年工厂经验。",
+        "personaName": "袋研官",
+        "brandFacts": ["十年经验"],
+        "tone": "专业直接",
+        "cta": "关注我",
+        "bannedWords": [],
+        "shots": [{"index": 0, "role": "hook", "assetCategoryId": "people"}],
+    }
+
+    assert (
+        client.post(
+            "/copywriting/rewrite",
+            headers={"X-Autocut-Token": "secret"},
+            json=payload,
+        ).status_code
+        == 401
+    )
+    response = client.post(
+        "/copywriting/rewrite",
+        headers={
+            "X-Autocut-Token": "secret",
+            "X-Bailian-Key": "bailian-secret",
+        },
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["shots"][0]["copywriting"] == "十年工厂经验，帮你少走弯路。"

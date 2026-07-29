@@ -238,6 +238,27 @@ ipcMain.handle("templates:duplicate", (_event, id: string) =>
 ipcMain.handle("templates:delete", (_event, id: string) => ({
   deleted: templateRepository().delete(id)
 }));
+ipcMain.handle("copywriting:rewrite", async (_event, payload: unknown) => {
+  if (backendState.status !== "ready") {
+    throw new Error("本地 AI 服务尚未就绪");
+  }
+  const apiKey = await credentials.get("bailian");
+  if (!apiKey) throw new Error("请先在系统设置中配置百炼 API Key");
+  const response = await fetch(`${backendState.baseUrl}/copywriting/rewrite`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Autocut-Token": backendState.token,
+      "X-Bailian-Key": apiKey
+    },
+    body: JSON.stringify(payload)
+  });
+  const result = (await response.json()) as { detail?: string };
+  if (!response.ok) {
+    throw new Error(result.detail || `文案改写失败 (${response.status})`);
+  }
+  return result;
+});
 ipcMain.handle(
   "credentials:delete",
   async (_event, name: CredentialName) => ({

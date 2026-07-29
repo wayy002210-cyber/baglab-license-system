@@ -88,6 +88,33 @@ const videoTemplateSchema = templateInputSchema.extend({
   createdAt: z.string(),
   updatedAt: z.string()
 });
+const rewriteRequestSchema = z.object({
+  sourceText: z.string().trim().min(1),
+  personaName: z.string().trim().min(1),
+  brandFacts: z.array(z.string()),
+  tone: z.string(),
+  cta: z.string(),
+  bannedWords: z.array(z.string()),
+  shots: z
+    .array(
+      z.object({
+        index: z.number().int().nonnegative(),
+        role: z.enum(["hook", "problem", "proof", "solution", "cta", "custom"]),
+        assetCategoryId: z.string().min(1)
+      })
+    )
+    .min(1)
+    .max(30)
+});
+const rewrittenShotSchema = z.object({
+  index: z.number().int().nonnegative(),
+  role: z.enum(["hook", "problem", "proof", "solution", "cta", "custom"]),
+  assetCategoryId: z.string(),
+  copywriting: z.string().min(1),
+  durationMode: z.enum(["voice", "fixed", "auto"]),
+  durationSec: z.number().positive().nullable().optional(),
+  muteOriginal: z.boolean()
+});
 
 contextBridge.exposeInMainWorld("autocut", {
   backendStatus: async () =>
@@ -173,6 +200,15 @@ contextBridge.exposeInMainWorld("autocut", {
         await ipcRenderer.invoke(
           "templates:delete",
           z.string().uuid().parse(id)
+        )
+      ),
+  rewriteCopywriting: async (input: unknown) =>
+    z
+      .object({ shots: z.array(rewrittenShotSchema) })
+      .parse(
+        await ipcRenderer.invoke(
+          "copywriting:rewrite",
+          rewriteRequestSchema.parse(input)
         )
       )
 });

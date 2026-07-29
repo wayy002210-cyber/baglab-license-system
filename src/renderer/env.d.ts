@@ -74,6 +74,29 @@ declare global {
       updateTemplate(id: string, input: TemplateInput): Promise<VideoTemplate>;
       duplicateTemplate(id: string): Promise<VideoTemplate>;
       deleteTemplate(id: string): Promise<{ deleted: boolean }>;
+      rewriteCopywriting(input: {
+        sourceText: string;
+        personaName: string;
+        brandFacts: string[];
+        tone: string;
+        cta: string;
+        bannedWords: string[];
+        shots: Array<{
+          index: number;
+          role: TemplateShotInput["role"];
+          assetCategoryId: string;
+        }>;
+      }): Promise<{
+        shots: Array<{
+          index: number;
+          role: TemplateShotInput["role"];
+          assetCategoryId: string;
+          copywriting: string;
+          durationMode: TemplateShotInput["durationMode"];
+          durationSec?: number | null;
+          muteOriginal: boolean;
+        }>;
+      }>;
     };
   }
 }
