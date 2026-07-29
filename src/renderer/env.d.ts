@@ -97,6 +97,22 @@ declare global {
           muteOriginal: boolean;
         }>;
       }>;
+      listVoices(): Promise<
+        Array<{ voiceId: string; name: string; kind: string }>
+      >;
+      synthesizeVoice(input: {
+        text: string;
+        voiceId: string;
+        model?: string;
+        speed?: number;
+        volume?: number;
+        pitch?: number;
+        languageBoost?: string | null;
+      }): Promise<{
+        audioPath: string;
+        cacheHit: boolean;
+        sha256: string;
+      }>;
     };
   }
 }

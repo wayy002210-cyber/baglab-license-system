@@ -259,6 +259,45 @@ ipcMain.handle("copywriting:rewrite", async (_event, payload: unknown) => {
   }
   return result;
 });
+ipcMain.handle("voices:list", async () => {
+  if (backendState.status !== "ready") {
+    throw new Error("本地 AI 服务尚未就绪");
+  }
+  const apiKey = await credentials.get("minimax");
+  if (!apiKey) throw new Error("请先在系统设置中配置 MiniMax API Key");
+  const response = await fetch(`${backendState.baseUrl}/voices`, {
+    headers: {
+      "X-Autocut-Token": backendState.token,
+      "X-MiniMax-Key": apiKey
+    }
+  });
+  const result = (await response.json()) as { detail?: string };
+  if (!response.ok) {
+    throw new Error(result.detail || `获取音色失败 (${response.status})`);
+  }
+  return result;
+});
+ipcMain.handle("voices:synthesize", async (_event, payload: unknown) => {
+  if (backendState.status !== "ready") {
+    throw new Error("本地 AI 服务尚未就绪");
+  }
+  const apiKey = await credentials.get("minimax");
+  if (!apiKey) throw new Error("请先在系统设置中配置 MiniMax API Key");
+  const response = await fetch(`${backendState.baseUrl}/voices/synthesize`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Autocut-Token": backendState.token,
+      "X-MiniMax-Key": apiKey
+    },
+    body: JSON.stringify(payload)
+  });
+  const result = (await response.json()) as { detail?: string };
+  if (!response.ok) {
+    throw new Error(result.detail || `语音合成失败 (${response.status})`);
+  }
+  return result;
+});
 ipcMain.handle(
   "credentials:delete",
   async (_event, name: CredentialName) => ({

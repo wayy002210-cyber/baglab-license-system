@@ -115,6 +115,25 @@ const rewrittenShotSchema = z.object({
   durationSec: z.number().positive().nullable().optional(),
   muteOriginal: z.boolean()
 });
+const synthesisRequestSchema = z.object({
+  text: z.string().trim().min(1).max(10_000),
+  voiceId: z.string().min(1),
+  model: z.string().min(1).optional(),
+  speed: z.number().min(0.5).max(2).optional(),
+  volume: z.number().min(0).max(3).optional(),
+  pitch: z.number().int().min(-12).max(12).optional(),
+  languageBoost: z.string().nullable().optional()
+});
+const voiceSchema = z.object({
+  voiceId: z.string().min(1),
+  name: z.string(),
+  kind: z.string()
+});
+const synthesisResultSchema = z.object({
+  audioPath: z.string().min(1),
+  cacheHit: z.boolean(),
+  sha256: z.string().length(64)
+});
 
 contextBridge.exposeInMainWorld("autocut", {
   backendStatus: async () =>
@@ -210,5 +229,14 @@ contextBridge.exposeInMainWorld("autocut", {
           "copywriting:rewrite",
           rewriteRequestSchema.parse(input)
         )
+      ),
+  listVoices: async () =>
+    z.array(voiceSchema).parse(await ipcRenderer.invoke("voices:list")),
+  synthesizeVoice: async (input: unknown) =>
+    synthesisResultSchema.parse(
+      await ipcRenderer.invoke(
+        "voices:synthesize",
+        synthesisRequestSchema.parse(input)
       )
+    )
 });

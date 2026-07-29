@@ -14,6 +14,8 @@ from app.copywriting.service import (
     RewriteResult,
     StructuredOutputError,
 )
+from app.voice.minimax import MiniMaxTTS
+from app.voice.service import SynthesisRequest, SynthesisResult, VoiceService
 
 
 class CreateTaskRequest(BaseModel):
@@ -35,10 +37,19 @@ class Copywriter(Protocol):
     ) -> RewriteResult: ...
 
 
+class VoiceProvider(Protocol):
+    def list_voices(self, *, api_key: str) -> list[dict[str, str]]: ...
+
+    def synthesize(
+        self, *, api_key: str, request: SynthesisRequest
+    ) -> SynthesisResult: ...
+
+
 def create_app(
     session_token: str | None = None,
     asset_scanner: Scanner | None = None,
     copywriting_service: Copywriter | None = None,
+    voice_service: VoiceProvider | None = None,
 ) -> FastAPI:
     token = session_token or os.environ.get("AUTOCUT_SESSION_TOKEN")
     if not token:
@@ -47,6 +58,12 @@ def create_app(
     app = FastAPI(title="AutoCut Local Service", version="0.1.0")
     scanner = asset_scanner or AssetScanner(Ffprobe())
     copywriter = copywriting_service or CopywritingService(BailianChat())
+    voice = voice_service or VoiceService(
+        MiniMaxTTS(),
+        cache_dir=Path(
+            os.environ.get("AUTOCUT_VOICE_CACHE", "backend-data/cache/voice")
+        ),
+    )
 
     def authorize(x_autocut_token: str | None = Header(default=None)) -> None:
         if x_autocut_token != token:
@@ -90,6 +107,27 @@ def create_app(
             )
         except StructuredOutputError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.get("/voices", dependencies=[Depends(authorize)])
+    def list_voices(
+        x_minimax_key: str | None = Header(default=None),
+    ) -> list[dict[str, str]]:
+        if not x_minimax_key:
+            raise HTTPException(status_code=401, detail="MiniMax API key is required")
+        return voice.list_voices(api_key=x_minimax_key)
+
+    @app.post(
+        "/voices/synthesize",
+        response_model=SynthesisResult,
+        dependencies=[Depends(authorize)],
+    )
+    def synthesize_voice(
+        payload: SynthesisRequest,
+        x_minimax_key: str | None = Header(default=None),
+    ) -> SynthesisResult:
+        if not x_minimax_key:
+            raise HTTPException(status_code=401, detail="MiniMax API key is required")
+        return voice.synthesize(api_key=x_minimax_key, request=payload)
 
     return app
 
