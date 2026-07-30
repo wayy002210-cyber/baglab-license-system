@@ -155,6 +155,7 @@ class GenerationTaskRuntime(Protocol):
 
 class Publisher(Protocol):
     def check_account(self, *, platform: Platform, user_data_dir: str) -> str: ...
+    def connect_account(self, *, platform: Platform, user_data_dir: str) -> str: ...
     def publish(
         self,
         *,
@@ -541,6 +542,19 @@ def create_app(
         account_id: str, payload: PublishAccountCheckRequest
     ) -> dict[str, str]:
         status = publisher.check_account(
+            platform=payload.platform,
+            user_data_dir=payload.user_data_dir,
+        )
+        return {"accountId": account_id, "status": status}
+
+    @app.post(
+        "/publish/accounts/{account_id}/connect",
+        dependencies=[Depends(authorize)],
+    )
+    def connect_publish_account(
+        account_id: str, payload: PublishAccountCheckRequest
+    ) -> dict[str, str]:
+        status = publisher.connect_account(
             platform=payload.platform,
             user_data_dir=payload.user_data_dir,
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from threading import Lock
+from time import monotonic
 from typing import Callable, ContextManager, Literal
 
 from app.publisher.adapters import (
@@ -41,6 +42,26 @@ class PublishingService:
             if page.has_human_challenge():
                 return "needs_user"
             return "expired" if page.is_login_required() else "connected"
+
+    def connect_account(
+        self,
+        *,
+        platform: Platform,
+        user_data_dir: str,
+        max_wait_ms: int = 180_000,
+        poll_interval_ms: int = 1_500,
+    ) -> str:
+        """Keep the visible login window alive while the user scans or signs in."""
+        with self.session_factory(user_data_dir) as page:
+            page.page.goto(UPLOAD_URLS[platform], wait_until="domcontentloaded")
+            deadline = monotonic() + max_wait_ms / 1000
+            saw_challenge = False
+            while monotonic() < deadline:
+                page.page.wait_for_timeout(poll_interval_ms)
+                saw_challenge = saw_challenge or page.has_human_challenge()
+                if not page.is_login_required() and not page.has_human_challenge():
+                    return "connected"
+            return "needs_user" if saw_challenge else "expired"
 
     def publish(
         self,

@@ -465,6 +465,33 @@ ipcMain.handle("publishAccounts:check", async (_event, id: string) => {
   }
   return publishRepository().updateAccountStatus(id, result.status);
 });
+ipcMain.handle("publishAccounts:connect", async (_event, id: string) => {
+  if (backendState.status !== "ready") throw new Error("本地发布服务尚未就绪");
+  const account = publishRepository().getAccount(id);
+  if (!account) throw new Error("发布账号不存在");
+  const response = await fetch(
+    `${backendState.baseUrl}/publish/accounts/${id}/connect`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Autocut-Token": backendState.token
+      },
+      body: JSON.stringify({
+        platform: account.platform,
+        userDataDir: account.userDataDir
+      })
+    }
+  );
+  const result = (await response.json()) as {
+    status?: "unknown" | "connected" | "expired" | "needs_user";
+    detail?: string;
+  };
+  if (!response.ok || !result.status) {
+    throw new Error(result.detail || "账号登录连接失败");
+  }
+  return publishRepository().updateAccountStatus(id, result.status);
+});
 ipcMain.handle("personas:list", () => personaRepository().list());
 ipcMain.handle(
   "personas:create",

@@ -222,6 +222,7 @@ declare global {
         status: PublishAccount["linkStatus"]
       ): Promise<PublishAccount>;
       checkPublishAccount(id: string): Promise<PublishAccount>;
+      connectPublishAccount(id: string): Promise<PublishAccount>;
       deletePublishAccount(id: string): Promise<{ deleted: boolean }>;
       listPublishJobs(): Promise<PublishJob[]>;
       createPublishJob(input: {

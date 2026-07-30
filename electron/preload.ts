@@ -582,6 +582,9 @@ contextBridge.exposeInMainWorld("autocut", {
   checkPublishAccount: async (id: string) => publishAccountSchema.parse(
     await ipcRenderer.invoke("publishAccounts:check", z.string().uuid().parse(id))
   ),
+  connectPublishAccount: async (id: string) => publishAccountSchema.parse(
+    await ipcRenderer.invoke("publishAccounts:connect", z.string().uuid().parse(id))
+  ),
   deletePublishAccount: async (id: string) => z.object({ deleted: z.boolean() }).parse(
     await ipcRenderer.invoke("publishAccounts:delete", z.string().uuid().parse(id))
   ),
