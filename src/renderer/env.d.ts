@@ -94,6 +94,7 @@ declare global {
       exportTemplate(id: string): Promise<string | null>;
       importTemplate(): Promise<VideoTemplate | null>;
       rewriteCopywriting(input: {
+        model: string;
         sourceText: string;
         personaName: string;
         brandFacts: string[];

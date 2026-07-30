@@ -93,6 +93,7 @@ const videoTemplateSchema = templateInputSchema.extend({
   updatedAt: z.string()
 });
 const rewriteRequestSchema = z.object({
+  model: z.string().min(1),
   sourceText: z.string().trim().min(1),
   personaName: z.string().trim().min(1),
   brandFacts: z.array(z.string()),

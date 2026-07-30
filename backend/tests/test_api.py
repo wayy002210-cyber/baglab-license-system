@@ -69,7 +69,7 @@ def test_copywriting_rewrite_requires_bailian_key() -> None:
     class Copywriting:
         def rewrite(self, *, api_key, model, request):
             assert api_key == "bailian-secret"
-            assert model == "qwen-plus"
+            assert model == "deepseek-v3"
             return RewriteResult(
                 shots=[
                     {

@@ -18,6 +18,7 @@ describe("TemplatesView", () => {
           shots: [], bgm: null, titleStyle: null, subtitleStyle: null
         })),
         saveCreationDraft: vi.fn(async (draft) => draft)
+        ,listPersonas: vi.fn(async () => [{ id: "p1", name: "袋研官", industry: "工厂", brandFacts: ["自有工厂"], tone: "专业", cta: "欢迎咨询", bannedWords: [], isDefault: true, createdAt: "", updatedAt: "" }])
       }
     });
     const wrapper = mount(TemplatesView, {
@@ -36,5 +37,6 @@ describe("TemplatesView", () => {
     expect(wrapper.text()).toContain("镜头创作区");
     expect(wrapper.text()).toContain("背景音乐与字幕");
     expect(wrapper.text()).toContain("第一段。");
+    expect(wrapper.text()).toContain("一键改写");
   });
 });

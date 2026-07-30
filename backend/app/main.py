@@ -398,7 +398,7 @@ def create_app(
         try:
             return copywriter.rewrite(
                 api_key=x_bailian_key,
-                model="qwen-plus",
+                model=payload.model,
                 request=payload,
             )
         except BailianAPIError as error:

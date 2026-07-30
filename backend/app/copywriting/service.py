@@ -23,6 +23,7 @@ class RewriteRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     source_text: str = Field(alias="sourceText", min_length=1)
+    model: str = "deepseek-v3"
     persona_name: str = Field(alias="personaName", min_length=1)
     brand_facts: list[str] = Field(alias="brandFacts")
     tone: str = ""
