@@ -53,4 +53,36 @@ describe("useCreationDraft", () => {
     expect(state.saveStatus.value).toBe("saved");
     expect(state.saveError.value).toBe("");
   });
+
+  it("sends a cloneable plain draft across the preload boundary", async () => {
+    Object.assign(window, {
+      autocut: {
+        saveCreationDraft: vi.fn(async (draft) => structuredClone(draft))
+      }
+    });
+    let state!: ReturnType<typeof useCreationDraft>;
+    mount(
+      defineComponent({
+        setup() {
+          state = useCreationDraft();
+          return {};
+        },
+        template: "<div />"
+      })
+    );
+    state.draft.value.copywriting = {
+      model: "deepseek-v3",
+      temperature: 0.7,
+      topics: [
+        { id: "a", title: "选题", angle: "角度", hook: "钩子" }
+      ],
+      selectedTopicId: null,
+      text: "",
+      complianceIssues: []
+    };
+
+    await expect(state.saveImmediate()).resolves.toBeDefined();
+    const submitted = vi.mocked(window.autocut.saveCreationDraft).mock.calls[0][0];
+    expect(() => structuredClone(submitted)).not.toThrow();
+  });
 });

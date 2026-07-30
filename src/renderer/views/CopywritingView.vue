@@ -11,6 +11,10 @@ import {
   useCreationDraft
 } from "../composables/useCreationDraft";
 import { createOperationState } from "../lib/operation-state";
+import {
+  toCopywritingContext,
+  toCopywritingGenerationInput
+} from "../copywriting/copywriting-request";
 
 type Persona = Awaited<ReturnType<typeof window.autocut.listPersonas>>[number];
 type ComplianceIssue = Awaited<
@@ -91,14 +95,10 @@ async function referenceScripts(): Promise<string[]> {
 }
 
 function contextInput(persona: Persona) {
-  return {
-    model: copywriting.value?.model ?? modelSettings.value.defaultModel,
-    personaName: persona.name,
-    industry: persona.industry,
-    brandFacts: persona.brandFacts,
-    tone: persona.tone,
-    cta: persona.cta
-  };
+  return toCopywritingContext(
+    persona,
+    copywriting.value?.model ?? modelSettings.value.defaultModel
+  );
 }
 
 async function generateTopics(): Promise<void> {
@@ -147,9 +147,11 @@ async function generateScript(): Promise<void> {
   try {
     await scriptOperation.run(async () => {
       const result = await window.autocut.generateCopywriting({
-        ...contextInput(persona),
+        ...toCopywritingGenerationInput(
+          contextInput(persona),
+          persona.bannedWords
+        ),
         referenceScripts: await referenceScripts(),
-        bannedWords: persona.bannedWords,
         topic: topic.title,
         minLength: 200,
         maxLength: 1000

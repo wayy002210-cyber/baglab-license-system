@@ -1,5 +1,8 @@
 import { ref } from "vue";
-import type { CreationDraft } from "../../shared/contracts";
+import {
+  creationDraftSchema,
+  type CreationDraft
+} from "../../shared/contracts";
 
 export function createEmptyDraft(): CreationDraft {
   return {
@@ -46,7 +49,8 @@ export function useCreationDraft() {
     saveStatus.value = "saving";
     saveError.value = "";
     try {
-      draft.value = await window.autocut.saveCreationDraft(draft.value);
+      const cloneableDraft = creationDraftSchema.parse(draft.value);
+      draft.value = await window.autocut.saveCreationDraft(cloneableDraft);
       saveStatus.value = "saved";
       return draft.value;
     } catch (error) {
