@@ -47,4 +47,25 @@ describe("createBackendLaunchConfig", () => {
     });
     expect(calls).toBe(3);
   });
+
+  it("rejects a packaged backend whose build id differs from the desktop app", async () => {
+    await expect(
+      waitForBackendHealth({
+        baseUrl: "http://127.0.0.1:41000",
+        token: "secret",
+        expectedBuildId: "0.5.1",
+        attempts: 1,
+        delay: async () => undefined,
+        fetcher: async () =>
+          new Response(
+            JSON.stringify({
+              status: "ok",
+              service: "autocut-backend",
+              buildId: "0.5.0"
+            }),
+            { status: 200 }
+          )
+      })
+    ).rejects.toThrow("前后端版本不一致");
+  });
 });

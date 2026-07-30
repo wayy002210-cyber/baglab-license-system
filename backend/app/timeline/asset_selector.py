@@ -44,6 +44,7 @@ class SelectedAsset:
     file_path: str
     source_start_sec: float
     source_duration_sec: float
+    asset_duration_sec: float
     loop: bool
 
 
@@ -95,6 +96,7 @@ class AssetSelector:
                     file_path=asset.file_path,
                     source_start_sec=round(start, 3),
                     source_duration_sec=shot.duration_sec,
+                    asset_duration_sec=asset.duration_sec,
                     loop=asset.duration_sec < shot.duration_sec,
                 )
             )

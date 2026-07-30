@@ -33,6 +33,7 @@ def sample_project(tmp_path: Path) -> Project:
                 start_sec=0,
                 duration_sec=2.0,
                 loop=True,
+                source_duration_sec=0.75,
             ),
         ],
         voice_clips=[
@@ -44,6 +45,7 @@ def sample_project(tmp_path: Path) -> Project:
             SubtitleClip(start_sec=3, end_sec=5, text="第二句"),
         ],
         bgm_path=tmp_path / "bgm.mp3",
+        bgm_duration_sec=1.25,
     )
 
 
@@ -61,6 +63,7 @@ def test_export_command_normalizes_portrait_video_and_mixes_audio(tmp_path: Path
     assert "-c:v libx264" in joined
     assert "-c:a aac" in joined
     assert "-movflags +faststart" in joined
+    assert command[command.index("-filter_complex_threads") + 1] == "2"
 
 
 def test_export_command_loops_short_video_and_bgm(tmp_path: Path) -> None:
@@ -69,6 +72,28 @@ def test_export_command_loops_short_video_and_bgm(tmp_path: Path) -> None:
     assert command.count("-stream_loop") == 2
     assert str(tmp_path / "two.mp4") in command
     assert str(tmp_path / "bgm.mp3") in command
+    bgm_index = command.index(str(tmp_path / "bgm.mp3"))
+    assert command[bgm_index - 3 : bgm_index + 1] == [
+        "-stream_loop",
+        "3",
+        "-i",
+        str(tmp_path / "bgm.mp3"),
+    ]
+
+
+def test_looped_video_input_uses_only_required_finite_repeats(tmp_path: Path) -> None:
+    project = sample_project(tmp_path)
+    looped_clip = project.video_clips[1]
+
+    command = Exporter(ffmpeg="ffmpeg").build_command(project)
+    input_index = command.index(str(looped_clip.path))
+
+    assert command[input_index - 3 : input_index + 1] == [
+        "-stream_loop",
+        "2",
+        "-i",
+        str(looped_clip.path),
+    ]
 
 
 def test_export_command_accepts_flac_bgm_and_keeps_aac_output(tmp_path: Path) -> None:

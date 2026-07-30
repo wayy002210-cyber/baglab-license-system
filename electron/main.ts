@@ -361,7 +361,8 @@ async function startBackend(): Promise<void> {
     try {
       await waitForBackendHealth({
         baseUrl: `http://127.0.0.1:${port}`,
-        token
+        token,
+        expectedBuildId: app.getVersion()
       });
       backendState = {
         status: "ready",

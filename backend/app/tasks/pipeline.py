@@ -239,6 +239,7 @@ class GenerationPipeline:
                     start_sec=selected.source_start_sec,
                     duration_sec=duration,
                     loop=selected.loop,
+                    source_duration_sec=selected.asset_duration_sec,
                 )
             )
             subtitles.append(
@@ -252,15 +253,19 @@ class GenerationPipeline:
                 AudioClip(path=context["voicePaths"][index], start_sec=cursor)
             )
             cursor += duration
+        bgm_path = (
+            Path(request.snapshot["bgmPath"])
+            if request.snapshot.get("bgmPath")
+            else None
+        )
         project = Project(
             output_path=Path(request.output_path),
             video_clips=videos,
             voice_clips=voices,
             subtitles=subtitles,
-            bgm_path=(
-                Path(request.snapshot["bgmPath"])
-                if request.snapshot.get("bgmPath")
-                else None
+            bgm_path=bgm_path,
+            bgm_duration_sec=(
+                self.audio_probe.duration(bgm_path) if bgm_path else None
             ),
             bgm_volume=float(
                 bgm_settings.get(

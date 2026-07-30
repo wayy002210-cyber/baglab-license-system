@@ -60,6 +60,7 @@ export function spawnBackend(config: BackendLaunchConfig): ChildProcess {
 export async function waitForBackendHealth(input: {
   baseUrl: string;
   token: string;
+  expectedBuildId?: string;
   attempts?: number;
   fetcher?: typeof fetch;
   delay?: (milliseconds: number) => Promise<void>;
@@ -76,7 +77,17 @@ export async function waitForBackendHealth(input: {
       const response = await fetcher(`${input.baseUrl}/health`, {
         headers: { "X-Autocut-Token": input.token }
       });
-      if (response.ok) return;
+      if (response.ok) {
+        if (input.expectedBuildId) {
+          const payload = (await response.json()) as { buildId?: string };
+          if (payload.buildId !== input.expectedBuildId) {
+            throw new Error(
+              `前后端版本不一致：桌面端 ${input.expectedBuildId}，本地服务 ${payload.buildId ?? "未知"}。请关闭软件后重新安装最新版。`
+            );
+          }
+        }
+        return;
+      }
       lastError = new Error(`Health check returned ${response.status}`);
     } catch (error) {
       lastError = error;

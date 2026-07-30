@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import threading
 import time
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,7 @@ class VideoClip:
     start_sec: float
     duration_sec: float
     loop: bool = False
+    source_duration_sec: float | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class Project:
     subtitles: list[SubtitleClip] = field(default_factory=list)
     titles: list[TitleClip] = field(default_factory=list)
     bgm_path: Path | None = None
+    bgm_duration_sec: float | None = None
     width: int = 1080
     height: int = 1920
     fps: int = 30
@@ -164,16 +167,38 @@ class Exporter:
             "-nostats",
             "-progress",
             "pipe:1",
+            "-filter_complex_threads",
+            "2",
             "-y",
         ]
         for clip in project.video_clips:
             if clip.loop:
-                command.extend(["-stream_loop", "-1"])
+                if not clip.source_duration_sec or clip.source_duration_sec <= 0:
+                    raise ValueError(
+                        "Looped video requires a positive source duration"
+                    )
+                repeats = max(
+                    1,
+                    math.ceil(
+                        (clip.start_sec + clip.duration_sec)
+                        / clip.source_duration_sec
+                    )
+                    - 1,
+                )
+                command.extend(["-stream_loop", str(repeats)])
             command.extend(["-i", str(clip.path)])
         for clip in project.voice_clips:
             command.extend(["-i", str(clip.path)])
         if project.bgm_path:
-            command.extend(["-stream_loop", "-1", "-i", str(project.bgm_path)])
+            if not project.bgm_duration_sec or project.bgm_duration_sec <= 0:
+                raise ValueError("BGM requires a positive source duration")
+            repeats = max(
+                0,
+                math.ceil(project.duration_sec / project.bgm_duration_sec) - 1,
+            )
+            if repeats:
+                command.extend(["-stream_loop", str(repeats)])
+            command.extend(["-i", str(project.bgm_path)])
 
         filters: list[str] = []
         video_labels: list[str] = []
@@ -318,6 +343,8 @@ class Exporter:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         stdout_lines: list[str] = []

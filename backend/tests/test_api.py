@@ -15,7 +15,11 @@ def test_health_requires_session_token() -> None:
     response = client.get("/health", headers={"X-Autocut-Token": "secret"})
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "autocut-backend"}
+    assert response.json() == {
+        "status": "ok",
+        "service": "autocut-backend",
+        "buildId": "0.5.1",
+    }
 
 
 def test_task_creation_rejects_batches_over_twenty() -> None:

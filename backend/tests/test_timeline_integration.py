@@ -78,11 +78,18 @@ def test_real_export_produces_vertical_h264_aac_video(tmp_path: Path) -> None:
         output_path=output,
         video_clips=[
             VideoClip(video_a, start_sec=0, duration_sec=1),
-            VideoClip(video_b, start_sec=0, duration_sec=1, loop=True),
+            VideoClip(
+                video_b,
+                start_sec=0,
+                duration_sec=1,
+                loop=True,
+                source_duration_sec=0.5,
+            ),
         ],
         voice_clips=[AudioClip(voice, start_sec=0)],
         subtitles=[SubtitleClip(0, 1.8, "真实合成测试")],
         bgm_path=bgm,
+        bgm_duration_sec=2,
     )
     Exporter().export(project, encoder="libx264")
 

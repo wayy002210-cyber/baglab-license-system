@@ -58,6 +58,8 @@ from app.tasks.secure_runtime import SecurePipelineRuntime
 from app.publisher.adapters import PublishRequest, PublishResult
 from app.publisher.service import Platform, PublishingService
 
+BACKEND_BUILD_ID = "0.5.1"
+
 
 class CreateTaskRequest(BaseModel):
     templateId: str = Field(min_length=1)
@@ -247,7 +249,11 @@ def create_app(
 
     @app.get("/health", dependencies=[Depends(authorize)])
     def health() -> dict[str, str]:
-        return {"status": "ok", "service": "autocut-backend"}
+        return {
+            "status": "ok",
+            "service": "autocut-backend",
+            "buildId": BACKEND_BUILD_ID,
+        }
 
     @app.get("/media/gpu-encoder", dependencies=[Depends(authorize)])
     def gpu_encoder() -> dict[str, str | bool]:
