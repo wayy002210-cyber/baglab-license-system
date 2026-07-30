@@ -36,7 +36,7 @@ from app.copywriting.topic_service import (
     TopicResult,
     TopicService,
 )
-from app.voice.minimax import MiniMaxTTS, MiniMaxVoiceClient
+from app.voice.minimax import MiniMaxAPIError, MiniMaxTTS, MiniMaxVoiceClient
 from app.voice.cloning import (
     CloneRequest,
     CloneResult,
@@ -556,7 +556,23 @@ def create_app(
     ) -> SynthesisResult:
         if not x_minimax_key:
             raise HTTPException(status_code=401, detail="MiniMax API key is required")
-        return voice.synthesize(api_key=x_minimax_key, request=payload)
+        try:
+            return voice.synthesize(api_key=x_minimax_key, request=payload)
+        except MiniMaxAPIError as error:
+            if error.status_code == 1008:
+                raise HTTPException(
+                    status_code=402,
+                    detail="MiniMax 账户余额不足，请充值后再生成或试听",
+                ) from error
+            if error.status_code in (401, 403, 1004):
+                raise HTTPException(
+                    status_code=401,
+                    detail="MiniMax API Key 无效或无权使用当前声音模型",
+                ) from error
+            raise HTTPException(
+                status_code=502,
+                detail=f"MiniMax 语音生成失败：{error}",
+            ) from error
 
     @app.post(
         "/voices/sample/validate",

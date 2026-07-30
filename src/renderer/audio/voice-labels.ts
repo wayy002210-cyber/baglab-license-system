@@ -43,6 +43,17 @@ export function isChineseVoice(voice: VoiceOption): boolean {
   );
 }
 
+export function selectPreferredVoices(
+  voices: VoiceOption[],
+  basicLimit = 10
+): VoiceOption[] {
+  const personal = voices.filter((voice) => voice.kind !== "system");
+  const basic = voices
+    .filter((voice) => voice.kind === "system" && isChineseVoice(voice))
+    .slice(0, basicLimit);
+  return [...personal, ...basic];
+}
+
 export function voiceKindLabel(kind: string): string {
   if (kind === "system") return "官方音色";
   if (kind === "clone") return "我的克隆音色";

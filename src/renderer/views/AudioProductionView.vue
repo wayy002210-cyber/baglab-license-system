@@ -11,7 +11,7 @@ import { useCreationDraft } from "../composables/useCreationDraft";
 import { segmentCopywriting, stableHash } from "../audio/segment-copywriting";
 import {
   emotionOptions,
-  isChineseVoice,
+  selectPreferredVoices,
   voiceDisplayName
 } from "../audio/voice-labels";
 import type { CreationDraft } from "../../shared/contracts";
@@ -90,8 +90,7 @@ async function load(): Promise<void> {
     ];
     ElMessage.warning("在线音色列表暂时不可用，已保留默认音色和声音克隆功能");
   }
-  voices.value = loadedVoices
-    .filter(isChineseVoice)
+  voices.value = selectPreferredVoices(loadedVoices)
     .map((item) => ({
       ...item,
       name: voiceDisplayName(item)

@@ -51,6 +51,7 @@ import {
 import { JsonLogger } from "./logger.js";
 import { reportStartupFailure } from "./startup.js";
 import { exportDiagnosticBundle } from "./diagnostics.js";
+import { readJsonResponse } from "./http-response.js";
 import {
   SettingsRepository,
   defaultMediaSettings,
@@ -1036,19 +1037,9 @@ async function postCopywriting(
     },
     body: JSON.stringify(payload)
   });
-  const result = (await response.json()) as {
+  return readJsonResponse<{
     detail?: string | { code?: string; message?: string };
-  };
-  if (!response.ok) {
-    const detail =
-      typeof result.detail === "string"
-        ? result.detail
-        : result.detail?.message;
-    throw new Error(
-      detail || `文案服务请求失败 (${response.status})，请稍后重试`
-    );
-  }
-  return result;
+  }>(response, "文案服务请求失败");
 }
 ipcMain.handle("copywriting:topics", (_event, payload: unknown) =>
   postCopywriting("topics", payload, true)
@@ -1180,13 +1171,11 @@ ipcMain.handle("voices:preview", async (_event, payload: unknown) => {
     },
     body: JSON.stringify(payload)
   });
-  const result = (await response.json()) as {
+  const result = await readJsonResponse<{
     audioPath?: string;
     detail?: string;
-  };
-  if (!response.ok || !result.audioPath) {
-    throw new Error(result.detail || "音色试听生成失败");
-  }
+  }>(response, "音色试听生成失败");
+  if (!result.audioPath) throw new Error("音色试听生成失败：未找到音频文件");
   const audio = readFileSync(result.audioPath);
   return `data:audio/mpeg;base64,${audio.toString("base64")}`;
 });

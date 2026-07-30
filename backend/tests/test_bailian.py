@@ -14,7 +14,7 @@ def response(status: int, payload: dict) -> httpx.Response:
     return httpx.Response(status, json=payload, request=request)
 
 
-def test_deepseek_does_not_receive_unsupported_response_format(monkeypatch) -> None:
+def test_deepseek_requests_json_object_output(monkeypatch) -> None:
     captured: dict = {}
 
     def fake_post(*args, **kwargs):
@@ -30,7 +30,7 @@ def test_deepseek_does_not_receive_unsupported_response_format(monkeypatch) -> N
         api_key="secret", model="deepseek-v3", prompt="hello"
     )
 
-    assert "response_format" not in captured
+    assert captured["response_format"] == {"type": "json_object"}
 
 
 def test_qwen_can_request_json_object_output(monkeypatch) -> None:

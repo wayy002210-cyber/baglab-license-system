@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.voice.service import SynthesisResult
 from app.voice.cloning import CloneResult, SampleMetadata
+from app.voice.minimax import MiniMaxAPIError
 
 
 def test_voice_endpoints_require_key_and_return_structured_results() -> None:
@@ -129,3 +130,29 @@ def test_minimax_connection_uses_voice_listing_without_generating_billable_audio
 
     assert response.status_code == 200
     assert response.json() == {"status": "connected", "voiceCount": 1}
+
+
+def test_synthesis_exposes_insufficient_balance_as_actionable_json() -> None:
+    class Voice:
+        def list_voices(self, *, api_key):
+            return []
+
+        def synthesize(self, *, api_key, request):
+            raise MiniMaxAPIError(1008, "insufficient balance")
+
+    client = TestClient(create_app(session_token="secret", voice_service=Voice()))
+    response = client.post(
+        "/voices/synthesize",
+        headers={
+            "X-Autocut-Token": "secret",
+            "X-MiniMax-Key": "minimax-secret",
+        },
+        json={
+            "text": "你好，这是试听。",
+            "voiceId": "male-qn-qingse",
+            "model": "speech-2.8-hd",
+        },
+    )
+
+    assert response.status_code == 402
+    assert response.json()["detail"] == "MiniMax 账户余额不足，请充值后再生成或试听"

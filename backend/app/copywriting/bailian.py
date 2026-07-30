@@ -15,8 +15,7 @@ class BailianAuthenticationError(BailianAPIError):
 
 
 def supports_json_object(model: str) -> bool:
-    normalized = model.strip().lower()
-    return not normalized.startswith("deepseek")
+    return bool(model.strip())
 
 
 class BailianChat:
