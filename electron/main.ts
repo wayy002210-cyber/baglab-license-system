@@ -438,6 +438,33 @@ ipcMain.handle(
     return { configured: true };
   }
 );
+ipcMain.handle("credentials:testBailian", async (_event, model: string) => {
+  if (backendState.status !== "ready") throw new Error("本地 AI 服务尚未就绪");
+  const apiKey = await credentials.get("bailian");
+  if (!apiKey) throw new Error("请先保存百炼 API Key");
+  const response = await fetch(`${backendState.baseUrl}/copywriting/connection`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Autocut-Token": backendState.token,
+      "X-Bailian-Key": apiKey
+    },
+    body: JSON.stringify({ model })
+  });
+  const result = (await response.json()) as {
+    status?: string;
+    model?: string;
+    detail?: string | { message?: string };
+  };
+  if (!response.ok) {
+    throw new Error(
+      typeof result.detail === "string"
+        ? result.detail
+        : result.detail?.message || `百炼连接测试失败 (${response.status})`
+    );
+  }
+  return { connected: result.status === "connected", model: result.model || model };
+});
 ipcMain.handle("publishAccounts:check", async (_event, id: string) => {
   if (backendState.status !== "ready") throw new Error("本地发布服务尚未就绪");
   const account = publishRepository().getAccount(id);

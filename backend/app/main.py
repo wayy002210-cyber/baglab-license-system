@@ -81,6 +81,10 @@ class ProbeFontRequest(BaseModel):
     font_path: str = Field(alias="fontPath", min_length=1)
 
 
+class BailianConnectionRequest(BaseModel):
+    model: str = Field(min_length=1)
+
+
 class PublishAccountCheckRequest(BaseModel):
     platform: Platform
     user_data_dir: str = Field(alias="userDataDir", min_length=1)
@@ -178,6 +182,7 @@ def create_app(
     encoder_detector: VideoEncoderDetector | None = None,
     task_runtime: GenerationTaskRuntime | None = None,
     publishing_service: Publisher | None = None,
+    bailian_chat: BailianChat | None = None,
 ) -> FastAPI:
     token = session_token or os.environ.get("AUTOCUT_SESSION_TOKEN")
     if not token:
@@ -200,9 +205,10 @@ def create_app(
     )
     audio_library = AudioLibrary(FfprobeAudioProbe(ffprobe_path))
     font_probe = FontProbe()
-    copywriter = copywriting_service or CopywritingService(BailianChat())
+    chat = bailian_chat or BailianChat()
+    copywriter = copywriting_service or CopywritingService(chat)
     content_creator = content_creation_service or ContentCreationService(
-        TopicService(BailianChat())
+        TopicService(chat)
     )
     voice = voice_service or VoiceService(
         MiniMaxTTS(),
@@ -383,6 +389,26 @@ def create_app(
             return font_probe.probe(Path(payload.font_path))
         except FontProbeError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post(
+        "/copywriting/connection",
+        dependencies=[Depends(authorize)],
+    )
+    def test_bailian_connection(
+        payload: BailianConnectionRequest,
+        x_bailian_key: str | None = Header(default=None),
+    ) -> dict[str, str]:
+        if not x_bailian_key:
+            raise HTTPException(status_code=401, detail="请先配置百炼 API Key")
+        try:
+            chat.complete(
+                api_key=x_bailian_key,
+                model=payload.model,
+                prompt='只返回 JSON：{"ok":true}',
+            )
+            return {"status": "connected", "model": payload.model}
+        except BailianAPIError as error:
+            raise_bailian_http(error)
 
     @app.post(
         "/copywriting/rewrite",

@@ -236,3 +236,29 @@ def test_topics_exposes_invalid_bailian_key_as_actionable_401() -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "BAILIAN_INVALID_KEY"
+
+
+def test_bailian_connection_uses_selected_model() -> None:
+    class Chat:
+        def complete(self, *, api_key, model, prompt):
+            assert api_key == "valid-key"
+            assert model == "deepseek-v3"
+            return '{"ok":true}'
+
+    client = TestClient(
+        create_app(session_token="secret", bailian_chat=Chat())
+    )
+    response = client.post(
+        "/copywriting/connection",
+        headers={
+            "X-Autocut-Token": "secret",
+            "X-Bailian-Key": "valid-key",
+        },
+        json={"model": "deepseek-v3"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "connected",
+        "model": "deepseek-v3",
+    }

@@ -22,6 +22,9 @@ declare global {
         name: "bailian" | "minimax",
         value: string
       ): Promise<{ configured: boolean }>;
+      testBailianConnection(
+        model: string
+      ): Promise<{ connected: boolean; model: string }>;
       deleteCredential(
         name: "bailian" | "minimax"
       ): Promise<{ deleted: boolean }>;

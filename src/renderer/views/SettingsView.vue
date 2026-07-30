@@ -11,6 +11,8 @@ const secrets = reactive({ bailian: "", minimax: "" });
 const savingCredential = ref<"bailian" | "minimax" | null>(null);
 const savingMedia = ref(false);
 const savingCopyModel = ref(false);
+const testingBailian = ref(false);
+const bailianHealth = ref<"unknown" | "connected" | "failed">("unknown");
 const referenceScripts = ref<
   Awaited<ReturnType<typeof window.autocut.listReferenceScripts>>
 >([]);
@@ -49,6 +51,19 @@ async function saveCredential(name: "bailian" | "minimax"): Promise<void> {
 async function clearCredential(name: "bailian" | "minimax"): Promise<void> {
   await window.autocut.deleteCredential(name); await load();
   ElMessage.success("凭据已清除");
+}
+async function testBailian(): Promise<void> {
+  testingBailian.value = true;
+  try {
+    await window.autocut.testBailianConnection(copyModel.defaultModel);
+    bailianHealth.value = "connected";
+    ElMessage.success(`百炼连接正常，模型 ${copyModel.defaultModel} 可调用`);
+  } catch (error) {
+    bailianHealth.value = "failed";
+    ElMessage.error(error instanceof Error ? error.message : "百炼连接测试失败");
+  } finally {
+    testingBailian.value = false;
+  }
 }
 async function selectPath(kind: "output" | "work" | "bgm"): Promise<void> {
   const path = await window.autocut.selectSettingsPath(kind);
@@ -122,6 +137,8 @@ onMounted(load);
             <template #append><el-button :loading="savingCredential === name" @click="saveCredential(name)">保存</el-button></template>
           </el-input>
           <el-button v-if="credentialStatus[name]" link type="danger" @click="clearCredential(name)">清除凭据</el-button>
+          <el-button v-if="name === 'bailian' && credentialStatus.bailian" :loading="testingBailian" @click="testBailian">测试百炼与当前模型</el-button>
+          <el-tag v-if="name === 'bailian' && bailianHealth !== 'unknown'" :type="bailianHealth === 'connected' ? 'success' : 'danger'">{{ bailianHealth === "connected" ? "连接正常" : "连接失败" }}</el-tag>
         </div>
       </article>
 

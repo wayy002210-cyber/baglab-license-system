@@ -333,6 +333,13 @@ contextBridge.exposeInMainWorld("autocut", {
       credentialNameSchema.parse(name),
       z.string().min(1).parse(value)
     ),
+  testBailianConnection: async (model: unknown) =>
+    z.object({ connected: z.boolean(), model: z.string() }).parse(
+      await ipcRenderer.invoke(
+        "credentials:testBailian",
+        z.string().min(1).parse(model)
+      )
+    ),
   deleteCredential: async (name: string) =>
     ipcRenderer.invoke(
       "credentials:delete",
