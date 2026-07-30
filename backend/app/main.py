@@ -482,6 +482,32 @@ def create_app(
     ) -> ComplianceResult:
         return content_creator.check_compliance(payload)
 
+    @app.get("/voices/connection", dependencies=[Depends(authorize)])
+    def test_minimax_connection(
+        x_minimax_key: str | None = Header(default=None),
+    ) -> dict[str, int | str]:
+        if not x_minimax_key:
+            raise HTTPException(status_code=401, detail="请先配置 MiniMax API Key")
+        try:
+            voices = voice.list_voices(api_key=x_minimax_key)
+            return {"status": "connected", "voiceCount": len(voices)}
+        except Exception as error:
+            status_code = getattr(error, "status_code", None)
+            if status_code in (401, 403):
+                raise HTTPException(
+                    status_code=401,
+                    detail="MiniMax API Key 无效或已失效，请在系统设置中更新密钥",
+                ) from error
+            if status_code == 429:
+                raise HTTPException(
+                    status_code=429,
+                    detail="MiniMax 请求过于频繁，请稍后重试",
+                ) from error
+            raise HTTPException(
+                status_code=502,
+                detail=f"MiniMax 连接失败：{error}",
+            ) from error
+
     @app.get("/voices", dependencies=[Depends(authorize)])
     def list_voices(
         x_minimax_key: str | None = Header(default=None),

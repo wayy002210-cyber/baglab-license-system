@@ -34,6 +34,15 @@ export function voiceDisplayName(voice: VoiceOption): string {
   );
 }
 
+export function isChineseVoice(voice: VoiceOption): boolean {
+  if (voice.kind !== "system") return true;
+  return (
+    /[\u3400-\u9fff]/u.test(voice.name) ||
+    voice.voiceId.startsWith("Chinese") ||
+    voice.voiceId.startsWith("Cantonese")
+  );
+}
+
 export function voiceKindLabel(kind: string): string {
   if (kind === "system") return "官方音色";
   if (kind === "clone") return "我的克隆音色";

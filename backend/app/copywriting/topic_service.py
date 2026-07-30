@@ -108,7 +108,7 @@ class TopicService:
     def generate_topics(
         self, *, api_key: str, request: TopicGenerationRequest
     ) -> TopicResult:
-        prompt = f"""你是抖音和小红书口播选题策划。
+        prompt = f"""你是抖音和视频号口播选题策划。
 根据以下资料生成恰好 5 个角度明显不同、可直接发展成口播稿的选题：
 {_persona_context(request)}
 

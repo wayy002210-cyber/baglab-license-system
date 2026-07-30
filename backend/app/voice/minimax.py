@@ -8,6 +8,12 @@ from app.voice.cloning import CloneRequest
 from app.voice.service import MiniMaxRateLimitError, SynthesisRequest
 
 
+class MiniMaxAPIError(RuntimeError):
+    def __init__(self, status_code: int, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class MiniMaxTTS:
     base_url = "https://api.minimaxi.com/v1"
 
@@ -15,18 +21,32 @@ class MiniMaxTTS:
         self.timeout = timeout
 
     def list_voices(self, *, api_key: str) -> list[dict[str, object]]:
-        response = httpx.get(
+        response = httpx.post(
             f"{self.base_url}/get_voice",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={"voice_type": "all"},
             timeout=self.timeout,
         )
         self._raise_for_status(response)
         data = response.json()
+        self._raise_provider_error(data)
         voices: list[dict[str, object]] = []
-        for key in ("system_voice", "voice_cloning", "voice_generation"):
+        kinds = {
+            "system_voice": "system",
+            "voice_cloning": "clone",
+            "voice_generation": "generated",
+        }
+        for key, kind in kinds.items():
             value = data.get(key) or data.get("data", {}).get(key, [])
             if isinstance(value, list):
-                voices.extend(item for item in value if isinstance(item, dict))
+                voices.extend(
+                    {**item, "kind": kind}
+                    for item in value
+                    if isinstance(item, dict)
+                )
         return voices
 
     def synthesize(self, *, api_key: str, request: SynthesisRequest) -> bytes:
@@ -63,6 +83,7 @@ class MiniMaxTTS:
         )
         self._raise_for_status(response)
         data = response.json()
+        self._raise_provider_error(data)
         audio = data.get("data", {}).get("audio")
         if not isinstance(audio, str) or not audio:
             raise RuntimeError("MiniMax returned an unexpected audio response")
@@ -77,8 +98,40 @@ class MiniMaxTTS:
     @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:
         if response.status_code == 429:
-            raise MiniMaxRateLimitError("MiniMax rate limit reached")
-        response.raise_for_status()
+            raise MiniMaxRateLimitError("MiniMax 请求过于频繁，请稍后重试")
+        if response.is_error:
+            raise MiniMaxAPIError(
+                response.status_code,
+                MiniMaxTTS._error_message(response),
+            )
+
+    @staticmethod
+    def _error_message(response: httpx.Response) -> str:
+        try:
+            data = response.json()
+        except ValueError:
+            data = {}
+        base_response = data.get("base_resp", {}) if isinstance(data, dict) else {}
+        message = (
+            base_response.get("status_msg")
+            if isinstance(base_response, dict)
+            else None
+        )
+        return str(message or f"MiniMax 服务返回错误（HTTP {response.status_code}）")
+
+    @staticmethod
+    def _raise_provider_error(data: object) -> None:
+        if not isinstance(data, dict):
+            raise RuntimeError("MiniMax 返回了无法识别的数据")
+        base_response = data.get("base_resp", {})
+        if not isinstance(base_response, dict):
+            return
+        status_code = base_response.get("status_code", 0)
+        if status_code not in (0, None):
+            raise MiniMaxAPIError(
+                int(status_code),
+                str(base_response.get("status_msg") or f"MiniMax 错误 {status_code}"),
+            )
 
 
 class MiniMaxVoiceClient:
@@ -136,8 +189,12 @@ class MiniMaxVoiceClient:
     @staticmethod
     def _validate_response(response: httpx.Response) -> None:
         if response.status_code == 429:
-            raise MiniMaxRateLimitError("MiniMax rate limit reached")
-        response.raise_for_status()
+            raise MiniMaxRateLimitError("MiniMax 请求过于频繁，请稍后重试")
+        if response.is_error:
+            raise MiniMaxAPIError(
+                response.status_code,
+                MiniMaxTTS._error_message(response),
+            )
         data = response.json()
         base_response = data.get("base_resp", {})
         status_code = base_response.get("status_code", 0)

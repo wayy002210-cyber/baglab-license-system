@@ -11,6 +11,7 @@ import { useCreationDraft } from "../composables/useCreationDraft";
 import { segmentCopywriting, stableHash } from "../audio/segment-copywriting";
 import {
   emotionOptions,
+  isChineseVoice,
   voiceDisplayName
 } from "../audio/voice-labels";
 import type { CreationDraft } from "../../shared/contracts";
@@ -89,15 +90,17 @@ async function load(): Promise<void> {
     ];
     ElMessage.warning("在线音色列表暂时不可用，已保留默认音色和声音克隆功能");
   }
-  voices.value = loadedVoices.map((item) => ({
-    ...item,
-    name: voiceDisplayName(item)
-  }));
+  voices.value = loadedVoices
+    .filter(isChineseVoice)
+    .map((item) => ({
+      ...item,
+      name: voiceDisplayName(item)
+    }));
   capabilities.value = loadedCapabilities;
   model.value = loadedCapabilities.models[0] ?? model.value;
   if (!state.draft.value.voice) {
     state.draft.value.voice = {
-      voiceId: loadedVoices[0]?.voiceId ?? "",
+      voiceId: voices.value[0]?.voiceId ?? "",
       source: "system",
       emotion: "calm",
       speed: 1,

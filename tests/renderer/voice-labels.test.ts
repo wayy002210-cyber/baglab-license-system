@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   emotionOptions,
+  isChineseVoice,
   voiceDisplayName,
   voiceKindLabel
 } from "../../src/renderer/audio/voice-labels";
@@ -32,5 +33,36 @@ describe("voice labels", () => {
         kind: "custom"
       })
     ).toBe("袋袋儿");
+  });
+
+  it("keeps Chinese and cloned voices while excluding foreign system voices", () => {
+    expect(
+      isChineseVoice({
+        voiceId: "Chinese (Mandarin)_Reliable_Executive",
+        name: "沉稳高管",
+        kind: "system"
+      })
+    ).toBe(true);
+    expect(
+      isChineseVoice({
+        voiceId: "Cantonese_ProfessionalHost（F)",
+        name: "专业女主持",
+        kind: "system"
+      })
+    ).toBe(true);
+    expect(
+      isChineseVoice({
+        voiceId: "English_Trustworthy_Man",
+        name: "Trustworthy Man",
+        kind: "system"
+      })
+    ).toBe(false);
+    expect(
+      isChineseVoice({
+        voiceId: "Baglab001",
+        name: "Baglab001",
+        kind: "clone"
+      })
+    ).toBe(true);
   });
 });

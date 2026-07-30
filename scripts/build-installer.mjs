@@ -18,6 +18,17 @@ const nativeVerifier = join(
   "verify-packaged-native-modules.mjs"
 );
 const preloadVerifier = join(root, "scripts", "verify-preload-bundle.mjs");
+const runtimePreparer = join(root, "scripts", "prepare-runtime.mjs");
+
+const runtimePreparation = spawnSync(process.execPath, [runtimePreparer], {
+  stdio: "inherit",
+  windowsHide: true
+});
+if (runtimePreparation.status !== 0) {
+  throw new Error(
+    `runtime preparation failed with exit code ${runtimePreparation.status}`
+  );
+}
 
 const preloadVerification = spawnSync(process.execPath, [preloadVerifier], {
   stdio: "inherit",

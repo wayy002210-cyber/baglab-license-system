@@ -465,6 +465,33 @@ ipcMain.handle("credentials:testBailian", async (_event, model: string) => {
   }
   return { connected: result.status === "connected", model: result.model || model };
 });
+ipcMain.handle("credentials:testMinimax", async () => {
+  if (backendState.status !== "ready") throw new Error("本地 AI 服务尚未就绪");
+  const apiKey = await credentials.get("minimax");
+  if (!apiKey) throw new Error("请先保存 MiniMax API Key");
+  const response = await fetch(`${backendState.baseUrl}/voices/connection`, {
+    headers: {
+      "X-Autocut-Token": backendState.token,
+      "X-MiniMax-Key": apiKey
+    }
+  });
+  const result = (await response.json()) as {
+    status?: string;
+    voiceCount?: number;
+    detail?: string | { message?: string };
+  };
+  if (!response.ok) {
+    throw new Error(
+      typeof result.detail === "string"
+        ? result.detail
+        : result.detail?.message || `MiniMax 连接测试失败 (${response.status})`
+    );
+  }
+  return {
+    connected: result.status === "connected",
+    voiceCount: result.voiceCount ?? 0
+  };
+});
 ipcMain.handle("publishAccounts:check", async (_event, id: string) => {
   if (backendState.status !== "ready") throw new Error("本地发布服务尚未就绪");
   const account = publishRepository().getAccount(id);

@@ -116,3 +116,26 @@ def test_minimax_client_converts_http_429_to_retryable_error(monkeypatch) -> Non
             api_key="secret",
             request=SynthesisRequest(text="你好", voiceId="voice-1"),
         )
+def test_minimax_client_lists_all_voices_with_the_current_post_contract(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def post(url, *, headers, json, timeout):
+        captured.update(url=url, headers=headers, json=json, timeout=timeout)
+        return httpx.Response(
+            200,
+            json={
+                "system_voice": [{"voice_id": "voice-1"}],
+                "voice_cloning": [{"voice_id": "clone-1"}],
+                "base_resp": {"status_code": 0, "status_msg": "success"},
+            },
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", post)
+    voices = MiniMaxTTS().list_voices(api_key="secret")
+
+    assert [voice["voice_id"] for voice in voices] == ["voice-1", "clone-1"]
+    assert captured["url"] == "https://api.minimaxi.com/v1/get_voice"
+    assert captured["json"] == {"voice_type": "all"}

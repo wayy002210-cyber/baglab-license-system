@@ -107,3 +107,25 @@ def test_voice_capabilities_match_the_supported_minimax_contract() -> None:
     assert "happy" in body["emotions"]
     assert body["speedRange"] == [0.5, 2.0]
     assert body["sample"]["formats"] == ["mp3", "m4a", "wav"]
+
+
+def test_minimax_connection_uses_voice_listing_without_generating_billable_audio() -> None:
+    class Voice:
+        def list_voices(self, *, api_key):
+            assert api_key == "minimax-secret"
+            return [{"voiceId": "voice-1", "name": "测试音色", "kind": "system"}]
+
+        def synthesize(self, *, api_key, request):
+            raise AssertionError("connection test must not synthesize audio")
+
+    client = TestClient(create_app(session_token="secret", voice_service=Voice()))
+    auth = {"X-Autocut-Token": "secret"}
+
+    assert client.get("/voices/connection", headers=auth).status_code == 401
+    response = client.get(
+        "/voices/connection",
+        headers={**auth, "X-MiniMax-Key": "minimax-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "connected", "voiceCount": 1}

@@ -340,6 +340,10 @@ contextBridge.exposeInMainWorld("autocut", {
         z.string().min(1).parse(model)
       )
     ),
+  testMinimaxConnection: async () =>
+    z.object({ connected: z.boolean(), voiceCount: z.number().int().nonnegative() }).parse(
+      await ipcRenderer.invoke("credentials:testMinimax")
+    ),
   deleteCredential: async (name: string) =>
     ipcRenderer.invoke(
       "credentials:delete",
