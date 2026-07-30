@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
 import { toUserMessage } from "../lib/user-error";
+import { toPublishAccountInput } from "../publishing/publish-account-form";
 
 type Account = Awaited<ReturnType<typeof window.autocut.listPublishAccounts>>[number];
 const accounts = ref<Account[]>([]);
@@ -23,12 +24,14 @@ async function create() {
   connecting.value = true;
   connectionMessage.value = "正在创建独立账号卡片和浏览器目录……";
   try {
-    createdAccount.value = await window.autocut.createPublishAccount(form);
+    createdAccount.value = await window.autocut.createPublishAccount(
+      toPublishAccountInput(form)
+    );
     await load();
     ElMessage.success("账号卡片已创建，请点击卡片打开登录窗口");
     dialogOpen.value = false;
   } catch (error) {
-    connectionMessage.value = toUserMessage(error, "账号登录连接失败");
+    connectionMessage.value = toUserMessage(error, "创建账号卡片失败");
     ElMessage.error(connectionMessage.value);
   } finally {
     connecting.value = false;
