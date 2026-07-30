@@ -13,6 +13,15 @@
   --success: #2f9e44;
   --warning: #d97706;
   --danger: #dc2626;
+  --space-card: 24px;
+  --space-section: 20px;
+  --radius-card: 20px;
+  --radius-control: 10px;
+  --control-height: 42px;
+  --font-page-title: 28px;
+  --font-section-title: 18px;
+  --font-body: 14px;
+  --font-caption: 12px;
   color: var(--brand-black);
   background: var(--page-bg);
   font-synthesis: none;
@@ -33,7 +42,7 @@ select {
 }
 .page {
   display: grid;
-  gap: 20px;
+  gap: var(--space-section);
 }
 .page-heading {
   display: flex;
@@ -46,17 +55,37 @@ select {
   margin: 0;
 }
 .page-heading h2 {
-  font-size: 26px;
+  font-size: var(--font-page-title);
+  line-height: 1.25;
 }
 .page-heading p {
   margin-top: 7px;
   color: var(--text-muted);
+  font-size: var(--font-body);
+  line-height: 1.7;
 }
 .surface {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: var(--radius-card);
   box-shadow: 0 12px 35px rgba(17, 17, 17, 0.06);
+}
+.el-button {
+  min-height: 34px;
+  border-radius: var(--radius-control);
+}
+.el-button:not(.el-button--small) {
+  min-height: var(--control-height);
+  padding-inline: 18px;
+}
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  border-radius: var(--radius-control);
+}
+.el-input__wrapper,
+.el-select__wrapper {
+  min-height: var(--control-height);
 }
 .placeholder-panel {
   min-height: 430px;

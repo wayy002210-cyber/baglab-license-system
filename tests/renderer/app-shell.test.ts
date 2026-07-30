@@ -40,4 +40,10 @@ describe("AppShell", () => {
     expect(wrapper.find('nav[aria-label="主导航"]').exists()).toBe(true);
     expect(wrapper.find('[aria-label="创作步骤"]').exists()).toBe(false);
   });
+
+  it("keeps the sidebar visible while long pages scroll", () => {
+    const wrapper = mount(AppShell);
+    expect(wrapper.get("aside.sidebar").attributes("data-sticky")).toBe("true");
+    expect(wrapper.get("nav").classes()).toContain("sidebar__nav");
+  });
 });

@@ -13,7 +13,7 @@ defineEmits<{ action: [] }>();
       <h2>{{ title }}</h2>
       <p>{{ description }}</p>
     </div>
-    <el-button v-if="action" type="primary" size="large" round @click="$emit('action')">
+    <el-button v-if="action" type="primary" size="large" @click="$emit('action')">
       {{ action }}
     </el-button>
   </section>

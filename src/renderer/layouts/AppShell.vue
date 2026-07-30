@@ -30,7 +30,7 @@ const modules = [
 
 <template>
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar" data-sticky="true">
       <div class="brand">
         <img class="brand__mark" :src="logoUrl" alt="袋研官" />
         <div>
@@ -38,7 +38,7 @@ const modules = [
           <small>矩阵混剪工作台</small>
         </div>
       </div>
-      <nav aria-label="主导航">
+      <nav class="sidebar__nav" aria-label="主导航">
         <RouterLink
           v-for="item in modules"
           :key="item.path"
@@ -78,6 +78,10 @@ const modules = [
   color: var(--brand-black);
 }
 .sidebar {
+  position: sticky;
+  top: 18px;
+  height: calc(100vh - 36px);
+  max-height: calc(100vh - 36px);
   margin: 18px 0 18px 18px;
   padding: 22px 16px;
   border-radius: 24px;
@@ -86,6 +90,12 @@ const modules = [
   display: flex;
   flex-direction: column;
   box-shadow: 0 18px 45px rgba(16, 16, 16, 0.16);
+}
+.sidebar__nav {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 .brand {
   display: flex;
