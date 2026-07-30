@@ -174,9 +174,9 @@ class DouyinPublisher(PublisherAdapter):
     ]
 
 
-class XiaohongshuPublisher(PublisherAdapter):
+class WechatChannelsPublisher(PublisherAdapter):
     title_selectors = [
-        'input[placeholder*="填写标题"]',
+        'textarea[placeholder*="描述"]',
         'textarea[placeholder*="标题"]',
         '[contenteditable=true]',
     ]

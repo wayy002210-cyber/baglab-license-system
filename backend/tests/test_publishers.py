@@ -4,7 +4,7 @@ from app.publisher.adapters import (
     DouyinPublisher,
     PublishCancellation,
     PublishRequest,
-    XiaohongshuPublisher,
+    WechatChannelsPublisher,
 )
 from app.publisher.service import PublishingService
 
@@ -46,9 +46,9 @@ def test_douyin_publisher_uses_semantic_fallback_selectors(tmp_path: Path) -> No
     assert any(action[0] == "fill" and "#工厂" in action[2] for action in page.actions)
 
 
-def test_xiaohongshu_publisher_requires_user_on_challenge(tmp_path: Path) -> None:
+def test_wechat_channels_publisher_requires_user_on_challenge(tmp_path: Path) -> None:
     page = FakePage(challenge=True)
-    result = XiaohongshuPublisher().publish(page, request(tmp_path))
+    result = WechatChannelsPublisher().publish(page, request(tmp_path))
 
     assert result.status == "needs_user"
     assert result.current_url == page.url

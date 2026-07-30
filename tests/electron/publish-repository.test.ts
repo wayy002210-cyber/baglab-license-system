@@ -44,7 +44,7 @@ describe("PublishRepository", () => {
     seedTask("task-1");
     const account = repository.createAccount({
       name: "小红书",
-      platform: "xiaohongshu",
+      platform: "wechat_channels",
       userDataDir: "D:/profiles/xhs"
     });
     const input = {
@@ -147,7 +147,7 @@ describe("PublishRepository", () => {
     seedTask("task-active-cancel");
     const account = repository.createAccount({
       name: "执行中账号",
-      platform: "xiaohongshu",
+      platform: "wechat_channels",
       userDataDir: "D:/profiles/active-cancel"
     });
     const job = repository.createJob({

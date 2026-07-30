@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 
-export type PublishPlatform = "douyin" | "xiaohongshu";
+export type PublishPlatform = "douyin" | "wechat_channels";
 export type AccountLinkStatus =
   | "unknown"
   | "connected"
@@ -70,7 +70,9 @@ export class PublishRepository {
   listAccounts(): PublishAccount[] {
     return (
       this.database
-        .prepare("SELECT * FROM publish_accounts ORDER BY created_at DESC")
+        .prepare(
+          "SELECT * FROM publish_accounts WHERE platform IN ('douyin', 'wechat_channels') ORDER BY created_at DESC"
+        )
         .all() as AccountRow[]
     ).map(mapAccount);
   }

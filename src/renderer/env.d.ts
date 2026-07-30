@@ -220,7 +220,7 @@ declare global {
       listPublishAccounts(): Promise<PublishAccount[]>;
       createPublishAccount(input: {
         name: string;
-        platform: "douyin" | "xiaohongshu";
+        platform: "douyin" | "wechat_channels";
       }): Promise<PublishAccount>;
       setPublishAccountStatus(
         id: string,
@@ -331,7 +331,7 @@ type GenerationTask = {
 type PublishAccount = {
   id: string;
   name: string;
-  platform: "douyin" | "xiaohongshu";
+  platform: "douyin" | "wechat_channels";
   userDataDir: string;
   linkStatus: "unknown" | "connected" | "expired" | "needs_user";
   lastCheckedAt: string | null;

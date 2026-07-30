@@ -209,7 +209,7 @@ const createTaskBatchSchema = z.object({
   seed: z.number().int(),
   snapshot: z.record(z.string(), z.unknown())
 });
-const publishPlatformSchema = z.enum(["douyin", "xiaohongshu"]);
+const publishPlatformSchema = z.enum(["douyin", "wechat_channels"]);
 const accountLinkStatusSchema = z.enum([
   "unknown", "connected", "expired", "needs_user"
 ]);

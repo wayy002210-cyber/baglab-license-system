@@ -10,10 +10,10 @@ const dialogOpen = ref(false);
 const connecting = ref(false);
 const connectionMessage = ref("");
 const createdAccount = ref<Account | null>(null);
-const form = reactive<{ name: string; platform: "douyin" | "xiaohongshu" }>({
+const form = reactive<{ name: string; platform: "douyin" | "wechat_channels" }>({
   name: "", platform: "douyin"
 });
-const platformName = { douyin: "抖音", xiaohongshu: "小红书" };
+const platformName = { douyin: "抖音", wechat_channels: "视频号" };
 const statusName = {
   unknown: "未检测", connected: "已登录", expired: "登录失效", needs_user: "需要接管"
 };
@@ -21,18 +21,12 @@ async function load() { accounts.value = await window.autocut.listPublishAccount
 function openCreate() { form.name = ""; form.platform = "douyin"; createdAccount.value = null; connectionMessage.value = ""; dialogOpen.value = true; }
 async function create() {
   connecting.value = true;
-  connectionMessage.value = "正在创建独立浏览器并打开平台登录页面……";
+  connectionMessage.value = "正在创建独立账号卡片和浏览器目录……";
   try {
     createdAccount.value = await window.autocut.createPublishAccount(form);
-    connectionMessage.value = "登录窗口已打开，请在浏览器中扫码或完成登录。软件会自动检测结果。";
-    const connected = await window.autocut.connectPublishAccount(createdAccount.value.id);
-    createdAccount.value = connected;
-    connectionMessage.value =
-      connected.linkStatus === "connected"
-        ? "账号连接成功，可以用于发布。"
-        : "登录尚未完成，请点击“继续登录”重新打开登录窗口。";
     await load();
-    if (connected.linkStatus === "connected") ElMessage.success("发布账号已连接");
+    ElMessage.success("账号卡片已创建，请点击卡片打开登录窗口");
+    dialogOpen.value = false;
   } catch (error) {
     connectionMessage.value = toUserMessage(error, "账号登录连接失败");
     ElMessage.error(connectionMessage.value);
@@ -92,7 +86,7 @@ onMounted(load);
         <el-form-item label="平台">
           <el-radio-group v-model="form.platform">
             <el-radio-button value="douyin">抖音</el-radio-button>
-            <el-radio-button value="xiaohongshu">小红书</el-radio-button>
+            <el-radio-button value="wechat_channels">视频号</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="账号备注"><el-input v-model="form.name" placeholder="例如：上海门店抖音" /></el-form-item>
@@ -105,7 +99,7 @@ onMounted(load);
       </section>
       <template #footer>
         <el-button @click="dialogOpen = false">{{ createdAccount ? "关闭" : "取消" }}</el-button>
-        <el-button v-if="!createdAccount" type="primary" :loading="connecting" :disabled="!form.name.trim()" @click="create">保存并连接登录</el-button>
+        <el-button v-if="!createdAccount" type="primary" :loading="connecting" :disabled="!form.name.trim()" @click="create">创建账号卡片</el-button>
         <el-button v-else-if="createdAccount.linkStatus !== 'connected'" type="primary" :loading="connecting" @click="connect(createdAccount)">继续登录</el-button>
       </template>
     </el-dialog>

@@ -10,15 +10,15 @@ from app.publisher.adapters import (
     PublishCancelled,
     PublishRequest,
     PublishResult,
-    XiaohongshuPublisher,
+    WechatChannelsPublisher,
 )
 from app.publisher.playwright_page import PersistentBrowserSession
 
 
-Platform = Literal["douyin", "xiaohongshu"]
+Platform = Literal["douyin", "wechat_channels"]
 UPLOAD_URLS: dict[Platform, str] = {
     "douyin": "https://creator.douyin.com/creator-micro/content/upload",
-    "xiaohongshu": "https://creator.xiaohongshu.com/publish/publish",
+    "wechat_channels": "https://channels.weixin.qq.com/platform/post/create",
 }
 
 
@@ -74,7 +74,7 @@ class PublishingService:
         adapter = (
             DouyinPublisher()
             if platform == "douyin"
-            else XiaohongshuPublisher()
+            else WechatChannelsPublisher()
         )
         with self._lock:
             cancellation = self._cancellations.setdefault(
