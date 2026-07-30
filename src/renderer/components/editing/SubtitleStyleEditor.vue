@@ -39,6 +39,7 @@ function patch(value: Partial<TextStyle>): void {
 </template>
 
 <style scoped>
-.style-editor{display:grid;gap:14px}.style-editor header,.inline,.presets{display:flex;align-items:center;justify-content:space-between;gap:10px}.style-editor header span{color:var(--muted);font-size:12px}.presets{justify-content:flex-start;flex-wrap:wrap}.style-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.style-grid label{display:grid;gap:6px;font-size:13px;color:var(--muted)}.inline{justify-content:flex-start}
+.style-editor{display:grid;gap:14px;padding-top:4px}.style-editor header,.inline,.presets{display:flex;align-items:center;justify-content:space-between;gap:10px}.style-editor header span{color:var(--muted);font-size:12px}.presets{justify-content:flex-start;flex-wrap:wrap}.style-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.style-grid label{display:grid;align-content:start;gap:7px;min-width:0;font-size:13px;color:var(--muted)}.style-grid :deep(.el-input-number){width:100%}.inline{justify-content:flex-start}
 .font-control{grid-column:1/-1}
+@media(max-width:520px){.style-grid{grid-template-columns:1fr}.font-control{grid-column:auto}}
 </style>

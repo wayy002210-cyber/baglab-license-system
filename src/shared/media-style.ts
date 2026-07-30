@@ -24,10 +24,10 @@ export const defaultSubtitleStyle: TextStyle = {
   fontSize: 58,
   primaryColor: "#FFFFFF",
   outlineColor: "#101010",
-  outlineWidth: 4,
-  shadowColor: "#80000000",
-  shadowX: 1,
-  shadowY: 1,
+  outlineWidth: 2,
+  shadowColor: "#40000000",
+  shadowX: 0,
+  shadowY: 0,
   alignment: 2,
   marginV: 170
 };
@@ -52,7 +52,7 @@ export const subtitleStylePresets = [
       ...defaultSubtitleStyle,
       primaryColor: "#111111",
       outlineColor: "#FFE600",
-      outlineWidth: 8
+      outlineWidth: 3
     }
   }
 ] as const;

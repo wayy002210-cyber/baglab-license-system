@@ -5,9 +5,12 @@ function css(style: TextStyle) {
   return {
     color: style.primaryColor,
     fontFamily: style.fontFamily,
-    fontSize: `${Math.max(12, style.fontSize / 4)}px`,
-    WebkitTextStroke: `${Math.max(0, style.outlineWidth / 4)}px ${style.outlineColor}`,
-    textShadow: `${style.shadowX / 4}px ${style.shadowY / 4}px ${style.shadowColor}`
+    fontSize: `${Math.max(13, style.fontSize / 4.25)}px`,
+    WebkitTextStroke: `${Math.max(0, style.outlineWidth / 3)}px ${style.outlineColor}`,
+    textShadow:
+      style.shadowX || style.shadowY
+        ? `${style.shadowX / 3}px ${style.shadowY / 3}px 1px ${style.shadowColor}`
+        : "none"
   };
 }
 </script>
@@ -18,5 +21,5 @@ function css(style: TextStyle) {
   </div>
 </template>
 <style scoped>
-.phone-canvas{position:relative;width:216px;aspect-ratio:9/16;border:8px solid #111;border-radius:28px;background:linear-gradient(145deg,#333,#111);overflow:hidden}.title,.subtitle{position:absolute;left:10px;right:10px;text-align:center;font-weight:800}.title{top:10%}.subtitle{bottom:9%}
+.phone-canvas{position:relative;width:252px;aspect-ratio:9/16;border:8px solid #111;border-radius:30px;background:linear-gradient(145deg,#363636,#171717);overflow:hidden;box-shadow:0 18px 36px rgba(0,0,0,.16)}.phone-canvas::before{content:"9:16 成片预览";position:absolute;inset:48% 0 auto;text-align:center;color:#777;font-size:12px}.title,.subtitle{position:absolute;z-index:1;left:16px;right:16px;text-align:center;font-weight:800;line-height:1.28;word-break:break-word}.title{top:9%}.subtitle{bottom:9%}
 </style>

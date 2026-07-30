@@ -54,5 +54,5 @@ onMounted(load);
  </div>
 </template>
 <style scoped>
-.create-bar{display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:14px 18px;margin-bottom:16px}.create-bar div{display:grid;margin-right:auto}.create-bar span{font-size:12px;color:var(--muted);margin-top:3px}.studio{display:grid;grid-template-columns:250px minmax(460px,1fr) 330px;gap:16px;align-items:start}.studio>*{min-width:0}@media(max-width:1250px){.studio{grid-template-columns:220px 1fr}.media-panel{grid-column:1/-1}}@media(max-width:820px){.studio{grid-template-columns:1fr}.media-panel{grid-column:auto}.create-bar{flex-wrap:wrap}}
+.create-bar{display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:16px 20px;margin-bottom:18px}.create-bar div{display:grid;margin-right:auto}.create-bar span{font-size:12px;color:var(--muted);margin-top:3px}.studio{display:grid;grid-template-columns:260px minmax(560px,1fr) 420px;gap:18px;align-items:start}.studio>*{min-width:0}@media(max-width:1500px){.studio{grid-template-columns:250px minmax(520px,1fr)}.media-panel{grid-column:1/-1}}@media(max-width:900px){.studio{grid-template-columns:1fr}.media-panel{grid-column:auto}.create-bar{flex-wrap:wrap}}
 </style>
