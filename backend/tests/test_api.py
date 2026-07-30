@@ -5,6 +5,7 @@ from app.media.asset_scanner import ScanResult, ScannedAsset
 from app.copywriting.service import RewriteResult
 from app.copywriting.compliance import ComplianceResult
 from app.copywriting.topic_service import CopywritingResult, TopicResult
+from app.copywriting.bailian import BailianAuthenticationError
 
 
 def test_health_requires_session_token() -> None:
@@ -195,3 +196,43 @@ def test_content_creation_endpoints_use_selected_bailian_model() -> None:
         json={"text": "普通文案", "personaBannedWords": []},
     )
     assert compliance.status_code == 200
+
+
+def test_topics_exposes_invalid_bailian_key_as_actionable_401() -> None:
+    class ContentCreation:
+        def generate_topics(self, *, api_key, request):
+            raise BailianAuthenticationError(
+                "百炼 API Key 无效或已失效，请在系统设置中重新填写并测试连接",
+                code="BAILIAN_INVALID_KEY",
+                status_code=401,
+            )
+
+        def generate_copywriting(self, *, api_key, request):
+            raise AssertionError("not called")
+
+        def check_compliance(self, request):
+            raise AssertionError("not called")
+
+    client = TestClient(
+        create_app(
+            session_token="secret",
+            content_creation_service=ContentCreation(),
+        )
+    )
+    response = client.post(
+        "/copywriting/topics",
+        headers={
+            "X-Autocut-Token": "secret",
+            "X-Bailian-Key": "invalid",
+        },
+        json={
+            "model": "deepseek-v3",
+            "personaName": "袋研官",
+            "industry": "工厂",
+            "brandFacts": [],
+            "referenceScripts": [],
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "BAILIAN_INVALID_KEY"

@@ -982,10 +982,16 @@ async function postCopywriting(
     },
     body: JSON.stringify(payload)
   });
-  const result = (await response.json()) as { detail?: string };
+  const result = (await response.json()) as {
+    detail?: string | { code?: string; message?: string };
+  };
   if (!response.ok) {
+    const detail =
+      typeof result.detail === "string"
+        ? result.detail
+        : result.detail?.message;
     throw new Error(
-      result.detail || `文案服务请求失败 (${response.status})，请稍后重试`
+      detail || `文案服务请求失败 (${response.status})，请稍后重试`
     );
   }
   return result;

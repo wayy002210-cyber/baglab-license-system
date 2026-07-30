@@ -1,35 +1,56 @@
+import { flushPromises, mount } from "@vue/test-utils";
+import { defineComponent } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { useCreationDraft } from "../../src/renderer/composables/useCreationDraft";
 
 describe("useCreationDraft", () => {
-  it("restores and saves a validated draft", async () => {
-    const existing = {
-      version: 1 as const,
-      stage: "persona" as const,
-      personaId: null,
-      copywriting: null,
-      voice: null,
-      audioSegments: [],
-      shots: [],
-      bgm: null,
-      titleStyle: null,
-      subtitleStyle: null
-    };
-    const save = vi.fn(async (draft) => draft);
+  it("surfaces automatic save failures instead of creating an unhandled promise", async () => {
     Object.assign(window, {
       autocut: {
-        getCreationDraft: vi.fn(async () => existing),
-        saveCreationDraft: save
+        saveCreationDraft: vi.fn(async () => {
+          throw new Error("数据库写入失败");
+        })
       }
     });
+    let state!: ReturnType<typeof useCreationDraft>;
+    mount(
+      defineComponent({
+        setup() {
+          state = useCreationDraft();
+          return {};
+        },
+        template: "<div />"
+      })
+    );
 
-    const state = useCreationDraft();
-    await state.load();
-    state.draft.value.stage = "copywriting";
+    state.scheduleSave(0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushPromises();
+
+    expect(state.saveStatus.value).toBe("failed");
+    expect(state.saveError.value).toBe("数据库写入失败");
+  });
+
+  it("marks a successful explicit save as persisted", async () => {
+    Object.assign(window, {
+      autocut: {
+        saveCreationDraft: vi.fn(async (draft) => draft)
+      }
+    });
+    let state!: ReturnType<typeof useCreationDraft>;
+    mount(
+      defineComponent({
+        setup() {
+          state = useCreationDraft();
+          return {};
+        },
+        template: "<div />"
+      })
+    );
+
     await state.saveImmediate();
 
-    expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({ stage: "copywriting" })
-    );
+    expect(state.saveStatus.value).toBe("saved");
+    expect(state.saveError.value).toBe("");
   });
 });

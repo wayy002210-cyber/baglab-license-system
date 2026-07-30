@@ -20,7 +20,7 @@ from app.media.audio_library import (
     FfprobeAudioProbe,
 )
 from app.media.font_probe import FontMetadata, FontProbe, FontProbeError
-from app.copywriting.bailian import BailianChat
+from app.copywriting.bailian import BailianAPIError, BailianChat
 from app.copywriting.service import (
     CopywritingService,
     RewriteRequest,
@@ -228,6 +228,12 @@ def create_app(
     )
     publisher = publishing_service or PublishingService()
 
+    def raise_bailian_http(error: BailianAPIError) -> None:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail={"code": error.code, "message": str(error)},
+        ) from error
+
     def authorize(x_autocut_token: str | None = Header(default=None)) -> None:
         if x_autocut_token != token:
             raise HTTPException(status_code=401, detail="Invalid session token")
@@ -395,6 +401,8 @@ def create_app(
                 model="qwen-plus",
                 request=payload,
             )
+        except BailianAPIError as error:
+            raise_bailian_http(error)
         except StructuredOutputError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 
@@ -413,6 +421,8 @@ def create_app(
             return content_creator.generate_topics(
                 api_key=x_bailian_key, request=payload
             )
+        except BailianAPIError as error:
+            raise_bailian_http(error)
         except StructuredOutputError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 
@@ -431,6 +441,8 @@ def create_app(
             return content_creator.generate_copywriting(
                 api_key=x_bailian_key, request=payload
             )
+        except BailianAPIError as error:
+            raise_bailian_http(error)
         except StructuredOutputError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 

@@ -218,9 +218,20 @@ async function goToAudio(): Promise<void> {
     ElMessage.warning("口播文案请控制在 200–1000 字");
     return;
   }
+  const previousStage = draftState.draft.value.stage;
   draftState.draft.value.stage = "audio";
-  await draftState.saveImmediate();
-  await router.push("/audio");
+  try {
+    await draftState.saveImmediate();
+    ElMessage.success("文案已保存，正在进入音频制作");
+    await router.push("/audio");
+  } catch (error) {
+    draftState.draft.value.stage = previousStage;
+    ElMessage.error(
+      `文案保存失败：${
+        error instanceof Error ? error.message : "请稍后重试"
+      }`
+    );
+  }
 }
 
 watch(
@@ -361,12 +372,32 @@ onMounted(load);
           placeholder="生成文案，或在这里粘贴自己的完整口播稿"
         />
         <div class="editor-actions">
-          <el-button :loading="checking" @click="checkCompliance">
-            AI 违禁词检查
-          </el-button>
-          <el-button type="primary" @click="goToAudio">
-            保存并进入音频制作
-          </el-button>
+          <span
+            class="save-state"
+            :class="{ failed: draftState.saveStatus.value === 'failed' }"
+          >
+            {{
+              draftState.saveStatus.value === "saving"
+                ? "正在保存草稿…"
+                : draftState.saveStatus.value === "saved"
+                  ? "草稿已保存"
+                  : draftState.saveStatus.value === "failed"
+                    ? `保存失败：${draftState.saveError.value}`
+                    : "修改后自动保存"
+            }}
+          </span>
+          <div>
+            <el-button :loading="checking" @click="checkCompliance">
+              AI 违禁词检查
+            </el-button>
+            <el-button
+              type="primary"
+              :loading="draftState.saving.value"
+              @click="goToAudio"
+            >
+              保存并进入音频制作
+            </el-button>
+          </div>
         </div>
       </section>
 
@@ -406,6 +437,7 @@ label {
   color: var(--text-muted);
   font-size: 13px;
 }
+.save-state{font-size:12px;color:var(--text-muted)}.save-state.failed{color:var(--el-color-danger)}
 .mode-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
