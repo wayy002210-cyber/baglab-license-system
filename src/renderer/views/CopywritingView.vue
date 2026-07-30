@@ -156,8 +156,12 @@ async function generateScript(): Promise<void> {
         minLength: 200,
         maxLength: 1000
       });
-      state.text = result.text;
-      state.complianceIssues = [];
+      const currentState = copywriting.value;
+      if (!currentState) {
+        throw new Error("当前文案草稿已失效，请重新生成");
+      }
+      currentState.text = result.text;
+      currentState.complianceIssues = [];
       await draftState.saveImmediate();
     }, {
       phase: "requesting",
