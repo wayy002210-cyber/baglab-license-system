@@ -3,7 +3,11 @@ import type { CreationDraft } from "../../../shared/contracts";
 type Shot = CreationDraft["shots"][number];
 type Category = Awaited<ReturnType<typeof window.autocut.listAssetCategories>>[number];
 const props = defineProps<{ shots: Shot[]; categories: Category[] }>();
-const emit = defineEmits<{ "update:shots": [shots: Shot[]] }>();
+const emit = defineEmits<{
+  "update:shots": [shots: Shot[]];
+  rebuild: [];
+  add: [];
+}>();
 function update(index: number, patch: Partial<Shot>) {
   emit("update:shots", props.shots.map((item, cursor) => cursor === index ? { ...item, ...patch } : item));
 }
@@ -19,7 +23,21 @@ function remove(index: number) {
 </script>
 <template>
   <main class="panel shot-editor">
-    <header><div><h3>镜头创作区</h3><p>每段口播对应一个镜头，并从指定素材分类自动取片。</p></div></header>
+    <header>
+      <div><h3>镜头创作区</h3><p>每段口播对应一个镜头，并从指定素材分类自动取片。</p></div>
+      <div class="header-actions">
+        <el-button @click="emit('rebuild')">从文案重新拆分</el-button>
+        <el-button type="primary" @click="emit('add')">添加镜头</el-button>
+      </div>
+    </header>
+    <div v-if="!shots.length" class="empty-state">
+      <strong>还没有可编辑镜头</strong>
+      <p>可以从当前文案重新拆分，也可以手动添加第一个镜头。</p>
+      <div>
+        <el-button @click="emit('rebuild')">从文案生成镜头</el-button>
+        <el-button type="primary" @click="emit('add')">添加镜头</el-button>
+      </div>
+    </div>
     <article v-for="(shot,index) in shots" :key="shot.id" class="shot">
       <span class="number">{{ index + 1 }}</span>
       <div class="copy">
@@ -48,5 +66,5 @@ function remove(index: number) {
   </main>
 </template>
 <style scoped>
-.panel{padding:18px}.panel h3,.panel p{margin:0}.panel p{color:var(--muted);font-size:12px;margin-top:4px}.shot{display:grid;grid-template-columns:34px minmax(220px,1fr) minmax(210px,.65fr);gap:12px;padding:14px;margin-top:12px;border:1px solid var(--line);border-radius:16px}.number{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:var(--brand);font-weight:800}.copy small{color:var(--muted)}.settings{display:grid;gap:8px}.settings label{display:grid;gap:4px;font-size:12px;color:var(--muted)}.shot footer{grid-column:2/4;text-align:right}
+.panel{padding:20px}.panel>header{display:flex;align-items:center;justify-content:space-between;gap:14px}.header-actions{display:flex;gap:8px;flex-wrap:wrap}.panel h3,.panel p{margin:0}.panel p{color:var(--muted);font-size:12px;margin-top:4px}.empty-state{min-height:280px;display:grid;place-items:center;align-content:center;gap:12px;margin-top:16px;border:1px dashed var(--line);border-radius:16px;text-align:center}.empty-state p{max-width:360px}.shot{display:grid;grid-template-columns:34px minmax(220px,1fr) minmax(210px,.65fr);gap:12px;padding:14px;margin-top:12px;border:1px solid var(--line);border-radius:16px}.number{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:var(--brand);font-weight:800}.copy small{color:var(--muted)}.settings{display:grid;gap:8px}.settings label{display:grid;gap:4px;font-size:12px;color:var(--muted)}.shot footer{grid-column:2/4;text-align:right}
 </style>
