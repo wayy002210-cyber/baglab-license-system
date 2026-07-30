@@ -13,6 +13,16 @@ describe("user error mapping", () => {
     expect(result.action).toContain("重新生成");
   });
 
+  it("explains a copywriting compliance failure", () => {
+    const result = mapUserError(
+      new Error("copywriting contains a banned word"),
+      "生成文案失败"
+    );
+
+    expect(result.title).toBe("文案仍包含禁用词");
+    expect(result.action).toContain("禁用词");
+  });
+
   it("maps unavailable model errors to a model recovery action", () => {
     const result = mapUserError(
       new Error("model deepseek-v3 not found (404)"),

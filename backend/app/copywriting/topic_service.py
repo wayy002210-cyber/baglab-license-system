@@ -94,6 +94,10 @@ class CopywritingResult(BaseModel):
     text: str = Field(min_length=1)
 
 
+class RecoverableCopywritingWarning(ValueError):
+    """A draft-quality warning that should trigger repair without losing the draft."""
+
+
 def _persona_context(request: TopicGenerationRequest) -> str:
     return json.dumps(
         {
@@ -112,7 +116,15 @@ class TopicService:
     def __init__(self, chat: ChatCompletion) -> None:
         self.chat = chat
 
-    def _structured(self, *, api_key: str, model: str, prompt: str, schema):
+    def _structured(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        prompt: str,
+        schema,
+        post_validate=None,
+    ):
         current_prompt = prompt
         last_error = ""
         for attempt in range(3):
@@ -120,9 +132,16 @@ class TopicService:
                 api_key=api_key, model=model, prompt=current_prompt
             )
             try:
-                return schema.model_validate(_extract_json(response))
+                result = schema.model_validate(_extract_json(response))
+                if post_validate is not None:
+                    post_validate(result)
+                return result
             except (json.JSONDecodeError, ValidationError, ValueError) as error:
                 last_error = str(error)
+                if attempt == 2 and isinstance(
+                    error, RecoverableCopywritingWarning
+                ):
+                    return result
                 if attempt < 2:
                     current_prompt = (
                         f"{prompt}\n\n上一次返回没有通过结构校验。"
@@ -162,21 +181,31 @@ class TopicService:
 要求短句、口语化、强开场、价值明确、行动引导克制；
 不得虚构明确事实，不得出现禁用词。只输出 JSON：
 {{"text":"完整口播稿"}}"""
-        result = self._structured(
+        def validate_copywriting(result: CopywritingResult) -> None:
+            text_length = len("".join(result.text.split()))
+            if text_length < request.min_length or text_length > request.max_length:
+                raise ValueError(
+                    f"copywriting length {text_length} is outside "
+                    f"{request.min_length}-{request.max_length}"
+                )
+            matched_words = [
+                word
+                for word in request.banned_words
+                if word and word in result.text
+            ]
+            if matched_words:
+                raise RecoverableCopywritingWarning(
+                    "copywriting contains banned words: "
+                    + ", ".join(matched_words[:10])
+                )
+
+        return self._structured(
             api_key=api_key,
             model=request.model,
             prompt=prompt,
             schema=CopywritingResult,
+            post_validate=validate_copywriting,
         )
-        text_length = len("".join(result.text.split()))
-        if text_length < request.min_length or text_length > request.max_length:
-            raise StructuredOutputError(
-                f"copywriting length {text_length} is outside "
-                f"{request.min_length}-{request.max_length}"
-            )
-        if any(word and word in result.text for word in request.banned_words):
-            raise StructuredOutputError("copywriting contains a banned word")
-        return result
 
 
 class ContentCreationService:

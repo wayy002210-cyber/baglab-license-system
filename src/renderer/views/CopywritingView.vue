@@ -348,6 +348,7 @@ onMounted(load);
       </div>
       <div v-if="mode === 'ai'" class="center-action">
         <el-button
+          data-action="generate-copywriting"
           type="primary"
           :loading="generating"
           :disabled="!copywriting?.selectedTopicId"
@@ -356,6 +357,33 @@ onMounted(load);
           生成完整文案
         </el-button>
       </div>
+
+      <section
+        v-if="scriptOperation.phase.value !== 'idle'"
+        class="operation-feedback"
+        :class="{ failed: scriptOperation.phase.value === 'error' }"
+      >
+        <div>
+          <strong>{{ scriptOperation.error.value?.title || scriptOperation.message.value }}</strong>
+          <p v-if="scriptOperation.error.value">
+            {{ scriptOperation.error.value.detail }} {{ scriptOperation.error.value.action }}
+          </p>
+          <p v-else>正在生成完整口播文案，通常需要 10–60 秒，请不要关闭软件。</p>
+        </div>
+        <el-progress
+          v-if="scriptOperation.phase.value !== 'error'"
+          :percentage="scriptOperation.progress.value"
+          :indeterminate="scriptOperation.busy.value"
+          :duration="2"
+        />
+        <el-button
+          v-else
+          type="primary"
+          @click="scriptOperation.retry().catch(() => undefined)"
+        >
+          重试生成完整文案
+        </el-button>
+      </section>
 
       <section v-if="copywriting" class="editor-section">
         <div class="section-title">

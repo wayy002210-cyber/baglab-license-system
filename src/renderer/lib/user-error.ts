@@ -8,6 +8,16 @@ export type UserError = {
 };
 
 const RULES: Array<[RegExp, UserError]> = [
+  [/copywriting contains (?:a )?banned word|contains banned words/i, {
+    title: "文案仍包含禁用词",
+    detail: "模型已生成文案，但自动修复三次后仍然命中了人设档案中的禁用词。",
+    action: "请检查人设档案中的禁用词是否过于宽泛，调整后重新生成。"
+  }],
+  [/copywriting length .* outside/i, {
+    title: "文案字数不符合要求",
+    detail: "模型已响应，但自动修复三次后字数仍未达到 200–1000 字。",
+    action: "请重新生成，或切换 qwen-plus 后重试。"
+  }],
   [/Model output failed validation|StructuredOutput|output.*(?:format|schema|validation)/i, {
     title: "模型返回格式不稳定",
     detail: "DeepSeek 已响应，但本次返回内容没有满足 5 个不同选题的结构要求。",

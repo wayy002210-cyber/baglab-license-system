@@ -103,3 +103,52 @@ def test_generate_copywriting_enforces_requested_length() -> None:
     )
 
     assert len(result.text) == 220
+
+
+def test_generate_copywriting_repairs_banned_words_before_returning() -> None:
+    invalid = "这是第一选择。" + ("好" * 210)
+    repaired = "这是合适的选择。" + ("好" * 210)
+    chat = FixtureChat(
+        [
+            f'{{"text":"{invalid}"}}',
+            f'{{"text":"{repaired}"}}',
+        ]
+    )
+    service = TopicService(chat)
+
+    result = service.generate_copywriting(
+        api_key="secret",
+        request=CopywritingGenerationRequest(
+            model="deepseek-v3",
+            personaName="袋研官",
+            bannedWords=["第一"],
+            topic="品牌物料",
+            minLength=200,
+            maxLength=1000,
+        ),
+    )
+
+    assert "第一" not in result.text
+    assert result.text == repaired
+    assert len(chat.calls) == 2
+
+
+def test_generate_copywriting_does_not_discard_draft_when_banned_word_repairs_fail() -> None:
+    draft = "这个方案最适合当前场景。" + ("好" * 210)
+    chat = FixtureChat([f'{{"text":"{draft}"}}'] * 3)
+    service = TopicService(chat)
+
+    result = service.generate_copywriting(
+        api_key="secret",
+        request=CopywritingGenerationRequest(
+            model="deepseek-v3",
+            personaName="袋研官",
+            bannedWords=["最"],
+            topic="品牌物料",
+            minLength=200,
+            maxLength=1000,
+        ),
+    )
+
+    assert result.text == draft
+    assert len(chat.calls) == 3
