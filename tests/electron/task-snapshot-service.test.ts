@@ -7,8 +7,14 @@ describe("buildDraftTaskSnapshot", () => {
       version: 1 as const, stage: "ready" as const, personaId: "p1",
       copywriting: { model: "deepseek-v3", temperature: 0.7, topics: [], selectedTopicId: null, text: "口播", complianceIssues: [] },
       voice: { voiceId: "voice", source: "system" as const, emotion: "calm", speed: 1, volume: 1, pitch: 0, languageBoost: "Chinese" },
-      audioSegments: [{ id: "a1", index: 0, text: "口播", sourceStart: 0, sourceEnd: 2, textHash: "x", parameterHash: "y", audioPath: "D:/a.mp3", durationSec: 2, status: "ready" as const, errorMessage: null }],
-      shots: [{ id: "s1", index: 0, audioSegmentId: "a1", copywriting: "口播", assetCategoryId: "c1", durationMode: "voice" as const, durationSec: 2, muteOriginal: true }],
+      audioSegments: [
+        { id: "a1", index: 0, text: "口播一", sourceStart: 0, sourceEnd: 3, textHash: "x", parameterHash: "y", audioPath: "D:/a.mp3", durationSec: 2, status: "ready" as const, errorMessage: null },
+        { id: "a2", index: 1, text: "口播二", sourceStart: 4, sourceEnd: 7, textHash: "z", parameterHash: "y", audioPath: "D:/b.mp3", durationSec: 3, status: "ready" as const, errorMessage: null }
+      ],
+      shots: [
+        { id: "s1", index: 0, audioSegmentId: "a1", copywriting: "口播一", assetCategoryId: "c1", durationMode: "voice" as const, durationSec: 2, muteOriginal: true },
+        { id: "s2", index: 1, audioSegmentId: "a2", copywriting: "口播二", assetCategoryId: "c1", durationMode: "voice" as const, durationSec: 3, muteOriginal: true }
+      ],
       bgm: { sourceType: "file" as const, path: "D:/music.flac", mode: "fixed" as const, volume: .2, fadeInSec: 1, fadeOutSec: 1 },
       titleStyle: null, subtitleStyle: null
     };
@@ -22,6 +28,6 @@ describe("buildDraftTaskSnapshot", () => {
     expect(snapshot.bgmPath).toBe("D:/music.flac");
     expect(JSON.stringify(snapshot)).not.toMatch(/apiKey|token|cookie/i);
     draft.shots[0].copywriting = "已修改";
-    expect((snapshot.shots as Array<{copywriting:string}>)[0].copywriting).toBe("口播");
+    expect((snapshot.shots as Array<{copywriting:string}>)[0].copywriting).toBe("口播一");
   });
 });

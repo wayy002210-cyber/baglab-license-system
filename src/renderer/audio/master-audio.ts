@@ -1,5 +1,5 @@
 import type { CreationDraft } from "../../shared/contracts";
-import { stableHash } from "./segment-copywriting";
+import { segmentCopywriting, stableHash } from "./segment-copywriting";
 
 type VoiceSettings = NonNullable<CreationDraft["voice"]>;
 type AudioSegment = CreationDraft["audioSegments"][number];
@@ -31,6 +31,41 @@ export function buildMasterAudioSegment(
     status: "pending",
     errorMessage: null
   };
+}
+
+export function buildShotAudioSegments(
+  text: string,
+  voice: VoiceSettings,
+  model: string
+): AudioSegment[] {
+  const paragraphs = text
+    .split(/\r?\n+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const blocks = paragraphs.length > 1
+    ? paragraphs
+    : segmentCopywriting(text, 32).map((item) => item.text);
+  const parameterHash = masterAudioParameterHash(voice, model);
+  let searchFrom = 0;
+  return blocks.map((block, index) => {
+    const sourceStart = Math.max(searchFrom, text.indexOf(block, searchFrom));
+    const sourceEnd = sourceStart + block.length;
+    searchFrom = sourceEnd;
+    const textHash = stableHash(block);
+    return {
+      id: `shot-audio-${index}-${textHash}-${parameterHash}`,
+      index,
+      text: block,
+      sourceStart,
+      sourceEnd,
+      textHash,
+      parameterHash,
+      audioPath: null,
+      durationSec: null,
+      status: "pending",
+      errorMessage: null
+    };
+  });
 }
 
 export function allocateShotDurations(

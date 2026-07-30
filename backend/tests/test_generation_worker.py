@@ -151,3 +151,28 @@ def test_worker_allows_only_one_encoding_stage_at_a_time() -> None:
     asyncio.run(run_both())
 
     assert maximum_active == 1
+
+
+def test_encoding_stage_can_emit_real_progress_between_75_and_99() -> None:
+    async def encode(request, context):
+        context["emitEncodingProgress"](0.5)
+        context["emitEncodingProgress"](0.25)
+        context["emitEncodingProgress"](1.0)
+        return context
+
+    events: list[TaskEvent] = []
+    worker = GenerationWorker(stages={"encoding": encode})
+
+    asyncio.run(
+        worker.run(
+            TaskExecutionRequest(
+                taskId="progress",
+                seed=1,
+                snapshot={},
+                outputPath="out.mp4",
+            ),
+            on_event=events.append,
+        )
+    )
+
+    assert [event.progress for event in events] == [75, 87, 87, 99, 100]

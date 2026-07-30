@@ -21,12 +21,15 @@ export function buildDraftTaskSnapshot(
     throw new Error("文案或配音设置不完整");
   }
   if (
-    draft.audioSegments.length !== 1 ||
-    draft.audioSegments[0].status !== "ready" ||
-    !draft.audioSegments[0].audioPath ||
-    !draft.audioSegments[0].durationSec
+    draft.audioSegments.length !== draft.shots.length ||
+    draft.audioSegments.some(
+      (segment) =>
+        segment.status !== "ready" ||
+        !segment.audioPath ||
+        !segment.durationSec
+    )
   ) {
-    throw new Error("请先生成并确认一条完整的整篇配音");
+    throw new Error("请先完成所有镜头的分段配音");
   }
   if (!draft.shots.length || draft.shots.some(
     (item) => !item.assetCategoryId || !item.copywriting.trim()

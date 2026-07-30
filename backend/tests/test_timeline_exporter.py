@@ -1,4 +1,5 @@
 from pathlib import Path
+import io
 import subprocess
 import threading
 import pytest
@@ -137,9 +138,43 @@ def test_ass_writer_supports_independent_title_and_subtitle_styles(
 def test_encoder_detector_prefers_available_hardware_in_priority_order() -> None:
     detector = EncoderDetector()
 
-    assert detector.choose(" V..... h264_amf\n V..... h264_qsv\n") == "h264_qsv"
+    assert detector.choose(" V..... h264_amf\n V..... h264_qsv\n") == "h264_amf"
     assert detector.choose(" V..... h264_amf\n") == "h264_amf"
     assert detector.choose(" V..... libx264\n") == "libx264"
+
+
+def test_encoder_detector_skips_compiled_encoder_that_cannot_encode() -> None:
+    probed: list[str] = []
+
+    def runner(command, **kwargs):
+        if "-encoders" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=" V..... h264_amf\n V..... h264_nvenc\n",
+                stderr="",
+            )
+        encoder = command[command.index("-c:v") + 1]
+        probed.append(encoder)
+        return subprocess.CompletedProcess(
+            command,
+            1 if encoder == "h264_amf" else 0,
+            stdout="",
+            stderr="device unavailable" if encoder == "h264_amf" else "",
+        )
+
+    assert EncoderDetector(runner=runner).detect() == "h264_nvenc"
+    assert probed == ["h264_amf", "h264_nvenc"]
+
+
+def test_amf_export_uses_amf_quality_option_instead_of_nvenc_preset(
+    tmp_path: Path,
+) -> None:
+    command = Exporter().build_command(sample_project(tmp_path), encoder="h264_amf")
+
+    assert "-quality" in command
+    assert "balanced" in command
+    assert "p4" not in command
 
 
 def test_export_retries_with_libx264_when_hardware_encoder_fails(
@@ -153,6 +188,8 @@ def test_export_retries_with_libx264_when_hardware_encoder_fails(
             return subprocess.CompletedProcess(
                 command, 0, stdout=" V..... h264_nvenc", stderr=""
             )
+        if "lavfi" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         if "h264_nvenc" in command:
             raise subprocess.CalledProcessError(1, command, stderr="no device")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
@@ -163,7 +200,11 @@ def test_export_retries_with_libx264_when_hardware_encoder_fails(
     )
     Exporter(runner=runner).export(project)
 
-    export_commands = [command for command in commands if "-encoders" not in command]
+    export_commands = [
+        command
+        for command in commands
+        if "-encoders" not in command and "lavfi" not in command
+    ]
     assert "h264_nvenc" in export_commands[0]
     assert "libx264" in export_commands[1]
 
@@ -176,6 +217,7 @@ def test_export_terminates_ffmpeg_when_cancel_signal_is_set(tmp_path: Path) -> N
         def poll(self): return self.returncode
         def terminate(self): self.terminated = True; self.returncode = 1
         def kill(self): self.returncode = 1
+        def wait(self, timeout=None): return self.returncode
         def communicate(self, timeout=None): return ("", "canceled")
 
     process = Process()
@@ -191,3 +233,42 @@ def test_export_terminates_ffmpeg_when_cancel_signal_is_set(tmp_path: Path) -> N
         exporter.export(project, encoder="libx264", cancel_event=canceled)
 
     assert process.terminated is True
+
+
+def test_export_reports_monotonic_ffmpeg_progress(tmp_path: Path) -> None:
+    class Process:
+        returncode = 0
+        stdout = io.StringIO(
+            "out_time_ms=1000000\nprogress=continue\n"
+            "out_time_ms=3000000\nprogress=end\n"
+        )
+        stderr = io.StringIO("")
+
+        def poll(self): return self.returncode
+        def terminate(self): self.returncode = 1
+        def kill(self): self.returncode = 1
+        def wait(self, timeout=None): return self.returncode
+
+    progress: list[float] = []
+    project = Project(
+        output_path=tmp_path / "out.mp4",
+        video_clips=[VideoClip(tmp_path / "a.mp4", 0, 3)],
+    )
+
+    Exporter(process_factory=lambda *args, **kwargs: Process()).export(
+        project,
+        encoder="libx264",
+        cancel_event=threading.Event(),
+        on_progress=progress.append,
+    )
+
+    assert progress[0] == pytest.approx(1 / 3)
+    assert progress[-1] == 1.0
+    assert progress == sorted(progress)
+
+
+def test_export_command_enables_machine_readable_progress(tmp_path: Path) -> None:
+    command = Exporter().build_command(sample_project(tmp_path))
+
+    assert command[1:4] == ["-hide_banner", "-nostats", "-progress"]
+    assert command[4] == "pipe:1"

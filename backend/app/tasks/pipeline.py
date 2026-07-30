@@ -147,52 +147,54 @@ class GenerationPipeline:
         voice_settings = request.snapshot["voice"]
         voice_id = voice_settings["voiceId"]
         saved_segments = request.snapshot.get("audioSegments") or []
-        master = saved_segments[0] if len(saved_segments) == 1 else None
-        if (
-            master
-            and master.get("status") == "ready"
-            and master.get("audioPath")
-            and master.get("durationSec")
-        ):
-            path = Path(master["audioPath"])
-            duration = float(master["durationSec"])
-        else:
-            copywriting = request.snapshot.get("copywriting") or {}
-            full_text = str(copywriting.get("text") or "").strip()
-            if not full_text:
-                full_text = "\n".join(
-                    shot.copywriting for shot in context["shotPlans"]
-                ).strip()
-            if not full_text:
-                raise ValueError("没有可生成配音的完整文案")
+
+        async def synthesize_shot(
+            index: int, text: str
+        ) -> tuple[Path, float]:
+            saved = saved_segments[index] if index < len(saved_segments) else None
+            if (
+                saved
+                and saved.get("status") == "ready"
+                and saved.get("audioPath")
+                and saved.get("durationSec")
+            ):
+                return Path(saved["audioPath"]), float(saved["durationSec"])
+            if not text.strip():
+                raise ValueError(f"第 {index + 1} 个镜头没有可生成配音的文案")
             async with self.tts_limit:
-                result = await asyncio.to_thread(
-                    self.voice.synthesize,
-                    api_key=self.minimax_key,
-                    request=SynthesisRequest(
-                        text=full_text,
-                        voiceId=voice_id,
-                        model=voice_settings.get("model", "speech-2.8-hd"),
-                        emotion=voice_settings.get("emotion"),
-                        speed=voice_settings.get("speed", 1),
-                        volume=voice_settings.get("volume", 1),
-                        pitch=voice_settings.get("pitch", 0),
-                        languageBoost=voice_settings.get(
-                            "languageBoost", "Chinese"
+                try:
+                    result = await asyncio.to_thread(
+                        self.voice.synthesize,
+                        api_key=self.minimax_key,
+                        request=SynthesisRequest(
+                            text=text,
+                            voiceId=voice_id,
+                            model=voice_settings.get("model", "speech-2.8-hd"),
+                            emotion=voice_settings.get("emotion"),
+                            speed=voice_settings.get("speed", 1),
+                            volume=voice_settings.get("volume", 1),
+                            pitch=voice_settings.get("pitch", 0),
+                            languageBoost=voice_settings.get(
+                                "languageBoost", "Chinese"
+                            ),
                         ),
-                    ),
-                )
-            path = Path(result.audio_path)
-            duration = float(result.duration_sec)
-        durations = _allocate_durations(
-            [shot.copywriting for shot in context["shotPlans"]],
-            duration,
+                    )
+                except Exception as error:
+                    raise RuntimeError(
+                        f"第 {index + 1} 个镜头配音生成失败：{error}"
+                    ) from error
+            return Path(result.audio_path), float(result.duration_sec)
+
+        generated = await asyncio.gather(
+            *(
+                synthesize_shot(index, shot.copywriting)
+                for index, shot in enumerate(context["shotPlans"])
+            )
         )
         return {
             **context,
-            "masterVoicePath": path,
-            "masterDuration": duration,
-            "durations": durations,
+            "voicePaths": [item[0] for item in generated],
+            "durations": [item[1] for item in generated],
         }
 
     async def select_assets(
@@ -227,6 +229,7 @@ class GenerationPipeline:
         cursor = 0.0
         subtitles: list[SubtitleClip] = []
         videos: list[VideoClip] = []
+        voices: list[AudioClip] = []
         for index, shot in enumerate(context["shotPlans"]):
             duration = context["durations"][index]
             selected = context["selectedAssets"][index]
@@ -245,13 +248,14 @@ class GenerationPipeline:
                     text=shot.copywriting,
                 )
             )
+            voices.append(
+                AudioClip(path=context["voicePaths"][index], start_sec=cursor)
+            )
             cursor += duration
         project = Project(
             output_path=Path(request.output_path),
             video_clips=videos,
-            voice_clips=[
-                AudioClip(path=context["masterVoicePath"], start_sec=0)
-            ],
+            voice_clips=voices,
             subtitles=subtitles,
             bgm_path=(
                 Path(request.snapshot["bgmPath"])
@@ -284,6 +288,7 @@ class GenerationPipeline:
             context["project"],
             encoder=None if encoder == "auto" else encoder,
             cancel_event=self.cancel_events[request.task_id],
+            on_progress=context.get("emitEncodingProgress"),
         )
         return context
 

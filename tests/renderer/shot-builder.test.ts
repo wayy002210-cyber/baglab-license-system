@@ -35,35 +35,43 @@ describe("shot builder", () => {
     expect(shots[1].audioSegmentId).toContain("draft-segment");
   });
 
-  it("uses one master audio while distributing its duration across script shots", () => {
+  it("maps each generated audio segment to its matching script shot", () => {
     const draft = structuredClone(baseDraft);
     draft.audioSegments = [
       {
-        id: "master-audio",
+        id: "audio-1",
         index: 0,
-        text: draft.copywriting!.text,
+        text: "第一段讲痛点。",
         sourceStart: 0,
-        sourceEnd: draft.copywriting!.text.length,
+        sourceEnd: 7,
         textHash: "a",
         parameterHash: "b",
         audioPath: "D:/a.mp3",
-        durationSec: 10,
+        durationSec: 4,
+        status: "ready",
+        errorMessage: null
+      },
+      {
+        id: "audio-2",
+        index: 1,
+        text: "第二段给方案。",
+        sourceStart: 8,
+        sourceEnd: 15,
+        textHash: "c",
+        parameterHash: "b",
+        audioPath: "D:/b.mp3",
+        durationSec: 6,
         status: "ready",
         errorMessage: null
       }
     ];
     const shots = buildShotsFromDraft(draft, "category-1");
     expect(shots).toHaveLength(2);
-    expect(shots.every((shot) => shot.audioSegmentId === "master-audio")).toBe(
-      true
-    );
-    expect(
-      shots.reduce((total, shot) => total + (shot.durationSec ?? 0), 0)
-    ).toBe(10);
-    expect(shots.map((shot) => shot.copywriting)).toEqual([
-      "第一段讲痛点。",
-      "第二段给方案。"
+    expect(shots.map((shot) => shot.audioSegmentId)).toEqual([
+      "audio-1",
+      "audio-2"
     ]);
+    expect(shots.map((shot) => shot.durationSec)).toEqual([4, 6]);
   });
 
   it("adds a valid editable shot and normalizes indexes", () => {

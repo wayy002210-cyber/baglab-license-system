@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -75,7 +76,7 @@ class Project:
 
 
 class EncoderDetector:
-    priority = ("h264_nvenc", "h264_qsv", "h264_amf")
+    priority = ("h264_amf", "h264_nvenc", "h264_qsv")
 
     def __init__(
         self,
@@ -93,7 +94,40 @@ class EncoderDetector:
             text=True,
             check=False,
         )
-        return self.choose(f"{result.stdout}\n{result.stderr}")
+        encoder_output = f"{result.stdout}\n{result.stderr}"
+        for encoder in self.priority:
+            if encoder not in encoder_output:
+                continue
+            probe = self.runner(
+                [
+                    self.ffmpeg,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=size=128x128:rate=30",
+                    "-frames:v",
+                    "3",
+                    "-vf",
+                    "format=nv12",
+                    "-c:v",
+                    encoder,
+                    "-b:v",
+                    "1M",
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if probe.returncode == 0:
+                return encoder
+        return "libx264"
 
     def choose(self, encoder_output: str) -> str:
         for encoder in self.priority:
@@ -124,7 +158,14 @@ class Exporter:
         if not project.video_clips:
             raise ValueError("Project requires at least one video clip")
 
-        command = [self.ffmpeg, "-hide_banner", "-y"]
+        command = [
+            self.ffmpeg,
+            "-hide_banner",
+            "-nostats",
+            "-progress",
+            "pipe:1",
+            "-y",
+        ]
         for clip in project.video_clips:
             if clip.loop:
                 command.extend(["-stream_loop", "-1"])
@@ -196,8 +237,6 @@ class Exporter:
             [
                 "-c:v",
                 encoder,
-                "-preset",
-                "medium" if encoder == "libx264" else "p4",
                 "-b:v",
                 f"{project.video_bitrate_mbps:g}M",
                 "-maxrate",
@@ -217,6 +256,9 @@ class Exporter:
                 str(project.output_path),
             ]
         )
+        encoder_options = _encoder_options(encoder)
+        bitrate_index = command.index("-b:v")
+        command[bitrate_index:bitrate_index] = encoder_options
         return command
 
     def export(
@@ -225,6 +267,7 @@ class Exporter:
         *,
         encoder: str | None = None,
         cancel_event: threading.Event | None = None,
+        on_progress: Callable[[float], None] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         project.output_path.parent.mkdir(parents=True, exist_ok=True)
         if project.subtitles:
@@ -243,6 +286,8 @@ class Exporter:
             return self._execute(
                 self.build_command(project, encoder=selected_encoder),
                 cancel_event,
+                duration_sec=project.duration_sec,
+                on_progress=on_progress,
             )
         except ExportCanceledError:
             raise
@@ -252,14 +297,19 @@ class Exporter:
             return self._execute(
                 self.build_command(project, encoder="libx264"),
                 cancel_event,
+                duration_sec=project.duration_sec,
+                on_progress=on_progress,
             )
 
     def _execute(
         self,
         command: list[str],
         cancel_event: threading.Event | None,
+        *,
+        duration_sec: float,
+        on_progress: Callable[[float], None] | None,
     ) -> subprocess.CompletedProcess[str]:
-        if cancel_event is None:
+        if cancel_event is None and on_progress is None:
             return self.runner(
                 command, capture_output=True, text=True, check=True
             )
@@ -270,17 +320,60 @@ class Exporter:
             text=True,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+        stdout_lines: list[str] = []
+        stderr_tail: deque[str] = deque(maxlen=200)
+        last_progress = 0.0
+
+        def read_stdout() -> None:
+            nonlocal last_progress
+            stream = getattr(process, "stdout", None)
+            if stream is None:
+                return
+            for raw_line in stream:
+                line = raw_line.strip()
+                stdout_lines.append(raw_line)
+                if line.startswith("out_time_ms=") and duration_sec > 0:
+                    try:
+                        elapsed = float(line.split("=", 1)[1]) / 1_000_000
+                    except ValueError:
+                        continue
+                    progress = min(0.999, max(last_progress, elapsed / duration_sec))
+                    if progress > last_progress:
+                        last_progress = progress
+                        if on_progress:
+                            on_progress(progress)
+                elif line == "progress=end" and last_progress < 1:
+                    last_progress = 1.0
+                    if on_progress:
+                        on_progress(1.0)
+
+        def read_stderr() -> None:
+            stream = getattr(process, "stderr", None)
+            if stream is None:
+                return
+            for line in stream:
+                stderr_tail.append(line)
+
+        stdout_thread = threading.Thread(target=read_stdout, daemon=True)
+        stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+        stdout_thread.start()
+        stderr_thread.start()
         while process.poll() is None:
-            if cancel_event.is_set():
+            if cancel_event is not None and cancel_event.is_set():
                 process.terminate()
                 try:
-                    stdout, stderr = process.communicate(timeout=5)
+                    process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    stdout, stderr = process.communicate()
+                    process.wait()
+                stdout_thread.join(timeout=1)
+                stderr_thread.join(timeout=1)
                 raise ExportCanceledError("FFmpeg export was canceled")
             time.sleep(0.1)
-        stdout, stderr = process.communicate()
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+        stdout = "".join(stdout_lines)
+        stderr = "".join(stderr_tail)
         result = subprocess.CompletedProcess(
             command, process.returncode or 0, stdout, stderr
         )
@@ -379,3 +472,13 @@ def _escape_ass_text(text: str) -> str:
 
 def _escape_ffmpeg_filter_path(path: Path) -> str:
     return str(path).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
+
+
+def _encoder_options(encoder: str) -> list[str]:
+    if encoder == "h264_amf":
+        return ["-quality", "balanced"]
+    if encoder == "h264_nvenc":
+        return ["-preset", "p4"]
+    if encoder == "h264_qsv":
+        return ["-preset", "medium"]
+    return ["-preset", "medium"]

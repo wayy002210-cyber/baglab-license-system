@@ -44,7 +44,7 @@ class Exporter:
     def __init__(self):
         self.project = None
 
-    def export(self, project, encoder=None, cancel_event=None):
+    def export(self, project, encoder=None, cancel_event=None, on_progress=None):
         self.project = project
 
 
@@ -109,7 +109,7 @@ def test_pipeline_builds_export_project_from_snapshot() -> None:
     assert exporter.project.bgm_volume == 0.22
 
 
-def test_pipeline_reuses_one_ready_master_audio_and_allocates_shot_durations() -> None:
+def test_pipeline_reuses_ready_audio_by_shot_and_synthesizes_missing_shots() -> None:
     class TrackingVoice:
         def __init__(self):
             self.requests = []
@@ -149,7 +149,7 @@ def test_pipeline_reuses_one_ready_master_audio_and_allocates_shot_durations() -
                 {
                     "status": "ready",
                     "audioPath": "D:/voice/cached.mp3",
-                    "durationSec": 7.5,
+                    "durationSec": 3.0,
                 }
             ],
         },
@@ -163,14 +163,15 @@ def test_pipeline_reuses_one_ready_master_audio_and_allocates_shot_durations() -
         pipeline.generate_voice(request, {"shotPlans": shot_plans})
     )
 
-    assert result["masterVoicePath"] == Path("D:/voice/cached.mp3")
-    assert len(result["durations"]) == 2
-    assert sum(result["durations"]) == 7.5
-    assert all(duration > 0 for duration in result["durations"])
-    assert voice.requests == []
+    assert result["voicePaths"] == [
+        Path("D:/voice/cached.mp3"),
+        Path("D:/voice/new.mp3"),
+    ]
+    assert result["durations"] == [3.0, 3.2]
+    assert len(voice.requests) == 1
 
 
-def test_pipeline_synthesizes_the_complete_script_once() -> None:
+def test_pipeline_synthesizes_each_shot_as_an_independent_voice_clip() -> None:
     class TrackingVoice:
         def __init__(self):
             self.requests = []
@@ -219,9 +220,15 @@ def test_pipeline_synthesizes_the_complete_script_once() -> None:
         pipeline.generate_voice(request, {"shotPlans": shot_plans})
     )
 
-    assert len(voice.requests) == 1
-    assert voice.requests[0].text == "第一段完整文案。第二段完整文案。"
-    assert voice.requests[0].emotion == "happy"
-    assert voice.requests[0].speed == 1.2
-    assert result["masterVoicePath"] == Path("D:/voice/master.mp3")
-    assert sum(result["durations"]) == 8.4
+    assert len(voice.requests) == 2
+    assert [request.text for request in voice.requests] == [
+        "第一段完整文案。",
+        "第二段完整文案。",
+    ]
+    assert all(request.emotion == "happy" for request in voice.requests)
+    assert all(request.speed == 1.2 for request in voice.requests)
+    assert result["voicePaths"] == [
+        Path("D:/voice/master.mp3"),
+        Path("D:/voice/master.mp3"),
+    ]
+    assert result["durations"] == [8.4, 8.4]

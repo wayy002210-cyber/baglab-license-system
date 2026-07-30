@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateShotDurations,
-  buildMasterAudioSegment
+  buildMasterAudioSegment,
+  buildShotAudioSegments
 } from "../../src/renderer/audio/master-audio";
 
 const voice = {
@@ -48,5 +49,19 @@ describe("master audio", () => {
     expect(durations.every((duration) => duration > 0)).toBe(true);
     expect(durations[1]).toBeGreaterThan(durations[0]);
     expect(durations.reduce((sum, duration) => sum + duration, 0)).toBe(30);
+  });
+
+  it("builds one stable audio segment for each script paragraph", () => {
+    const text = "第一段完整口播。\n\n第二段继续说明。";
+    const segments = buildShotAudioSegments(text, voice, "speech-2.8-hd");
+
+    expect(segments.map((segment) => segment.text)).toEqual([
+      "第一段完整口播。",
+      "第二段继续说明。"
+    ]);
+    expect(segments.map((segment) => segment.index)).toEqual([0, 1]);
+    expect(segments[0].sourceEnd).toBeLessThanOrEqual(
+      segments[1].sourceStart
+    );
   });
 });

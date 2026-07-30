@@ -8,7 +8,7 @@ import VoiceCloneDialog from "../components/audio/VoiceCloneDialog.vue";
 import MasterAudioPlayer from "../components/audio/MasterAudioPlayer.vue";
 import { useCreationDraft } from "../composables/useCreationDraft";
 import {
-  buildMasterAudioSegment,
+  buildShotAudioSegments,
   masterAudioParameterHash
 } from "../audio/master-audio";
 import {
@@ -28,20 +28,31 @@ const showClone = ref(false);
 const generating = ref(false);
 const generationError = ref("");
 const playingVoiceId = ref<string | null>(null);
+const completedSegments = ref(0);
 let auditionPlayer: HTMLAudioElement | null = null;
 
 const voice = computed(() => state.draft.value.voice);
-const masterAudio = computed(() => state.draft.value.audioSegments[0] ?? null);
+const totalDuration = computed(() =>
+  state.draft.value.audioSegments.reduce(
+    (total, segment) => total + (segment.durationSec ?? 0),
+    0
+  )
+);
 const ready = computed(
   () =>
-    state.draft.value.audioSegments.length === 1 &&
-    masterAudio.value?.status === "ready" &&
-    Boolean(masterAudio.value.audioPath) &&
-    Boolean(masterAudio.value.durationSec)
+    state.draft.value.audioSegments.length > 0 &&
+    state.draft.value.audioSegments.every(
+      (segment) =>
+        segment.status === "ready" &&
+        Boolean(segment.audioPath) &&
+        Boolean(segment.durationSec)
+    )
 );
-const generationPercentage = computed(() =>
-  generating.value ? 55 : ready.value ? 100 : generationError.value ? 0 : 0
-);
+const generationPercentage = computed(() => {
+  if (ready.value) return 100;
+  const total = state.draft.value.audioSegments.length;
+  return total ? Math.round((completedSegments.value / total) * 100) : 0;
+});
 
 function syncMasterAudio(): void {
   if (!voice.value) return;
@@ -50,16 +61,25 @@ function syncMasterAudio(): void {
     state.draft.value.audioSegments = [];
     return;
   }
-  const expected = buildMasterAudioSegment(text, voice.value, model.value);
+  const expected = buildShotAudioSegments(text, voice.value, model.value);
   const current = state.draft.value.audioSegments;
   if (
-    current.length === 1 &&
-    current[0].textHash === expected.textHash &&
-    current[0].parameterHash === expected.parameterHash
+    current.length === expected.length &&
+    current.every(
+      (segment, index) =>
+        segment.textHash === expected[index].textHash &&
+        segment.parameterHash === expected[index].parameterHash
+    )
   ) {
     return;
   }
-  state.draft.value.audioSegments = [expected];
+  state.draft.value.audioSegments = expected.map((segment, index) => {
+    const reusable = current[index];
+    return reusable?.textHash === segment.textHash &&
+      reusable.parameterHash === segment.parameterHash
+      ? reusable
+      : segment;
+  });
 }
 
 async function load(): Promise<void> {
@@ -114,37 +134,51 @@ async function generateMasterAudio(): Promise<void> {
     ElMessage.warning("没有可配音的完整文案，请先完成文案");
     return;
   }
-  const segment = buildMasterAudioSegment(text, voice.value, model.value);
-  segment.status = "generating";
-  state.draft.value.audioSegments = [segment];
+  const segments = buildShotAudioSegments(text, voice.value, model.value);
+  state.draft.value.audioSegments = segments;
   generating.value = true;
+  completedSegments.value = 0;
   generationError.value = "";
   try {
-    const result = await window.autocut.synthesizeVoice({
-      text,
-      voiceId: voice.value.voiceId,
-      model: model.value,
-      emotion: voice.value.emotion,
-      speed: voice.value.speed,
-      volume: voice.value.volume,
-      pitch: voice.value.pitch,
-      languageBoost: voice.value.languageBoost
-    });
-    segment.audioPath = result.audioPath;
-    segment.durationSec = result.durationSec;
-    segment.parameterHash = masterAudioParameterHash(voice.value, model.value);
-    segment.status = "ready";
-    segment.errorMessage = null;
+    for (const segment of segments) {
+      segment.status = "generating";
+      try {
+        const result = await window.autocut.synthesizeVoice({
+          text: segment.text,
+          voiceId: voice.value.voiceId,
+          model: model.value,
+          emotion: voice.value.emotion,
+          speed: voice.value.speed,
+          volume: voice.value.volume,
+          pitch: voice.value.pitch,
+          languageBoost: voice.value.languageBoost
+        });
+        segment.audioPath = result.audioPath;
+        segment.durationSec = result.durationSec;
+        segment.parameterHash = masterAudioParameterHash(
+          voice.value,
+          model.value
+        );
+        segment.status = "ready";
+        segment.errorMessage = null;
+        completedSegments.value += 1;
+      } catch (error) {
+        segment.status = "failed";
+        segment.errorMessage =
+          error instanceof Error ? error.message : "当前镜头配音生成失败";
+        throw new Error(
+          `第 ${segment.index + 1} 段配音失败：${segment.errorMessage}`
+        );
+      }
+    }
     await state.saveImmediate();
-    ElMessage.success("整篇配音生成成功，可以试听确认");
+    ElMessage.success("全部镜头配音生成成功，可以连续试听确认");
   } catch (error) {
-    segment.status = "failed";
-    segment.errorMessage =
-      error instanceof Error ? error.message : "整篇配音生成失败";
-    generationError.value = segment.errorMessage;
+    generationError.value =
+      error instanceof Error ? error.message : "分段配音生成失败";
     await state.saveImmediate().catch(() => undefined);
     ElMessage.error(
-      `配音生成失败：${segment.errorMessage}。请检查 MiniMax 密钥、余额和网络后重试`
+      `${generationError.value}。请检查 MiniMax 密钥、余额和网络后重试`
     );
   } finally {
     generating.value = false;
@@ -219,26 +253,26 @@ onMounted(load);
   <div class="page audio-page">
     <PageIntro
       title="音频制作"
-      description="选择或克隆音色，对完整脚本一次性生成一条连续口播音频。"
+      description="选择或克隆音色，按镜头逐段生成口播音频，真实时长将直接驱动画面。"
     />
     <section v-if="voice" class="audio-grid surface">
       <header class="master-workbench">
         <div>
-          <small>整篇配音</small>
+          <small>分镜配音</small>
           <strong>
             {{
               ready
-                ? "整篇配音已经生成，可以试听确认"
+                ? "全部镜头配音已经生成，可以连续试听"
                 : generating
-                  ? "正在生成整篇配音，请勿关闭软件"
-                  : "确认参数后生成整篇配音"
+                  ? `正在生成第 ${completedSegments + 1} 段，请勿关闭软件`
+                  : "确认参数后逐镜头生成配音"
             }}
           </strong>
           <p>
             {{
-              masterAudio?.durationSec
-                ? `音频时长 ${masterAudio.durationSec.toFixed(1)} 秒`
-                : "全文只生成一次，不再逐段调用"
+              totalDuration
+                ? `${state.draft.value.audioSegments.length} 段，总时长 ${totalDuration.toFixed(1)} 秒`
+                : "每个镜头独立配音，音频时长决定镜头时长"
             }}
           </p>
         </div>
@@ -249,7 +283,7 @@ onMounted(load);
           :loading="generating"
           @click="generateMasterAudio"
         >
-          {{ ready ? "重新生成整篇配音" : "确认并生成整篇配音" }}
+          {{ ready ? "重新生成全部配音" : "确认并生成分镜配音" }}
         </el-button>
         <el-progress
           class="generation-progress"
@@ -326,9 +360,9 @@ onMounted(load);
           :loading="generating"
           @click="generateMasterAudio"
         >
-          生成整篇配音
+          生成全部分镜配音
         </el-button>
-        <p>{{ ready ? "整篇音频已就绪" : "等待生成整篇音频" }}</p>
+        <p>{{ ready ? "全部分镜音频已就绪" : "等待生成分镜音频" }}</p>
         <el-button
           class="wide next"
           type="primary"

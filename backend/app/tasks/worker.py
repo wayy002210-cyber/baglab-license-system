@@ -102,6 +102,24 @@ class GenerationWorker:
                 if stage_name == "encoding":
                     async with self._encoding_lock:
                         self._raise_if_canceled(request.task_id)
+                        encoding_progress = 75
+
+                        def emit_encoding_progress(ratio: float) -> None:
+                            nonlocal encoding_progress
+                            encoding_progress = max(
+                                encoding_progress,
+                                min(99, max(75, round(75 + 24 * ratio))),
+                            )
+                            self._emit(
+                                on_event,
+                                request.task_id,
+                                status="encoding",
+                                progress=encoding_progress,
+                                stage="encoding",
+                                message="正在编码成片",
+                            )
+
+                        context["emitEncodingProgress"] = emit_encoding_progress
                         context = await stage(request, context)
                 else:
                     context = await stage(request, context)

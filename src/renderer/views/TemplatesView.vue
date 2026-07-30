@@ -59,7 +59,7 @@ async function rewriteCurrentScript(){
  }catch(error){ElMessage.error(error instanceof Error?error.message:"文案改写失败，请重试");}
  finally{rewriting.value=false;}
 }
-async function validateAndSave(){const master=state.draft.value.audioSegments[0];if(state.draft.value.audioSegments.length!==1||master?.status!=="ready"||!master.audioPath||!master.durationSec)return ElMessage.warning("请先在音频制作中生成并确认完整的整篇配音");const missing=state.draft.value.shots.findIndex(s=>!s.assetCategoryId||!s.copywriting.trim());if(missing>=0)return ElMessage.warning(`第 ${missing+1} 个镜头缺少素材类型或口播文案`);state.draft.value.stage="ready";await state.saveImmediate();ElMessage.success("当前创作已保存，可以创建混剪任务");}
+async function validateAndSave(){const segments=state.draft.value.audioSegments;if(!segments.length||segments.length!==state.draft.value.shots.length||segments.some(segment=>segment.status!=="ready"||!segment.audioPath||!segment.durationSec))return ElMessage.warning("请先在音频制作中完成所有镜头的分段配音");const missing=state.draft.value.shots.findIndex(s=>!s.assetCategoryId||!s.copywriting.trim());if(missing>=0)return ElMessage.warning(`第 ${missing+1} 个镜头缺少素材类型或口播文案`);state.draft.value.stage="ready";await state.saveImmediate();ElMessage.success("当前创作已保存，可以创建混剪任务");}
 async function createTasks(){await validateAndSave();if(state.draft.value.stage!=="ready")return;creating.value=true;try{await window.autocut.createTasksFromDraft({count:taskCount.value,seed:Date.now()&0x7fffffff});ElMessage.success(`已创建 ${taskCount.value} 条混剪任务`);await router.push("/tasks");}finally{creating.value=false;}}
 onMounted(load);
 </script>
