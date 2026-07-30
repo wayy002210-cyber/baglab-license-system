@@ -198,6 +198,7 @@ declare global {
         audioPath: string;
         cacheHit: boolean;
         sha256: string;
+        durationSec: number;
       }>;
       previewVoice(input: {
         text: string;

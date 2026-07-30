@@ -25,7 +25,12 @@ class FakeMiniMax:
 
 def test_synthesis_is_cached_by_normalized_request(tmp_path: Path) -> None:
     client = FakeMiniMax()
-    service = VoiceService(client, cache_dir=tmp_path)
+    probed_paths: list[Path] = []
+    service = VoiceService(
+        client,
+        cache_dir=tmp_path,
+        duration_probe=lambda path: probed_paths.append(path) or 12.5,
+    )
     request = SynthesisRequest(text="  欢迎了解我们的工厂  ", voiceId="female-shaonv")
 
     first = service.synthesize(api_key="minimax-secret", request=request)
@@ -34,8 +39,11 @@ def test_synthesis_is_cached_by_normalized_request(tmp_path: Path) -> None:
     assert first.cache_hit is False
     assert second.cache_hit is True
     assert first.audio_path == second.audio_path
+    assert first.duration_sec == 12.5
+    assert second.duration_sec == 12.5
     assert Path(first.audio_path).read_bytes() == b"fake-mp3"
     assert len(client.calls) == 1
+    assert probed_paths == [Path(first.audio_path), Path(second.audio_path)]
 
 
 def test_synthesis_retries_rate_limits_with_exponential_backoff(

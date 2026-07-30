@@ -41,6 +41,7 @@ class SynthesisResult(BaseModel):
     audio_path: str = Field(alias="audioPath")
     cache_hit: bool = Field(alias="cacheHit")
     sha256: str
+    duration_sec: float = Field(alias="durationSec", gt=0)
 
 
 class MiniMaxClient(Protocol):
@@ -57,11 +58,13 @@ class VoiceService:
         cache_dir: Path,
         sleep: Callable[[float], None] = time.sleep,
         max_attempts: int = 3,
+        duration_probe: Callable[[Path], float] | None = None,
     ) -> None:
         self.client = client
         self.cache_dir = cache_dir
         self.sleep = sleep
         self.max_attempts = max_attempts
+        self.duration_probe = duration_probe or (lambda _path: 1.0)
 
     def list_voices(self, *, api_key: str) -> list[dict[str, str]]:
         voices = self.client.list_voices(api_key=api_key)
@@ -87,7 +90,10 @@ class VoiceService:
         output = self.cache_dir / f"{cache_key}.mp3"
         if output.is_file() and output.stat().st_size > 0:
             return SynthesisResult(
-                audioPath=str(output), cacheHit=True, sha256=cache_key
+                audioPath=str(output),
+                cacheHit=True,
+                sha256=cache_key,
+                durationSec=self.duration_probe(output),
             )
 
         audio = self._synthesize_with_retry(api_key=api_key, request=request)
@@ -96,7 +102,10 @@ class VoiceService:
         temporary.write_bytes(audio)
         temporary.replace(output)
         return SynthesisResult(
-            audioPath=str(output), cacheHit=False, sha256=cache_key
+            audioPath=str(output),
+            cacheHit=False,
+            sha256=cache_key,
+            durationSec=self.duration_probe(output),
         )
 
     def _synthesize_with_retry(

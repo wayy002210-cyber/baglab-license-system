@@ -1,5 +1,6 @@
 import type { CreationDraft } from "../../shared/contracts";
 import { segmentCopywriting, stableHash } from "../audio/segment-copywriting";
+import { allocateShotDurations } from "../audio/master-audio";
 
 type Shot = CreationDraft["shots"][number];
 type TemplateShot = {
@@ -37,14 +38,21 @@ export function buildShotsFromDraft(
             durationSec: null
           })
         );
-  const source =
-    draft.audioSegments.length > 0
-      ? draft.audioSegments.map((segment) => ({
-          id: segment.id,
-          text: segment.text,
-          durationSec: segment.durationSec
-        }))
-      : fallbackSegments;
+  const masterAudio = draft.audioSegments.length === 1
+    ? draft.audioSegments[0]
+    : null;
+  const allocatedDurations =
+    masterAudio?.durationSec && fallbackSegments.length
+      ? allocateShotDurations(
+          fallbackSegments.map((segment) => segment.text),
+          masterAudio.durationSec
+        )
+      : fallbackSegments.map(() => null);
+  const source = fallbackSegments.map((segment, index) => ({
+    id: masterAudio?.id ?? segment.id,
+    text: segment.text,
+    durationSec: allocatedDurations[index]
+  }));
 
   return source.map((segment, index) => ({
     id: `shot-${segment.id}`,

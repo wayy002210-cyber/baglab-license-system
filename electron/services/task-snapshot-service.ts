@@ -20,10 +20,13 @@ export function buildDraftTaskSnapshot(
   if (!draft.copywriting?.text.trim() || !draft.voice) {
     throw new Error("文案或配音设置不完整");
   }
-  if (!draft.audioSegments.length || draft.audioSegments.some(
-    (item) => item.status !== "ready" || !item.audioPath || !item.durationSec
-  )) {
-    throw new Error("仍有口播音频尚未生成");
+  if (
+    draft.audioSegments.length !== 1 ||
+    draft.audioSegments[0].status !== "ready" ||
+    !draft.audioSegments[0].audioPath ||
+    !draft.audioSegments[0].durationSec
+  ) {
+    throw new Error("请先生成并确认一条完整的整篇配音");
   }
   if (!draft.shots.length || draft.shots.some(
     (item) => !item.assetCategoryId || !item.copywriting.trim()

@@ -21,6 +21,7 @@ def test_voice_endpoints_require_key_and_return_structured_results() -> None:
                 audioPath="D:/cache/voice.mp3",
                 cacheHit=False,
                 sha256="a" * 64,
+                durationSec=3.5,
             )
 
     client = TestClient(create_app(session_token="secret", voice_service=Voice()))
@@ -40,6 +41,7 @@ def test_voice_endpoints_require_key_and_return_structured_results() -> None:
     )
     assert response.status_code == 200
     assert response.json()["audioPath"] == "D:/cache/voice.mp3"
+    assert response.json()["durationSec"] == 3.5
 
 
 def test_voice_clone_endpoints_validate_and_clone_a_sample() -> None:

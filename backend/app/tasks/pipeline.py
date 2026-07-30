@@ -146,23 +146,31 @@ class GenerationPipeline:
     ) -> dict[str, Any]:
         voice_settings = request.snapshot["voice"]
         voice_id = voice_settings["voiceId"]
-        saved_segments = request.snapshot.get("audioSegments", [])
-
-        async def synthesize(index, shot):
-            saved = saved_segments[index] if index < len(saved_segments) else None
-            if (
-                saved
-                and saved.get("status") == "ready"
-                and saved.get("audioPath")
-                and saved.get("durationSec")
-            ):
-                return Path(saved["audioPath"]), float(saved["durationSec"])
+        saved_segments = request.snapshot.get("audioSegments") or []
+        master = saved_segments[0] if len(saved_segments) == 1 else None
+        if (
+            master
+            and master.get("status") == "ready"
+            and master.get("audioPath")
+            and master.get("durationSec")
+        ):
+            path = Path(master["audioPath"])
+            duration = float(master["durationSec"])
+        else:
+            copywriting = request.snapshot.get("copywriting") or {}
+            full_text = str(copywriting.get("text") or "").strip()
+            if not full_text:
+                full_text = "\n".join(
+                    shot.copywriting for shot in context["shotPlans"]
+                ).strip()
+            if not full_text:
+                raise ValueError("没有可生成配音的完整文案")
             async with self.tts_limit:
                 result = await asyncio.to_thread(
                     self.voice.synthesize,
                     api_key=self.minimax_key,
                     request=SynthesisRequest(
-                        text=shot.copywriting,
+                        text=full_text,
                         voiceId=voice_id,
                         model=voice_settings.get("model", "speech-2.8-hd"),
                         emotion=voice_settings.get("emotion"),
@@ -174,20 +182,17 @@ class GenerationPipeline:
                         ),
                     ),
                 )
-                path = Path(result.audio_path)
-                duration = await asyncio.to_thread(self.audio_probe.duration, path)
-                return path, duration
-
-        generated = await asyncio.gather(
-            *(
-                synthesize(index, shot)
-                for index, shot in enumerate(context["shotPlans"])
-            )
+            path = Path(result.audio_path)
+            duration = float(result.duration_sec)
+        durations = _allocate_durations(
+            [shot.copywriting for shot in context["shotPlans"]],
+            duration,
         )
         return {
             **context,
-            "voicePaths": [item[0] for item in generated],
-            "durations": [item[1] for item in generated],
+            "masterVoicePath": path,
+            "masterDuration": duration,
+            "durations": durations,
         }
 
     async def select_assets(
@@ -217,8 +222,9 @@ class GenerationPipeline:
     async def compose(
         self, request: TaskExecutionRequest, context: dict[str, Any]
     ) -> dict[str, Any]:
+        bgm_settings = request.snapshot.get("bgm") or {}
+        media_settings = request.snapshot.get("media") or {}
         cursor = 0.0
-        voice_clips: list[AudioClip] = []
         subtitles: list[SubtitleClip] = []
         videos: list[VideoClip] = []
         for index, shot in enumerate(context["shotPlans"]):
@@ -232,9 +238,6 @@ class GenerationPipeline:
                     loop=selected.loop,
                 )
             )
-            voice_clips.append(
-                AudioClip(path=context["voicePaths"][index], start_sec=cursor)
-            )
             subtitles.append(
                 SubtitleClip(
                     start_sec=cursor,
@@ -246,7 +249,9 @@ class GenerationPipeline:
         project = Project(
             output_path=Path(request.output_path),
             video_clips=videos,
-            voice_clips=voice_clips,
+            voice_clips=[
+                AudioClip(path=context["masterVoicePath"], start_sec=0)
+            ],
             subtitles=subtitles,
             bgm_path=(
                 Path(request.snapshot["bgmPath"])
@@ -254,18 +259,16 @@ class GenerationPipeline:
                 else None
             ),
             bgm_volume=float(
-                request.snapshot.get("bgm", {}).get(
+                bgm_settings.get(
                     "volume",
-                    request.snapshot.get("media", {}).get("bgmVolume", 0.16),
+                    media_settings.get("bgmVolume", 0.16),
                 )
             ),
             video_bitrate_mbps=float(
-                request.snapshot.get("media", {}).get("videoBitrateMbps", 8)
+                media_settings.get("videoBitrateMbps", 8)
             ),
             font_family=str(
-                request.snapshot.get("media", {}).get(
-                    "fontFamily", "Microsoft YaHei"
-                )
+                media_settings.get("fontFamily", "Microsoft YaHei")
             ),
             subtitle_style=_text_style(request.snapshot.get("subtitleStyle")),
             title_style=_text_style(request.snapshot.get("titleStyle")),
@@ -275,7 +278,7 @@ class GenerationPipeline:
     async def encode(
         self, request: TaskExecutionRequest, context: dict[str, Any]
     ) -> dict[str, Any]:
-        encoder = request.snapshot.get("media", {}).get("encoder", "auto")
+        encoder = (request.snapshot.get("media") or {}).get("encoder", "auto")
         await asyncio.to_thread(
             self.exporter.export,
             context["project"],
@@ -283,6 +286,39 @@ class GenerationPipeline:
             cancel_event=self.cancel_events[request.task_id],
         )
         return context
+
+
+def _allocate_durations(
+    texts: list[str],
+    total_duration: float,
+    minimum_duration: float = 0.5,
+) -> list[float]:
+    if not texts:
+        return []
+    if total_duration <= 0:
+        raise ValueError("整篇配音时长必须大于 0")
+    if total_duration <= len(texts) * minimum_duration:
+        equal = total_duration / len(texts)
+        return [
+            total_duration - equal * index
+            if index == len(texts) - 1
+            else equal
+            for index in range(len(texts))
+        ]
+    weights = [max(1, len("".join(text.split()))) for text in texts]
+    distributable = total_duration - minimum_duration * len(texts)
+    total_weight = sum(weights)
+    durations: list[float] = []
+    allocated = 0.0
+    for index, weight in enumerate(weights):
+        duration = (
+            total_duration - allocated
+            if index == len(texts) - 1
+            else minimum_duration + distributable * weight / total_weight
+        )
+        durations.append(duration)
+        allocated += duration
+    return durations
 
 
 def _text_style(value: dict[str, Any] | None) -> TextStyle | None:

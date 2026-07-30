@@ -215,6 +215,7 @@ def create_app(
         cache_dir=Path(
             os.environ.get("AUTOCUT_VOICE_CACHE", "backend-data/cache/voice")
         ),
+        duration_probe=AudioDurationProbe(ffprobe_path).duration,
     )
     voice_cloner = voice_clone_service or VoiceCloneService(
         MiniMaxVoiceClient(), FfprobeSampleProbe(ffprobe_path)

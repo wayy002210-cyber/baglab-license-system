@@ -35,29 +35,35 @@ describe("shot builder", () => {
     expect(shots[1].audioSegmentId).toContain("draft-segment");
   });
 
-  it("prefers audio segments and preserves their durations", () => {
+  it("uses one master audio while distributing its duration across script shots", () => {
     const draft = structuredClone(baseDraft);
     draft.audioSegments = [
       {
-        id: "audio-1",
+        id: "master-audio",
         index: 0,
-        text: "音频段落",
+        text: draft.copywriting!.text,
         sourceStart: 0,
-        sourceEnd: 4,
+        sourceEnd: draft.copywriting!.text.length,
         textHash: "a",
         parameterHash: "b",
         audioPath: "D:/a.mp3",
-        durationSec: 2.5,
+        durationSec: 10,
         status: "ready",
         errorMessage: null
       }
     ];
     const shots = buildShotsFromDraft(draft, "category-1");
-    expect(shots[0]).toMatchObject({
-      audioSegmentId: "audio-1",
-      durationSec: 2.5,
-      copywriting: "音频段落"
-    });
+    expect(shots).toHaveLength(2);
+    expect(shots.every((shot) => shot.audioSegmentId === "master-audio")).toBe(
+      true
+    );
+    expect(
+      shots.reduce((total, shot) => total + (shot.durationSec ?? 0), 0)
+    ).toBe(10);
+    expect(shots.map((shot) => shot.copywriting)).toEqual([
+      "第一段讲痛点。",
+      "第二段给方案。"
+    ]);
   });
 
   it("adds a valid editable shot and normalizes indexes", () => {

@@ -136,10 +136,11 @@ const voiceSchema = z.object({
   kind: z.string()
 });
 const synthesisResultSchema = z.object({
-  audioPath: z.string().min(1),
-  cacheHit: z.boolean(),
-  sha256: z.string().length(64)
-});
+    audioPath: z.string().min(1),
+    cacheHit: z.boolean(),
+    sha256: z.string().length(64),
+    durationSec: z.number().positive()
+  });
 const sampleMetadataSchema = z.object({
   path: z.string().min(1),
   durationSec: z.number().positive(),

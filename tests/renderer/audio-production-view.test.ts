@@ -13,14 +13,21 @@ describe("segmentCopywriting", () => {
       "第二句很重要！",
       "第三句？"
     ]);
-    expect(result.map((item) => text.slice(item.sourceStart, item.sourceEnd))).toEqual(
-      result.map((item) => item.text)
-    );
+    expect(
+      result.map((item) => text.slice(item.sourceStart, item.sourceEnd))
+    ).toEqual(result.map((item) => item.text));
   });
 });
 
 describe("AudioProductionView", () => {
-  it("loads voices, exposes clone and voice controls, and creates segments", async () => {
+  it("generates the complete script as one master audio file", async () => {
+    const saveCreationDraft = vi.fn(async (draft) => draft);
+    const synthesizeVoice = vi.fn(async () => ({
+      audioPath: "D:/voice/master.mp3",
+      cacheHit: false,
+      sha256: "a".repeat(64),
+      durationSec: 12.5
+    }));
     Object.assign(window, {
       autocut: {
         getCreationDraft: vi.fn(async () => ({
@@ -32,7 +39,7 @@ describe("AudioProductionView", () => {
             temperature: 0.7,
             topics: [],
             selectedTopicId: null,
-            text: "这是第一段口播。这里是第二段口播！",
+            text: "这是第一段口播。这是第二段口播！",
             complianceIssues: []
           },
           voice: null,
@@ -42,7 +49,8 @@ describe("AudioProductionView", () => {
           titleStyle: null,
           subtitleStyle: null
         })),
-        saveCreationDraft: vi.fn(async (draft) => draft),
+        saveCreationDraft,
+        synthesizeVoice,
         listVoices: vi.fn(async () => [
           { voiceId: "voice-1", name: "专业女声", kind: "system" }
         ]),
@@ -68,11 +76,14 @@ describe("AudioProductionView", () => {
           "el-select": { template: "<div><slot /></div>" },
           "el-option": true,
           "el-slider": true,
-          "el-button": { template: "<button><slot /></button>" },
+          "el-button": {
+            template: "<button><slot /></button>"
+          },
           "el-input": true,
           "el-dialog": { template: "<div><slot /></div>" },
           "el-checkbox": true,
-          "el-tag": true
+          "el-tag": true,
+          "el-progress": true
         }
       }
     });
@@ -81,7 +92,23 @@ describe("AudioProductionView", () => {
     expect(wrapper.text()).toContain("音频制作");
     expect(wrapper.text()).toContain("声音克隆");
     expect(wrapper.text()).toContain("专业女声");
-    expect(wrapper.text()).toContain("逐段生成");
     expect(window.autocut.getVoiceCapabilities).toHaveBeenCalled();
+
+    await wrapper
+      .get('[data-action="generate-master-audio"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(synthesizeVoice).toHaveBeenCalledTimes(1);
+    expect(synthesizeVoice).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "这是第一段口播。这是第二段口播！" })
+    );
+    const saved = saveCreationDraft.mock.calls.at(-1)?.[0];
+    expect(saved.audioSegments).toHaveLength(1);
+    expect(saved.audioSegments[0]).toMatchObject({
+      audioPath: "D:/voice/master.mp3",
+      durationSec: 12.5,
+      status: "ready"
+    });
   });
 });
