@@ -11,6 +11,7 @@ import { defaultSubtitleStyle, defaultTitleStyle } from "../../shared/media-styl
 import type { TextStyle } from "../../shared/media-style";
 import type { CreationDraft } from "../../shared/contracts";
 import {
+  applyTemplateShots,
   appendShot,
   buildShotsFromDraft
 } from "../editing/shot-builder";
@@ -26,7 +27,7 @@ function deriveShots(){
  state.draft.value.shots=buildShotsFromDraft(state.draft.value,categories.value[0]?.id??null);
 }
 async function load(){[templates.value,categories.value]=await Promise.all([window.autocut.listTemplates(),window.autocut.listAssetCategories(),state.load()]);deriveShots();}
-function applyTemplate(template:Template){selectedId.value=template.id;templateName.value=template.name;templateDescription.value=template.description;const sources=buildShotsFromDraft(state.draft.value,categories.value[0]?.id??null);state.draft.value.shots=sources.map((source,index)=>{const preset=template.shots.length?template.shots[index%template.shots.length]:null;return{...source,assetCategoryId:preset?.assetCategoryId??source.assetCategoryId,durationMode:preset?.durationMode??source.durationMode,durationSec:preset?.durationMode==="fixed"?preset.durationSec:source.durationSec,muteOriginal:preset?.muteOriginal??source.muteOriginal};});}
+function applyTemplate(template:Template){selectedId.value=template.id;templateName.value=template.name;templateDescription.value=template.description;state.draft.value.shots=applyTemplateShots(state.draft.value,template.shots,categories.value[0]?.id??null);state.scheduleSave();}
 function templateInput(){return{name:templateName.value.trim()||"未命名镜头模板",description:templateDescription.value.trim(),shots:state.draft.value.shots.map(shot=>({role:"custom" as const,assetCategoryId:shot.assetCategoryId,copywriting:shot.copywriting,durationMode:shot.durationMode,durationSec:shot.durationMode==="fixed"?shot.durationSec:null,muteOriginal:shot.muteOriginal}))};}
 async function saveTemplate(){if(!state.draft.value.shots.length)return ElMessage.warning("请先创建至少一个镜头");if(selectedId.value)await window.autocut.updateTemplate(selectedId.value,templateInput());else{const created=await window.autocut.createTemplate(templateInput());selectedId.value=created.id;}templates.value=await window.autocut.listTemplates();ElMessage.success("当前镜头结构已保存为模板");}
 function newTemplate(){selectedId.value=null;templateName.value="新建镜头模板";templateDescription.value="";state.draft.value.shots=buildShotsFromDraft(state.draft.value,categories.value[0]?.id??null);}

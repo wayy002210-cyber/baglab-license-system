@@ -2,6 +2,14 @@ import type { CreationDraft } from "../../shared/contracts";
 import { segmentCopywriting, stableHash } from "../audio/segment-copywriting";
 
 type Shot = CreationDraft["shots"][number];
+type TemplateShot = {
+  id: string;
+  assetCategoryId: string | null;
+  copywriting: string;
+  durationMode: Shot["durationMode"];
+  durationSec: number | null;
+  muteOriginal: boolean;
+};
 
 export function normalizeShotIndexes(shots: Shot[]): Shot[] {
   return shots.map((shot, index) => ({ ...shot, index }));
@@ -68,4 +76,39 @@ export function appendShot(
       muteOriginal: true
     }
   ]);
+}
+
+export function applyTemplateShots(
+  draft: CreationDraft,
+  templateShots: TemplateShot[],
+  defaultCategoryId: string | null
+): Shot[] {
+  const sourceShots = buildShotsFromDraft(draft, defaultCategoryId);
+  if (sourceShots.length === 0) {
+    return templateShots.map((preset, index) => ({
+      id: `shot-template-${preset.id}`,
+      index,
+      audioSegmentId: `template-${preset.id}`,
+      copywriting: preset.copywriting.trim() || `镜头 ${index + 1} 口播文案`,
+      assetCategoryId: preset.assetCategoryId ?? defaultCategoryId,
+      durationMode: preset.durationMode,
+      durationSec: preset.durationMode === "fixed" ? preset.durationSec : null,
+      muteOriginal: preset.muteOriginal
+    }));
+  }
+  return sourceShots.map((source, index) => {
+    const preset = templateShots.length
+      ? templateShots[index % templateShots.length]
+      : null;
+    return {
+      ...source,
+      assetCategoryId: preset?.assetCategoryId ?? source.assetCategoryId,
+      durationMode: preset?.durationMode ?? source.durationMode,
+      durationSec:
+        preset?.durationMode === "fixed"
+          ? preset.durationSec
+          : source.durationSec,
+      muteOriginal: preset?.muteOriginal ?? source.muteOriginal
+    };
+  });
 }

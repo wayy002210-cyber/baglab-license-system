@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appendShot,
+  applyTemplateShots,
   buildShotsFromDraft,
   normalizeShotIndexes
 } from "../../src/renderer/editing/shot-builder";
@@ -64,5 +65,27 @@ describe("shot builder", () => {
     expect(shots[0].copywriting).toBe("请输入本镜头口播文案");
     expect(normalizeShotIndexes([...shots, { ...shots[0], id: "second" }])
       .map((shot) => shot.index)).toEqual([0, 1]);
+  });
+
+  it("loads template shots when the current draft has no copywriting", () => {
+    const draft = structuredClone(baseDraft);
+    draft.copywriting = null;
+    const shots = applyTemplateShots(draft, [
+      {
+        id: "hook",
+        assetCategoryId: "category-hook",
+        copywriting: "开场钩子",
+        durationMode: "fixed",
+        durationSec: 3,
+        muteOriginal: true
+      }
+    ], "category-default");
+    expect(shots).toHaveLength(1);
+    expect(shots[0]).toMatchObject({
+      copywriting: "开场钩子",
+      assetCategoryId: "category-hook",
+      durationMode: "fixed",
+      durationSec: 3
+    });
   });
 });
