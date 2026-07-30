@@ -48,6 +48,39 @@ def test_topics_returns_five_unique_candidates() -> None:
     assert chat.calls[0][0] == "deepseek-v3"
 
 
+def test_topics_normalizes_provider_extras_without_retrying() -> None:
+    chat = FixtureChat(
+        [
+            """{"topics":[
+              {"id":"a","title":" 选题一 ","angle":"角度一","hook":"钩子一"},
+              {"id":"b","title":"选题二","angle":"角度二","hook":"钩子二"},
+              {"id":"c","title":"选题三","angle":"角度三","hook":"钩子三"},
+              {"id":"d","title":"选题四","angle":"角度四","hook":"钩子四"},
+              {"id":"e","title":"选题五","angle":"角度五","hook":"钩子五"},
+              {"id":"f","title":"多余选题","angle":"多余角度","hook":"多余钩子"}
+            ]}"""
+        ]
+    )
+    service = TopicService(chat)
+
+    result = service.generate_topics(
+        api_key="secret",
+        request=TopicGenerationRequest(
+            model="deepseek-v3",
+            personaName="袋研官",
+        ),
+    )
+
+    assert [topic.title for topic in result.topics] == [
+        "选题一",
+        "选题二",
+        "选题三",
+        "选题四",
+        "选题五",
+    ]
+    assert len(chat.calls) == 1
+
+
 def test_generate_copywriting_enforces_requested_length() -> None:
     text = "工" * 220
     service = TopicService(FixtureChat([f'{{"text":"{text}"}}']))

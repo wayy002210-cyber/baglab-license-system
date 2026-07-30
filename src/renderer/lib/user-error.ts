@@ -8,6 +8,11 @@ export type UserError = {
 };
 
 const RULES: Array<[RegExp, UserError]> = [
+  [/Model output failed validation|StructuredOutput|output.*(?:format|schema|validation)/i, {
+    title: "模型返回格式不稳定",
+    detail: "DeepSeek 已响应，但本次返回内容没有满足 5 个不同选题的结构要求。",
+    action: "请点击重新生成；若连续失败，请在系统设置中切换为 qwen-plus。"
+  }],
   [/model.*(?:not found|does not exist|unavailable)|404.*model/i, {
     title: "当前模型不可用",
     detail: "百炼账号无法调用当前选择的模型，或者模型标识填写有误。",

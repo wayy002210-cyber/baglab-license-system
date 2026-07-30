@@ -3,6 +3,10 @@ import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
 import { toUserMessage } from "../lib/user-error";
+import {
+  selectPreferredVoices,
+  voiceDisplayName
+} from "../audio/voice-labels";
 
 type Task = Awaited<ReturnType<typeof window.autocut.listTasks>>[number];
 type Persona = Awaited<ReturnType<typeof window.autocut.listPersonas>>[number];
@@ -61,7 +65,7 @@ async function openCreate(): Promise<void> {
   form.templateId = templates.value[0]?.id ?? "";
   form.count = 1;
   try {
-    voices.value = await window.autocut.listVoices();
+    voices.value = selectPreferredVoices(await window.autocut.listVoices());
     form.voiceId = voices.value[0]?.voiceId ?? "";
   } catch {
     voices.value = [];
@@ -280,7 +284,7 @@ onBeforeUnmount(() => {
               <el-option
                 v-for="voice in voices"
                 :key="voice.voiceId"
-                :label="voice.name"
+                  :label="voiceDisplayName(voice)"
                 :value="voice.voiceId"
               />
             </el-select>

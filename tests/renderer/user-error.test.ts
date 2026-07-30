@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { mapUserError, toUserMessage } from "../../src/renderer/lib/user-error.js";
 
 describe("user error mapping", () => {
+  it("explains a model structured-output failure instead of hiding it", () => {
+    const result = mapUserError(
+      new Error("Model output failed validation after 3 attempts: topics too long"),
+      "生成选题失败"
+    );
+
+    expect(result.title).toBe("模型返回格式不稳定");
+    expect(result.detail).toContain("DeepSeek");
+    expect(result.action).toContain("重新生成");
+  });
+
   it("maps unavailable model errors to a model recovery action", () => {
     const result = mapUserError(
       new Error("model deepseek-v3 not found (404)"),

@@ -27,6 +27,34 @@ class TopicCandidate(BaseModel):
 class TopicResult(BaseModel):
     topics: list[TopicCandidate] = Field(min_length=5, max_length=5)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_provider_topics(cls, value):
+        if not isinstance(value, dict) or not isinstance(value.get("topics"), list):
+            return value
+        normalized = []
+        seen_titles: set[str] = set()
+        for index, item in enumerate(value["topics"]):
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title", "")).strip()
+            angle = str(item.get("angle", "")).strip()
+            hook = str(item.get("hook", "")).strip()
+            if not title or not angle or not hook or title in seen_titles:
+                continue
+            seen_titles.add(title)
+            normalized.append(
+                {
+                    "id": str(item.get("id") or index + 1),
+                    "title": title[:80],
+                    "angle": angle[:100],
+                    "hook": hook[:120],
+                }
+            )
+            if len(normalized) == 5:
+                break
+        return {**value, "topics": normalized}
+
     @model_validator(mode="after")
     def require_unique_topics(self) -> "TopicResult":
         titles = [topic.title.strip() for topic in self.topics]
