@@ -1163,6 +1163,15 @@ app.whenReady().then(async () => {
       }
       return net.fetch(pathToFileURL(asset.thumbnailPath).toString());
     }
+    if (url.hostname === "voice" && resourceId) {
+      const segment = creationDraftRepository()
+        .get()
+        ?.audioSegments.find((item) => item.id === resourceId);
+      if (!segment?.audioPath || !existsSync(segment.audioPath)) {
+        return new Response("Not found", { status: 404 });
+      }
+      return net.fetch(pathToFileURL(segment.audioPath).toString());
+    }
     const taskId = resourceId;
     const task = taskId ? taskRepository().get(taskId) : null;
     if (!task?.outputPath || !existsSync(task.outputPath)) {
