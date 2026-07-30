@@ -525,6 +525,11 @@ ipcMain.handle(
   (_event, input: ReferenceScriptInput) =>
     referenceScriptRepository().create(input)
 );
+ipcMain.handle(
+  "referenceScripts:update",
+  (_event, id: string, input: ReferenceScriptInput) =>
+    referenceScriptRepository().update(id, input)
+);
 ipcMain.handle("referenceScripts:delete", (_event, id: string) => ({
   deleted: referenceScriptRepository().delete(id)
 }));

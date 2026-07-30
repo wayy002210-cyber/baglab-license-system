@@ -388,6 +388,14 @@ contextBridge.exposeInMainWorld("autocut", {
         referenceScriptInputSchema.parse(input)
       )
     ),
+  updateReferenceScript: async (id: string, input: unknown) =>
+    referenceScriptSchema.parse(
+      await ipcRenderer.invoke(
+        "referenceScripts:update",
+        z.string().uuid().parse(id),
+        referenceScriptInputSchema.parse(input)
+      )
+    ),
   deleteReferenceScript: async (id: string) =>
     z
       .object({ deleted: z.boolean() })

@@ -58,4 +58,32 @@ describe("ReferenceScriptRepository", () => {
     expect(result[0]?.title).toBe("工厂获客脚本");
     database.close();
   });
+
+  it("updates an existing script for preview editing", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const repository = new ReferenceScriptRepository(database);
+    const created = repository.create({
+      title: "旧标题",
+      industry: "工厂",
+      tags: ["旧标签"],
+      content: "旧内容",
+      structure: { hook: "", narrative: "", cta: "" }
+    });
+
+    const updated = repository.update(created.id, {
+      title: "新标题",
+      industry: "门店",
+      tags: ["获客"],
+      content: "新的完整脚本内容",
+      structure: { hook: "反问", narrative: "问题-方案", cta: "咨询" }
+    });
+
+    expect(updated).toMatchObject({
+      id: created.id,
+      title: "新标题",
+      content: "新的完整脚本内容"
+    });
+    database.close();
+  });
 });

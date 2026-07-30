@@ -96,6 +96,14 @@ async function deleteReferenceScript(id: string): Promise<void> {
     (script) => script.id !== id
   );
 }
+async function updateReferenceScript(
+  id: string,
+  input: Parameters<typeof window.autocut.updateReferenceScript>[1]
+): Promise<void> {
+  await window.autocut.updateReferenceScript(id, input);
+  referenceScripts.value = await window.autocut.listReferenceScripts();
+  ElMessage.success("参考脚本已更新");
+}
 onMounted(load);
 </script>
 
@@ -187,6 +195,7 @@ onMounted(load);
         <ReferenceScriptsPanel
           :scripts="referenceScripts"
           @create="createReferenceScript"
+          @update="updateReferenceScript"
           @delete="deleteReferenceScript"
         />
       </article>

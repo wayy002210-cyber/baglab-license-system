@@ -41,4 +41,25 @@ describe("ReferenceScriptsPanel", () => {
       content: "示例正文"
     });
   });
+
+  it("expands a saved script for full content preview", async () => {
+    const wrapper = mount(ReferenceScriptsPanel, {
+      props: {
+        scripts: [{
+          id: "script-preview",
+          title: "预览脚本",
+          industry: "工厂",
+          tags: ["获客"],
+          content: "第一段完整内容。\n第二段完整内容。",
+          structure: { hook: "", narrative: "", cta: "" },
+          createdAt: "2026-07-30T00:00:00.000Z",
+          updatedAt: "2026-07-30T00:00:00.000Z"
+        }]
+      }
+    });
+    expect(wrapper.text()).not.toContain("第二段完整内容");
+    await wrapper.get('[data-action="preview-script"]').trigger("click");
+    expect(wrapper.text()).toContain("第一段完整内容");
+    expect(wrapper.text()).toContain("第二段完整内容");
+  });
 });

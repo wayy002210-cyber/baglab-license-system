@@ -102,6 +102,32 @@ export class ReferenceScriptRepository {
     ).map(mapRow);
   }
 
+  update(id: string, input: ReferenceScriptInput): ReferenceScript {
+    if (!input.title.trim() || !input.content.trim()) {
+      throw new Error("Reference script title and content are required");
+    }
+    const result = this.database
+      .prepare(
+        `UPDATE reference_scripts
+         SET title = ?, industry = ?, tags_json = ?, content = ?,
+             structure_json = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        input.title.trim(),
+        input.industry.trim(),
+        JSON.stringify(
+          [...new Set(input.tags.map((tag) => tag.trim()))].filter(Boolean)
+        ),
+        input.content.trim(),
+        JSON.stringify(input.structure),
+        new Date().toISOString(),
+        id
+      );
+    if (!result.changes) throw new Error("Reference script not found");
+    return this.get(id);
+  }
+
   delete(id: string): boolean {
     return (
       this.database.prepare("DELETE FROM reference_scripts WHERE id = ?").run(id)

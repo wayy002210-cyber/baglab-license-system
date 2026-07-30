@@ -39,6 +39,10 @@ declare global {
       duplicateCreationDraft(): Promise<CreationDraft | null>;
       listReferenceScripts(): Promise<ReferenceScript[]>;
       createReferenceScript(input: ReferenceScriptInput): Promise<ReferenceScript>;
+      updateReferenceScript(
+        id: string,
+        input: ReferenceScriptInput
+      ): Promise<ReferenceScript>;
       deleteReferenceScript(id: string): Promise<{ deleted: boolean }>;
       searchReferenceScripts(input: {
         industry: string;
