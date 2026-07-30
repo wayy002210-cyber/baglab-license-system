@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { mapUserError, toUserMessage } from "../../src/renderer/lib/user-error.js";
 
 describe("user error mapping", () => {
+  it("maps unavailable model errors to a model recovery action", () => {
+    const result = mapUserError(
+      new Error("model deepseek-v3 not found (404)"),
+      "生成选题失败"
+    );
+    expect(result.title).toBe("当前模型不可用");
+    expect(result.action).toContain("系统设置");
+  });
+
   it("translates a missing preload bridge into an actionable Chinese message", () => {
     expect(toUserMessage(
       new TypeError("Cannot read properties of undefined (reading 'selectAndScanAssets')"),

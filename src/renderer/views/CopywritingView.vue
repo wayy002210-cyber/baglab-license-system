@@ -10,6 +10,7 @@ import {
   createEmptyDraft,
   useCreationDraft
 } from "../composables/useCreationDraft";
+import { createOperationState } from "../lib/operation-state";
 
 type Persona = Awaited<ReturnType<typeof window.autocut.listPersonas>>[number];
 type ComplianceIssue = Awaited<
@@ -25,9 +26,12 @@ const modelSettings = ref({
   candidateModels: ["deepseek-v3", "qwen-plus"]
 });
 const mode = ref<"ai" | "custom">("ai");
-const loadingTopics = ref(false);
-const generating = ref(false);
-const checking = ref(false);
+const topicOperation = createOperationState();
+const scriptOperation = createOperationState();
+const complianceOperation = createOperationState();
+const loadingTopics = computed(() => topicOperation.busy.value);
+const generating = computed(() => scriptOperation.busy.value);
+const checking = computed(() => complianceOperation.busy.value);
 const disclaimer = ref("风险提示仅用于内容检查，不构成法律结论。");
 const initialized = ref(false);
 
@@ -103,18 +107,25 @@ async function generateTopics(): Promise<void> {
     ElMessage.warning("请先选择人设档案");
     return;
   }
-  loadingTopics.value = true;
   try {
-    const result = await window.autocut.generateTopics({
-      ...contextInput(persona),
-      referenceScripts: await referenceScripts()
+    await topicOperation.run(async () => {
+      const result = await window.autocut.generateTopics({
+        ...contextInput(persona),
+        referenceScripts: await referenceScripts()
+      });
+      copywriting.value!.topics = result.topics;
+      copywriting.value!.selectedTopicId = null;
+      copywriting.value!.complianceIssues = [];
+      await draftState.saveImmediate();
+    }, {
+      phase: "requesting",
+      progress: 45,
+      message: "正在通过百炼生成 5 个选题",
+      fallback: "生成选题失败"
     });
-    copywriting.value.topics = result.topics;
-    copywriting.value.selectedTopicId = null;
-    copywriting.value.complianceIssues = [];
-    await draftState.saveImmediate();
-  } finally {
-    loadingTopics.value = false;
+  } catch {
+    const failure = topicOperation.error.value;
+    if (failure) ElMessage.error(`${failure.title}：${failure.action}`);
   }
 }
 
@@ -133,21 +144,28 @@ async function generateScript(): Promise<void> {
     ElMessage.warning("请先选择一个选题");
     return;
   }
-  generating.value = true;
   try {
-    const result = await window.autocut.generateCopywriting({
-      ...contextInput(persona),
-      referenceScripts: await referenceScripts(),
-      bannedWords: persona.bannedWords,
-      topic: topic.title,
-      minLength: 200,
-      maxLength: 1000
+    await scriptOperation.run(async () => {
+      const result = await window.autocut.generateCopywriting({
+        ...contextInput(persona),
+        referenceScripts: await referenceScripts(),
+        bannedWords: persona.bannedWords,
+        topic: topic.title,
+        minLength: 200,
+        maxLength: 1000
+      });
+      state.text = result.text;
+      state.complianceIssues = [];
+      await draftState.saveImmediate();
+    }, {
+      phase: "requesting",
+      progress: 45,
+      message: "正在生成完整口播文案",
+      fallback: "生成文案失败"
     });
-    state.text = result.text;
-    state.complianceIssues = [];
-    await draftState.saveImmediate();
-  } finally {
-    generating.value = false;
+  } catch {
+    const failure = scriptOperation.error.value;
+    if (failure) ElMessage.error(`${failure.title}：${failure.action}`);
   }
 }
 
@@ -158,17 +176,24 @@ async function checkCompliance(): Promise<void> {
     ElMessage.warning("请先填写或生成文案");
     return;
   }
-  checking.value = true;
   try {
-    const result = await window.autocut.checkCopywritingCompliance({
-      text: state.text,
-      personaBannedWords: persona.bannedWords
+    await complianceOperation.run(async () => {
+      const result = await window.autocut.checkCopywritingCompliance({
+        text: state.text,
+        personaBannedWords: persona.bannedWords
+      });
+      state.complianceIssues = result.issues;
+      disclaimer.value = result.disclaimer;
+      await draftState.saveImmediate();
+    }, {
+      phase: "processing",
+      progress: 65,
+      message: "正在检查平台与广告法风险词",
+      fallback: "违禁词检查失败"
     });
-    state.complianceIssues = result.issues;
-    disclaimer.value = result.disclaimer;
-    await draftState.saveImmediate();
-  } finally {
-    checking.value = false;
+  } catch {
+    const failure = complianceOperation.error.value;
+    if (failure) ElMessage.error(`${failure.title}：${failure.action}`);
   }
 }
 
@@ -265,6 +290,32 @@ onMounted(load);
         </button>
       </div>
 
+      <section
+        v-if="topicOperation.phase.value !== 'idle'"
+        class="operation-feedback"
+        :class="{ failed: topicOperation.phase.value === 'error' }"
+      >
+        <div>
+          <strong>{{ topicOperation.error.value?.title || topicOperation.message.value }}</strong>
+          <p v-if="topicOperation.error.value">
+            {{ topicOperation.error.value.detail }} {{ topicOperation.error.value.action }}
+          </p>
+          <p v-else>生成过程通常需要 10–60 秒，请不要关闭软件。</p>
+        </div>
+        <el-progress
+          v-if="topicOperation.phase.value !== 'error'"
+          :percentage="topicOperation.progress.value"
+          :indeterminate="topicOperation.busy.value"
+          :duration="2"
+        />
+        <el-button
+          v-else
+          type="primary"
+          @click="topicOperation.retry().catch(() => undefined)"
+        >
+          重试生成
+        </el-button>
+      </section>
       <TopicPicker
         v-if="mode === 'ai' && copywriting"
         :topics="copywriting.topics"
@@ -388,6 +439,27 @@ label {
 .center-action {
   display: flex;
   justify-content: center;
+}
+.operation-feedback {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid #f1d400;
+  border-radius: 14px;
+  background: #fffbe0;
+}
+.operation-feedback.failed {
+  border-color: #f2b8b5;
+  background: #fff4f3;
+}
+.operation-feedback strong,
+.operation-feedback p {
+  margin: 0;
+}
+.operation-feedback p {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 .editor-section {
   display: grid;

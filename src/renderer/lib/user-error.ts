@@ -8,6 +8,11 @@ export type UserError = {
 };
 
 const RULES: Array<[RegExp, UserError]> = [
+  [/model.*(?:not found|does not exist|unavailable)|404.*model/i, {
+    title: "当前模型不可用",
+    detail: "百炼账号无法调用当前选择的模型，或者模型标识填写有误。",
+    action: "请到系统设置更换可用模型后重试。"
+  }],
   [/401|403|API key|required|unauthorized/i, {
     title: "服务授权失效",
     detail: "当前 AI 服务密钥无效或没有对应权限。",
