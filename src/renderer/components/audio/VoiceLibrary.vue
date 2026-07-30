@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { voiceKindLabel } from "../../audio/voice-labels";
 defineProps<{
   voices: Array<{ voiceId: string; name: string; kind: string }>;
   modelValue: string;
@@ -33,7 +34,7 @@ defineEmits<{ "update:modelValue": [value: string]; audition: [] }>();
         @click="$emit('update:modelValue', voice.voiceId)"
       >
         {{ voice.name }}
-        <span>{{ voice.kind === "system" ? "官方" : "自定义" }}</span>
+        <span>{{ voiceKindLabel(voice.kind) }}</span>
       </button>
     </div>
   </section>
