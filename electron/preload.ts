@@ -255,6 +255,13 @@ const fontMetadataSchema = z.object({
   family: z.string().min(1),
   format: z.enum(["ttf", "otf"])
 });
+const systemFontSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  family: z.string().min(1),
+  path: z.string().min(1),
+  extension: z.enum(["ttf", "otf", "ttc"])
+});
 const copyModelSettingsSchema = z.object({
   defaultModel: z.string().trim().min(1),
   temperature: z.number().min(0).max(2),
@@ -615,6 +622,10 @@ contextBridge.exposeInMainWorld("autocut", {
     const result = await ipcRenderer.invoke("media:selectAndProbeFont");
     return result === null ? null : fontMetadataSchema.parse(result);
   },
+  listSystemFonts: async () =>
+    z.array(systemFontSchema).parse(
+      await ipcRenderer.invoke("media:listSystemFonts")
+    ),
   getCopyModelSettings: async () =>
     copyModelSettingsSchema.parse(
       await ipcRenderer.invoke("settings:getCopyModel")

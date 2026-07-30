@@ -66,6 +66,7 @@ import {
 } from "./repositories/reference-script-repository.js";
 import type { CopyModelSettings } from "./repositories/settings-repository.js";
 import { buildDraftTaskSnapshot } from "./services/task-snapshot-service.js";
+import { scanSystemFonts } from "./services/system-font-service.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -770,6 +771,7 @@ ipcMain.handle("media:selectAndProbeFont", async () => {
   }
   return metadata;
 });
+ipcMain.handle("media:listSystemFonts", () => scanSystemFonts());
 ipcMain.handle("settings:getCopyModel", () =>
   settingsRepository().getCopyModelSettings()
 );

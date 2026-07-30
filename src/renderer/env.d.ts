@@ -256,6 +256,13 @@ declare global {
         family: string;
         format: "ttf" | "otf";
       } | null>;
+      listSystemFonts(): Promise<Array<{
+        id: string;
+        displayName: string;
+        family: string;
+        path: string;
+        extension: "ttf" | "otf" | "ttc";
+      }>>;
       getCopyModelSettings(): Promise<CopyModelSettings>;
       saveCopyModelSettings(input: CopyModelSettings): Promise<CopyModelSettings>;
       selectSettingsPath(
