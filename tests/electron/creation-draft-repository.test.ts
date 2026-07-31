@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { applyMigrations } from "../../electron/database";
 import { CreationDraftRepository } from "../../electron/repositories/creation-draft-repository";
+import { defaultSubtitleStyle } from "../../src/shared/media-style";
 
 describe("CreationDraftRepository", () => {
   it("persists and restores one versioned creation draft", () => {
@@ -82,6 +83,30 @@ describe("CreationDraftRepository", () => {
         apiKey: "must-not-persist"
       } as never)
     ).toThrow();
+    database.close();
+  });
+
+  it("repairs cleared legacy effect colors when restoring a draft", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const payload = {
+      version: 1, stage: "editing", personaId: null, copywriting: null,
+      voice: null, audioSegments: [], shots: [], bgm: null, titleStyle: null,
+      subtitleStyle: {
+        ...defaultSubtitleStyle,
+        outlineColor: "null",
+        outlineWidth: 0,
+        shadowColor: null
+      }
+    };
+    database.prepare(
+      "INSERT INTO creation_drafts(id, version, stage, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run("active", 1, "editing", JSON.stringify(payload), "", "");
+
+    const restored = new CreationDraftRepository(database).get();
+
+    expect(restored?.subtitleStyle?.outlineColor).toBe("#00000000");
+    expect(restored?.subtitleStyle?.shadowColor).toBe("#00000000");
     database.close();
   });
 });

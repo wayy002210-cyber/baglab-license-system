@@ -2,15 +2,19 @@
 import type { TextStyle } from "../../../shared/media-style";
 defineProps<{ subtitleStyle: TextStyle; titleStyle: TextStyle; title?: string; subtitle?: string }>();
 function css(style: TextStyle) {
+  const outline = Math.max(0, style.outlineWidth / 3);
+  const outlineShadows = outline > 0
+    ? [[-1,0],[1,0],[0,-1],[0,1],[-.7,-.7],[.7,-.7],[-.7,.7],[.7,.7]]
+        .map(([x,y]) => `${x! * outline}px ${y! * outline}px 0 ${style.outlineColor}`)
+    : [];
+  const dropShadow = style.shadowX || style.shadowY
+    ? [`${style.shadowX / 3}px ${style.shadowY / 3}px 1px ${style.shadowColor}`]
+    : [];
   return {
     color: style.primaryColor,
     fontFamily: style.fontFamily,
     fontSize: `${Math.max(13, style.fontSize / 4.25)}px`,
-    WebkitTextStroke: `${Math.max(0, style.outlineWidth / 3)}px ${style.outlineColor}`,
-    textShadow:
-      style.shadowX || style.shadowY
-        ? `${style.shadowX / 3}px ${style.shadowY / 3}px 1px ${style.shadowColor}`
-        : "none",
+    textShadow: [...outlineShadows, ...dropShadow].join(",") || "none",
     left: `${style.positionX / 1080 * 100}%`,
     top: `${style.positionY / 1920 * 100}%`,
     transform: "translate(-50%, -50%)"

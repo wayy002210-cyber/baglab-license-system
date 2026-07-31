@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import replace
 import io
 import subprocess
 import threading
@@ -382,3 +383,26 @@ def test_export_removes_partial_file_when_validation_fails(tmp_path: Path) -> No
 
     assert not final.exists()
     assert not (tmp_path / "final.partial.mp4").exists()
+
+
+def test_ass_color_rejects_no_optional_effect_when_width_is_zero(tmp_path: Path) -> None:
+    project = replace(
+        sample_project(tmp_path),
+        subtitle_style=TextStyle(
+            primary_color="#FFFFFF",
+            outline_color="#00000000",
+            outline_width=0,
+            shadow_color="#00000000",
+            shadow_x=0,
+            shadow_y=0,
+        ),
+    )
+
+    write_ass_subtitles(
+        tmp_path / "optional-effects.ass",
+        project.subtitles,
+        subtitle_style=project.subtitle_style,
+    )
+
+    content = (tmp_path / "optional-effects.ass").read_text(encoding="utf-8")
+    assert "&H00000000" in content

@@ -41,9 +41,20 @@ class TaskRuntime:
         self._events.setdefault(request.task_id, [])
         self._conditions.setdefault(request.task_id, asyncio.Condition())
 
-        def record(event: TaskEvent) -> None:
+        loop = asyncio.get_running_loop()
+
+        def append_and_notify(event: TaskEvent) -> None:
             self._events[request.task_id].append(event)
             asyncio.create_task(self._notify(request.task_id))
+
+        def record(event: TaskEvent) -> None:
+            try:
+                if asyncio.get_running_loop() is loop:
+                    append_and_notify(event)
+                    return
+            except RuntimeError:
+                pass
+            loop.call_soon_threadsafe(append_and_notify, event)
 
         self._tasks[request.task_id] = asyncio.create_task(
             self.worker.run(request, on_event=record)

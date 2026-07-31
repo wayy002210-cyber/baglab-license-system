@@ -2,9 +2,25 @@ import asyncio
 from pathlib import Path
 
 from app.copywriting.service import RewriteResult
-from app.tasks.pipeline import GenerationPipeline
+from app.tasks.pipeline import GenerationPipeline, _text_style
 from app.tasks.worker import TaskExecutionRequest
 from app.voice.service import SynthesisResult
+
+
+def test_text_style_treats_cleared_optional_effect_colors_as_transparent() -> None:
+    style = _text_style({
+        "primaryColor": None,
+        "outlineColor": None,
+        "outlineWidth": 0,
+        "shadowColor": "null",
+        "shadowX": 0,
+        "shadowY": 0,
+    })
+
+    assert style is not None
+    assert style.primary_color == "#FFFFFF"
+    assert style.outline_color == "#00000000"
+    assert style.shadow_color == "#00000000"
 
 
 class Copywriter:

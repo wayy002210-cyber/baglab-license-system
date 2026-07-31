@@ -13,6 +13,7 @@ describe("SubtitleStyleEditor", () => {
           "el-option": true,
           "el-input-number": true,
           "el-color-picker": true,
+          "el-switch": true,
           "el-button": { template: "<button><slot /></button>" }
         }
       }

@@ -60,3 +60,20 @@ def test_runtime_rejects_duplicate_running_task_and_supports_cancel() -> None:
 
     runtime = asyncio.run(scenario())
     assert runtime.latest("task-1").status == "canceled"
+
+
+def test_runtime_accepts_progress_events_from_encoder_thread() -> None:
+    async def encode(task, context):
+        await asyncio.to_thread(context["emitEncodingProgress"], 0.5)
+        return context
+
+    async def scenario():
+        runtime = TaskRuntime(GenerationWorker(stages={"encoding": encode}))
+        await runtime.start(request("thread-progress"))
+        await runtime.wait("thread-progress")
+        return runtime
+
+    runtime = asyncio.run(scenario())
+    statuses = [event.status for event in runtime.events_after("thread-progress", 0)]
+    assert statuses[-1] == "completed"
+    assert "encoding" in statuses

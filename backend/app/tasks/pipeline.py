@@ -350,15 +350,30 @@ def _allocate_durations(
 def _text_style(value: dict[str, Any] | None) -> TextStyle | None:
     if not value:
         return None
+    outline_width = float(value.get("outlineWidth") or 0)
+    shadow_x = float(value.get("shadowX") or 0)
+    shadow_y = float(value.get("shadowY") or 0)
+
+    def color(key: str, fallback: str) -> str:
+        candidate = value.get(key)
+        if not isinstance(candidate, str) or candidate.lower() in {"", "null", "none"}:
+            return fallback
+        return candidate
+
     return TextStyle(
         font_family=str(value.get("fontFamily", "Microsoft YaHei")),
         font_size=int(value.get("fontSize", 58)),
-        primary_color=str(value.get("primaryColor", "#FFFFFF")),
-        outline_color=str(value.get("outlineColor", "#101010")),
-        outline_width=float(value.get("outlineWidth", 4)),
-        shadow_color=str(value.get("shadowColor", "#80000000")),
-        shadow_x=float(value.get("shadowX", 1)),
-        shadow_y=float(value.get("shadowY", 1)),
+        primary_color=color("primaryColor", "#FFFFFF"),
+        outline_color=color(
+            "outlineColor", "#00000000" if outline_width == 0 else "#101010"
+        ),
+        outline_width=outline_width,
+        shadow_color=color(
+            "shadowColor",
+            "#00000000" if shadow_x == 0 and shadow_y == 0 else "#80000000",
+        ),
+        shadow_x=shadow_x,
+        shadow_y=shadow_y,
         alignment=int(value.get("alignment", 2)),
         margin_v=int(value.get("marginV", 170)),
         position_x=(
