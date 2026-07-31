@@ -75,7 +75,7 @@ onMounted(load);
   <div class="studio">
    <TemplateLibrary class="surface" :templates="templates" :selected-id="selectedId" :name="templateName" :description="templateDescription" @update:name="templateName=$event" @update:description="templateDescription=$event" @select="applyTemplate" @save="saveTemplate" @new="newTemplate" @duplicate="duplicateTemplate"/>
    <ShotEditor class="surface" :shots="state.draft.value.shots" :categories="categories" @update:shots="updateShots" @rebuild="rebuildShots" @add="addShot"/>
-   <MediaSettingsPanel class="surface" :bgm="state.draft.value.bgm" :voice-volume="state.draft.value.voice?.volume??1" :subtitle-style="subtitleStyle" :title-style="titleStyle" :sample-text="state.draft.value.shots[0]?.copywriting??''" @update:bgm="state.draft.value.bgm=$event;state.scheduleSave()" @update:voice-volume="state.draft.value.voice&&(state.draft.value.voice.volume=$event);state.scheduleSave()" @update:subtitle-style="subtitleStyle=$event;state.scheduleSave()" @update:title-style="titleStyle=$event;state.scheduleSave()"/>
+   <MediaSettingsPanel class="surface" :bgm="state.draft.value.bgm" :voice-volume="state.draft.value.voice?.volume??1" :subtitle-style="subtitleStyle" :title-style="titleStyle" :title="state.draft.value.copywriting?.mainTitle??''" :sample-text="state.draft.value.shots[0]?.copywriting??''" @update:bgm="state.draft.value.bgm=$event;state.scheduleSave()" @update:voice-volume="state.draft.value.voice&&(state.draft.value.voice.volume=$event);state.scheduleSave()" @update:subtitle-style="subtitleStyle=$event;state.scheduleSave()" @update:title-style="titleStyle=$event;state.scheduleSave()"/>
   </div>
  </div>
 </template>

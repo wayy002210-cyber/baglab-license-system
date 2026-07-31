@@ -63,6 +63,17 @@ def test_expired_login_is_not_reported_as_publish_failure(tmp_path: Path) -> Non
     assert result.error_code == "LOGIN_REQUIRED"
 
 
+def test_page_structure_change_requests_user_takeover(tmp_path: Path) -> None:
+    class ChangedPage(FakePage):
+        def fill(self, selectors, value):
+            raise RuntimeError("No matching visible selector")
+
+    result = DouyinPublisher().publish(ChangedPage(), request(tmp_path))
+
+    assert result.status == "needs_user"
+    assert result.error_code == "PAGE_CHANGED"
+
+
 def test_cancel_before_submit_never_clicks_publish(tmp_path: Path) -> None:
     page = FakePage()
     cancellation = PublishCancellation()
@@ -113,3 +124,30 @@ def test_service_remembers_cancel_that_arrives_before_publish(
 
     assert result.status == "canceled"
     assert not any(action[0] == "click" for action in page.actions)
+
+
+def test_service_rejects_invalid_video_before_opening_browser(
+    tmp_path: Path,
+) -> None:
+    opened = False
+
+    def session_factory(_directory):
+        nonlocal opened
+        opened = True
+        return FakeSession(FakePage())
+
+    service = PublishingService(
+        session_factory=session_factory,
+        media_validator=lambda _path: False,
+    )
+    result = service.publish(
+        job_id="invalid-video",
+        platform="douyin",
+        user_data_dir="D:/profile",
+        request=request(tmp_path),
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "INVALID_VIDEO"
+    assert "无法播放" in result.error_message
+    assert opened is False

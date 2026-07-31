@@ -182,6 +182,7 @@ const taskStatusSchema = z.enum([
   "generating_voice",
   "selecting_assets",
   "composing",
+  "waiting_encoding",
   "encoding",
   "completed",
   "failed",
@@ -241,6 +242,17 @@ const mediaSettingsSchema = z.object({
   fontFamily: z.string().min(1),
   bgmPath: z.string().nullable(),
   bgmVolume: z.number().min(0).max(1)
+});
+const textStyleSchema = z.object({
+  fontPath: z.string().nullable(), fontFamily: z.string(), fontSize: z.number(),
+  primaryColor: z.string(), outlineColor: z.string(), outlineWidth: z.number(),
+  shadowColor: z.string(), shadowX: z.number(), shadowY: z.number(),
+  alignment: z.number(), marginV: z.number(),
+  positionX: z.number(), positionY: z.number()
+});
+const stylePresetSchema = z.object({
+  id: z.string(), name: z.string(),
+  subtitleStyle: textStyleSchema, titleStyle: textStyleSchema
 });
 const audioLibraryResultSchema = z.object({
   tracks: z.array(z.object({
@@ -618,6 +630,9 @@ contextBridge.exposeInMainWorld("autocut", {
   cancelPublishJob: async (id: string) => publishJobSchema.parse(
     await ipcRenderer.invoke("publishJobs:cancel", z.string().uuid().parse(id))
   ),
+  deletePublishJob: async (id: string) => z.object({ deleted: z.boolean() }).parse(
+    await ipcRenderer.invoke("publishJobs:delete", z.string().uuid().parse(id))
+  ),
   exportDiagnostics: async () => z.string().nullable().parse(
     await ipcRenderer.invoke("diagnostics:export")
   ),
@@ -626,6 +641,12 @@ contextBridge.exposeInMainWorld("autocut", {
   ),
   saveMediaSettings: async (input: unknown) => mediaSettingsSchema.parse(
     await ipcRenderer.invoke("settings:saveMedia", mediaSettingsSchema.parse(input))
+  ),
+  getStylePresets: async () => z.array(stylePresetSchema).parse(
+    await ipcRenderer.invoke("settings:getStylePresets")
+  ),
+  saveStylePresets: async (input: unknown) => z.array(stylePresetSchema).parse(
+    await ipcRenderer.invoke("settings:saveStylePresets", z.array(stylePresetSchema).parse(input))
   ),
   selectBgmFile: async () => z.string().nullable().parse(
     await ipcRenderer.invoke("media:selectBgmFile")

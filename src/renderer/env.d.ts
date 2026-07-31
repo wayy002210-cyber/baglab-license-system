@@ -247,9 +247,27 @@ declare global {
         coverPath?: string | null;
       }): Promise<PublishJob>;
       cancelPublishJob(id: string): Promise<PublishJob>;
+      deletePublishJob(id: string): Promise<{ deleted: boolean }>;
       exportDiagnostics(): Promise<string | null>;
       getMediaSettings(): Promise<MediaSettings>;
       saveMediaSettings(input: MediaSettings): Promise<MediaSettings>;
+      getStylePresets(): Promise<Array<{
+        id: string;
+        name: string;
+        subtitleStyle: import("../shared/media-style").TextStyle;
+        titleStyle: import("../shared/media-style").TextStyle;
+      }>>;
+      saveStylePresets(input: Array<{
+        id: string;
+        name: string;
+        subtitleStyle: import("../shared/media-style").TextStyle;
+        titleStyle: import("../shared/media-style").TextStyle;
+      }>): Promise<Array<{
+        id: string;
+        name: string;
+        subtitleStyle: import("../shared/media-style").TextStyle;
+        titleStyle: import("../shared/media-style").TextStyle;
+      }>>;
       selectBgmFile(): Promise<string | null>;
       selectBgmFolder(): Promise<string | null>;
       scanAudioLibrary(input: {
@@ -321,6 +339,7 @@ type GenerationTask = {
     | "generating_voice"
     | "selecting_assets"
     | "composing"
+    | "waiting_encoding"
     | "encoding"
     | "completed"
     | "failed"

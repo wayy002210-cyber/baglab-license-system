@@ -118,6 +118,11 @@ class PublisherAdapter:
                 currentUrl=page.url,
             )
         except Exception as error:
+            if "No matching visible selector" in str(error):
+                return self._needs_user(
+                    page, request, "PAGE_CHANGED",
+                    "抖音发布页面结构已变化，请在保留的浏览器窗口中人工完成发布",
+                )
             return self._failure(page, request, str(error))
 
     def _set_cover(self, page: PublisherPage, cover_path: str) -> None:
@@ -164,13 +169,17 @@ class PublisherAdapter:
 
 class DouyinPublisher(PublisherAdapter):
     title_selectors = [
-        '[contenteditable=true][data-placeholder*="作品标题"]',
+        '[contenteditable="true"][data-placeholder*="作品标题"]',
+        '[contenteditable="true"][data-placeholder*="标题"]',
+        'textarea[placeholder*="作品标题"]',
         'textarea[placeholder*="标题"]',
-        '[contenteditable=true]',
+        '[contenteditable="true"][role="textbox"]',
+        '[contenteditable="true"]',
     ]
     publish_selectors = [
         'button:has-text("发布")',
         '[role=button][aria-label*="发布"]',
+        '[role=button]:has-text("发布")',
     ]
 
 

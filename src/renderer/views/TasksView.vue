@@ -38,6 +38,7 @@ const statusMeta: Record<
   generating_voice: { label: "生成配音", type: "primary" },
   selecting_assets: { label: "选择素材", type: "primary" },
   composing: { label: "编排镜头", type: "warning" },
+  waiting_encoding: { label: "等待编码器", type: "info" },
   encoding: { label: "编码成片", type: "warning" },
   completed: { label: "已完成", type: "success" },
   failed: { label: "失败", type: "danger" },
@@ -178,7 +179,7 @@ function taskStatusMeta(task: Task) {
 
 onMounted(async () => {
   await load();
-  refreshTimer = setInterval(() => void load(), 2_000);
+  refreshTimer = setInterval(() => void load(), 5_000);
 });
 onBeforeUnmount(() => {
   if (refreshTimer) clearInterval(refreshTimer);

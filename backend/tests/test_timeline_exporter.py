@@ -140,6 +140,8 @@ def test_ass_writer_supports_independent_title_and_subtitle_styles(
             shadow_y=3,
             alignment=2,
             margin_v=180,
+            position_x=540,
+            position_y=1680,
         ),
         title_style=TextStyle(
             font_family="Microsoft YaHei",
@@ -152,12 +154,16 @@ def test_ass_writer_supports_independent_title_and_subtitle_styles(
             shadow_y=2,
             alignment=8,
             margin_v=120,
+            position_x=540,
+            position_y=180,
         ),
     )
     content = output.read_text(encoding="utf-8")
     assert "Style: Subtitle,Microsoft YaHei,66" in content
     assert "Style: Title,Microsoft YaHei,82" in content
-    assert "Dialogue: 1,0:00:00.00,0:00:01.50,Title,顶部标题" in content
+    assert r"{\pos(540,1680)}" in content
+    assert r"{\pos(540,180)}" in content
+    assert "Dialogue: 1,0:00:00.00,0:00:01.50,Title," in content
 
 
 def test_encoder_detector_prefers_available_hardware_in_priority_order() -> None:
@@ -292,8 +298,87 @@ def test_export_reports_monotonic_ffmpeg_progress(tmp_path: Path) -> None:
     assert progress == sorted(progress)
 
 
+def test_export_emits_progress_heartbeat_when_ffmpeg_has_no_new_frame(
+    tmp_path: Path,
+) -> None:
+    class Process:
+        returncode = None
+        stdout = io.StringIO("")
+        stderr = io.StringIO("")
+        polls = 0
+
+        def poll(self):
+            self.polls += 1
+            if self.polls >= 3:
+                self.returncode = 0
+            return self.returncode
+        def terminate(self): self.returncode = 1
+        def kill(self): self.returncode = 1
+        def wait(self, timeout=None): return self.returncode
+
+    progress: list[float] = []
+    exporter = Exporter(
+        process_factory=lambda *args, **kwargs: Process(),
+        progress_interval_sec=0.01,
+    )
+    exporter.export(
+        Project(
+            output_path=tmp_path / "out.mp4",
+            video_clips=[VideoClip(tmp_path / "a.mp4", 0, 3)],
+        ),
+        encoder="libx264",
+        cancel_event=threading.Event(),
+        on_progress=progress.append,
+    )
+
+    assert progress
+    assert progress[0] == 0
+
+
 def test_export_command_enables_machine_readable_progress(tmp_path: Path) -> None:
     command = Exporter().build_command(sample_project(tmp_path))
 
     assert command[1:4] == ["-hide_banner", "-nostats", "-progress"]
     assert command[4] == "pipe:1"
+
+
+def test_export_commits_only_a_validated_partial_file(tmp_path: Path) -> None:
+    final = tmp_path / "final.mp4"
+    seen_outputs: list[Path] = []
+
+    def runner(command, **kwargs):
+        if "-encoders" in command or "lavfi" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        output = Path(command[-1])
+        seen_outputs.append(output)
+        output.write_bytes(b"valid mp4")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    exporter = Exporter(runner=runner, validator=lambda path: path.read_bytes() == b"valid mp4")
+    exporter.export(Project(
+        output_path=final,
+        video_clips=[VideoClip(tmp_path / "a.mp4", 0, 1)],
+    ), encoder="libx264")
+
+    assert seen_outputs == [tmp_path / "final.partial.mp4"]
+    assert final.read_bytes() == b"valid mp4"
+    assert not (tmp_path / "final.partial.mp4").exists()
+
+
+def test_export_removes_partial_file_when_validation_fails(tmp_path: Path) -> None:
+    final = tmp_path / "final.mp4"
+
+    def runner(command, **kwargs):
+        output = Path(command[-1])
+        output.write_bytes(b"broken")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    exporter = Exporter(runner=runner, validator=lambda _path: False)
+    with pytest.raises(RuntimeError, match="validation"):
+        exporter.export(Project(
+            output_path=final,
+            video_clips=[VideoClip(tmp_path / "a.mp4", 0, 1)],
+        ), encoder="libx264")
+
+    assert not final.exists()
+    assert not (tmp_path / "final.partial.mp4").exists()

@@ -1,15 +1,46 @@
 import { existsSync, readdirSync, realpathSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { basename, extname, isAbsolute, join } from "node:path";
 
 export type SystemFont = {
   id: string;
   displayName: string;
   family: string;
   path: string;
-  extension: "ttf" | "otf" | "ttc";
+  extension: "ttf" | "otf" | "ttc" | "otc";
 };
 
-const SUPPORTED_EXTENSIONS = new Set([".ttf", ".otf", ".ttc"]);
+const SUPPORTED_EXTENSIONS = new Set([".ttf", ".otf", ".ttc", ".otc"]);
+
+export function parseRegistryFontPaths(
+  output: string,
+  windowsDirectory = process.env.WINDIR ?? "C:\\Windows"
+): string[] {
+  const paths: string[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/\s+REG_(?:SZ|EXPAND_SZ)\s+(.+?)\s*$/i);
+    if (!match) continue;
+    const value = match[1].replace(/%WINDIR%/gi, windowsDirectory).trim();
+    if (!SUPPORTED_EXTENSIONS.has(extname(value).toLowerCase())) continue;
+    paths.push(isAbsolute(value) ? value : join(windowsDirectory, "Fonts", value));
+  }
+  return paths;
+}
+
+function registryFontPaths(): string[] {
+  const paths: string[] = [];
+  for (const root of ["HKLM", "HKCU"]) {
+    const result = spawnSync(
+      "reg.exe",
+      ["query", `${root}\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts`],
+      { windowsHide: true, encoding: "utf8" }
+    );
+    if (result.status === 0 && result.stdout) {
+      paths.push(...parseRegistryFontPaths(result.stdout));
+    }
+  }
+  return paths;
+}
 
 export function defaultFontDirectories(): string[] {
   const windowsDirectory = process.env.WINDIR ?? "C:\\Windows";
@@ -23,10 +54,11 @@ export function defaultFontDirectories(): string[] {
 }
 
 export function scanSystemFonts(
-  directories = defaultFontDirectories()
+  directories?: string[]
 ): SystemFont[] {
+  const resolvedDirectories = directories ?? defaultFontDirectories();
   const paths = new Set<string>();
-  for (const directory of directories) {
+  for (const directory of resolvedDirectories) {
     if (!existsSync(directory)) continue;
     try {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -40,13 +72,24 @@ export function scanSystemFonts(
       // A protected or transient font directory must not block the editor.
     }
   }
+  if (!directories) {
+    for (const path of registryFontPaths()) {
+      if (!existsSync(path)) continue;
+      try {
+        paths.add(realpathSync(path));
+      } catch {
+        // Ignore stale registry entries.
+      }
+    }
+  }
 
   return [...paths]
     .map((path) => {
       const extension = extname(path).slice(1).toLowerCase() as
         | "ttf"
         | "otf"
-        | "ttc";
+        | "ttc"
+        | "otc";
       const displayName = basename(path, extname(path))
         .replace(/[_-]+/g, " ")
         .trim();

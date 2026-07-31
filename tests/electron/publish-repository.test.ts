@@ -164,4 +164,26 @@ describe("PublishRepository", () => {
 
     expect(canceled.status).toBe("canceled");
   });
+
+  it("deletes canceled records but rejects active records", () => {
+    seedTask("task-delete");
+    const account = repository.createAccount({
+      name: "删除测试账号",
+      platform: "douyin",
+      userDataDir: "D:/profiles/delete"
+    });
+    const job = repository.createJob({
+      taskId: "task-delete",
+      accountId: account.id,
+      title: "删除测试",
+      topics: [],
+      scheduledAt: null,
+      idempotencyKey: "delete-job"
+    });
+
+    expect(() => repository.deleteJob(job.id)).toThrow(/terminal/i);
+    repository.cancelJob(job.id);
+    expect(repository.deleteJob(job.id)).toBe(true);
+    expect(repository.getJob(job.id)).toBeNull();
+  });
 });

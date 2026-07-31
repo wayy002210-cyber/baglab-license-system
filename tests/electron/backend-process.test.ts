@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createBackendLaunchConfig,
+  terminateBackendProcessTree,
+  terminateStalePackagedBackends,
   waitForBackendHealth
 } from "../../electron/backend-process";
 
@@ -67,5 +69,33 @@ describe("createBackendLaunchConfig", () => {
           )
       })
     ).rejects.toThrow("前后端版本不一致");
+  });
+});
+
+describe("terminateStalePackagedBackends", () => {
+  it("terminates the complete stale backend process tree", () => {
+    const calls: Array<{ command: string; args: string[] }> = [];
+    terminateStalePackagedBackends((command, args) => {
+      calls.push({ command, args });
+      return { status: 0 } as never;
+    });
+    expect(calls).toEqual([{
+      command: "taskkill.exe",
+      args: ["/IM", "autocut-backend.exe", "/T", "/F"]
+    }]);
+  });
+});
+
+describe("terminateBackendProcessTree", () => {
+  it("terminates the owned backend and all encoder children", () => {
+    const calls: Array<{ command: string; args: string[] }> = [];
+    terminateBackendProcessTree(4321, (command, args) => {
+      calls.push({ command, args });
+      return { status: 0 } as never;
+    });
+    expect(calls).toEqual([{
+      command: "taskkill.exe",
+      args: ["/PID", "4321", "/T", "/F"]
+    }]);
   });
 });

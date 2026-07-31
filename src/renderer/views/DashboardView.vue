@@ -19,7 +19,7 @@ const health = computed(() => categories.value.length
 const recentTasks = computed(() => tasks.value.slice(0,5));
 const statusName: Record<string,string> = {
   queued:"排队中",preparing_copy:"生成文案",generating_voice:"生成配音",
-  selecting_assets:"选择素材",composing:"编排镜头",encoding:"编码成片",
+  selecting_assets:"选择素材",composing:"编排镜头",waiting_encoding:"等待编码器",encoding:"编码成片",
   completed:"已完成",failed:"失败",canceled:"已取消",draft:"草稿"
 };
 onMounted(async()=>{

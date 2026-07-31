@@ -229,6 +229,16 @@ export class PublishRepository {
     return this.requireJob(id);
   }
 
+  deleteJob(id: string): boolean {
+    const job = this.requireJob(id);
+    if (!["canceled", "failed", "published", "needs_user"].includes(job.status)) {
+      throw new Error("Only terminal publish jobs can be deleted");
+    }
+    return this.database
+      .prepare("DELETE FROM publish_jobs WHERE id = ?")
+      .run(id).changes > 0;
+  }
+
   private requireAccount(id: string): PublishAccount {
     const row = this.database
       .prepare("SELECT * FROM publish_accounts WHERE id = ?")

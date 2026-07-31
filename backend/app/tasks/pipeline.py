@@ -17,6 +17,7 @@ from app.timeline.exporter import (
     AudioClip,
     Project,
     SubtitleClip,
+    TitleClip,
     VideoClip,
     TextStyle,
 )
@@ -263,6 +264,21 @@ class GenerationPipeline:
             video_clips=videos,
             voice_clips=voices,
             subtitles=subtitles,
+            titles=(
+                [
+                    TitleClip(
+                        start_sec=0,
+                        end_sec=cursor,
+                        text=str(
+                            (request.snapshot.get("copywriting") or {}).get(
+                                "mainTitle", ""
+                            )
+                        ),
+                    )
+                ]
+                if (request.snapshot.get("copywriting") or {}).get("mainTitle")
+                else []
+            ),
             bgm_path=bgm_path,
             bgm_duration_sec=(
                 self.audio_probe.duration(bgm_path) if bgm_path else None
@@ -345,5 +361,11 @@ def _text_style(value: dict[str, Any] | None) -> TextStyle | None:
         shadow_y=float(value.get("shadowY", 1)),
         alignment=int(value.get("alignment", 2)),
         margin_v=int(value.get("marginV", 170)),
+        position_x=(
+            int(value["positionX"]) if value.get("positionX") is not None else None
+        ),
+        position_y=(
+            int(value["positionY"]) if value.get("positionY") is not None else None
+        ),
         font_path=Path(value["fontPath"]) if value.get("fontPath") else None,
     )

@@ -6,6 +6,10 @@ import {
   defaultCopyModelSettings,
   defaultMediaSettings
 } from "../../electron/repositories/settings-repository";
+import {
+  defaultSubtitleStyle,
+  defaultTitleStyle
+} from "../../src/shared/media-style";
 
 describe("SettingsRepository", () => {
   it("returns defaults and persists validated media settings", () => {
@@ -59,6 +63,22 @@ describe("SettingsRepository", () => {
         temperature: 2.1
       })
     ).toThrow();
+    database.close();
+  });
+
+  it("persists reusable subtitle and title style presets", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const repository = new SettingsRepository(database);
+    const preset = {
+      id: "brand-yellow",
+      name: "品牌黄",
+      subtitleStyle: defaultSubtitleStyle,
+      titleStyle: defaultTitleStyle
+    };
+
+    repository.saveStylePresets([preset]);
+    expect(new SettingsRepository(database).getStylePresets()).toEqual([preset]);
     database.close();
   });
 });

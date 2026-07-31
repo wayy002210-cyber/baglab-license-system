@@ -47,7 +47,6 @@ class GenerationWorker:
         ("generating_voice", 25),
         ("selecting_assets", 45),
         ("composing", 60),
-        ("encoding", 75),
     )
 
     def __init__(
@@ -99,30 +98,59 @@ class GenerationWorker:
                     progress=progress,
                     stage=stage_name,
                 )
-                if stage_name == "encoding":
-                    async with self._encoding_lock:
+                context = await stage(request, context)
+
+            encoding = self.stages.get("encoding")
+            if encoding is not None:
+                current_stage = "waiting_encoding"
+                self._emit(
+                    on_event, request.task_id,
+                    status="waiting_encoding", progress=70,
+                    stage="waiting_encoding", message="正在等待编码器",
+                )
+                acquire_task = asyncio.create_task(self._encoding_lock.acquire())
+                owns_lock = False
+                try:
+                    while not acquire_task.done():
+                        done, _ = await asyncio.wait({acquire_task}, timeout=5)
                         self._raise_if_canceled(request.task_id)
-                        encoding_progress = 75
-
-                        def emit_encoding_progress(ratio: float) -> None:
-                            nonlocal encoding_progress
-                            encoding_progress = max(
-                                encoding_progress,
-                                min(99, max(75, round(75 + 24 * ratio))),
-                            )
+                        if not done:
                             self._emit(
-                                on_event,
-                                request.task_id,
-                                status="encoding",
-                                progress=encoding_progress,
-                                stage="encoding",
-                                message="正在编码成片",
+                                on_event, request.task_id,
+                                status="waiting_encoding", progress=70,
+                                stage="waiting_encoding",
+                                message="仍在等待编码器",
                             )
+                    await acquire_task
+                    owns_lock = True
+                    current_stage = "encoding"
+                    self._raise_if_canceled(request.task_id)
+                    self._emit(
+                        on_event, request.task_id,
+                        status="encoding", progress=75,
+                        stage="encoding", message="正在编码成片",
+                    )
+                    encoding_progress = 75
 
-                        context["emitEncodingProgress"] = emit_encoding_progress
-                        context = await stage(request, context)
-                else:
-                    context = await stage(request, context)
+                    def emit_encoding_progress(ratio: float) -> None:
+                        nonlocal encoding_progress
+                        encoding_progress = max(
+                            encoding_progress,
+                            min(99, max(75, round(75 + 24 * ratio))),
+                        )
+                        self._emit(
+                            on_event, request.task_id,
+                            status="encoding", progress=encoding_progress,
+                            stage="encoding", message="正在编码成片",
+                        )
+
+                    context["emitEncodingProgress"] = emit_encoding_progress
+                    context = await encoding(request, context)
+                finally:
+                    if not acquire_task.done():
+                        acquire_task.cancel()
+                    if owns_lock:
+                        self._encoding_lock.release()
 
             self._raise_if_canceled(request.task_id)
             self._emit(

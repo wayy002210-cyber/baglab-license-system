@@ -40,6 +40,15 @@ async function cancel(job: Job) {
     ElMessage.error(toUserMessage(error, "发布任务取消失败"));
   }
 }
+async function remove(job: Job) {
+  try {
+    await window.autocut.deletePublishJob(job.id);
+    await load();
+    ElMessage.success("排期记录已删除");
+  } catch (error) {
+    ElMessage.error(toUserMessage(error, "删除排期记录失败"));
+  }
+}
 const accountName = (id:string) => accounts.value.find(a => a.id === id)?.name ?? "已删除账号";
 onMounted(load);
 </script>
@@ -51,10 +60,10 @@ onMounted(load);
         <el-table-column prop="title" label="发布内容" min-width="200" />
         <el-table-column label="账号" min-width="150"><template #default="{row}">{{ accountName(row.accountId) }}</template></el-table-column>
         <el-table-column label="状态" width="110"><template #default="{row}"><el-tag>{{ statusName[row.status as Job['status']] }}</el-tag></template></el-table-column>
-        <el-table-column label="发布时间" min-width="180"><template #default="{row}">{{ row.scheduledAt ? new Date(row.scheduledAt).toLocaleString() : "立即发布" }}</template></el-table-column>
+        <el-table-column label="发布时间" min-width="180"><template #default="{row}">{{ row.scheduledAt ? new Date(row.scheduledAt).toLocaleString("zh-CN") : "立即发布" }}</template></el-table-column>
         <el-table-column prop="attemptCount" label="尝试" width="80" />
         <el-table-column prop="errorMessage" label="错误" min-width="180" />
-        <el-table-column label="操作" width="90">
+        <el-table-column label="操作" width="150">
           <template #default="{row}">
             <el-button
               v-if="['pending', 'scheduled', 'publishing'].includes(row.status)"
@@ -62,6 +71,10 @@ onMounted(load);
               type="danger"
               @click="cancel(row)"
             >取消</el-button>
+            <el-button
+              v-if="['canceled', 'failed', 'published', 'needs_user'].includes(row.status)"
+              text type="danger" @click="remove(row)"
+            >删除记录</el-button>
           </template>
         </el-table-column>
         <template #empty><el-empty description="暂无待发布内容" /></template>

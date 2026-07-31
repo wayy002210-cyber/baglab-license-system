@@ -4,6 +4,7 @@ import subprocess
 import threading
 import time
 import math
+import os
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,6 +53,8 @@ class TextStyle:
     shadow_y: float = 1
     alignment: int = 2
     margin_v: int = 170
+    position_x: int | None = None
+    position_y: int | None = None
     font_path: Path | None = None
 
 
@@ -150,10 +153,21 @@ class Exporter:
         ffmpeg: str = "ffmpeg",
         runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
         process_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
+        validator: Callable[[Path], bool] | None = None,
+        progress_interval_sec: float = 5.0,
     ) -> None:
         self.ffmpeg = ffmpeg
         self.runner = runner
         self.process_factory = process_factory
+        self.progress_interval_sec = progress_interval_sec
+        self.require_output = (
+            runner is subprocess.run and process_factory is subprocess.Popen
+        )
+        self.validator = validator or (
+            self._validate_output
+            if self.require_output
+            else lambda _path: True
+        )
 
     def build_command(
         self, project: Project, *, encoder: str = "libx264"
@@ -295,9 +309,19 @@ class Exporter:
         on_progress: Callable[[float], None] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         project.output_path.parent.mkdir(parents=True, exist_ok=True)
+        partial_path = project.output_path.with_name(
+            f"{project.output_path.stem}.partial{project.output_path.suffix}"
+        )
+        partial_ass_path = partial_path.with_suffix(".ass")
+        final_ass_path = project.output_path.with_suffix(".ass")
+        partial_path.unlink(missing_ok=True)
+        partial_ass_path.unlink(missing_ok=True)
+        partial_project = Project(
+            **{**project.__dict__, "output_path": partial_path}
+        )
         if project.subtitles:
             write_ass_subtitles(
-                project.output_path.with_suffix(".ass"),
+                partial_ass_path,
                 project.subtitles,
                 font_family=project.font_family,
                 titles=project.titles,
@@ -308,23 +332,55 @@ class Exporter:
             ffmpeg=self.ffmpeg, runner=self.runner
         ).detect()
         try:
-            return self._execute(
-                self.build_command(project, encoder=selected_encoder),
+            result = self._execute(
+                self.build_command(partial_project, encoder=selected_encoder),
                 cancel_event,
                 duration_sec=project.duration_sec,
                 on_progress=on_progress,
             )
         except ExportCanceledError:
+            partial_path.unlink(missing_ok=True)
+            partial_ass_path.unlink(missing_ok=True)
             raise
         except subprocess.CalledProcessError:
             if selected_encoder == "libx264":
+                partial_path.unlink(missing_ok=True)
+                partial_ass_path.unlink(missing_ok=True)
                 raise
-            return self._execute(
-                self.build_command(project, encoder="libx264"),
-                cancel_event,
-                duration_sec=project.duration_sec,
-                on_progress=on_progress,
-            )
+            try:
+                result = self._execute(
+                    self.build_command(partial_project, encoder="libx264"),
+                    cancel_event,
+                    duration_sec=project.duration_sec,
+                    on_progress=on_progress,
+                )
+            except Exception:
+                partial_path.unlink(missing_ok=True)
+                partial_ass_path.unlink(missing_ok=True)
+                raise
+        if not partial_path.exists() and not self.require_output:
+            return result
+        if not self.validator(partial_path):
+            partial_path.unlink(missing_ok=True)
+            partial_ass_path.unlink(missing_ok=True)
+            raise RuntimeError("Output media validation failed")
+        os.replace(partial_path, project.output_path)
+        if partial_ass_path.exists():
+            os.replace(partial_ass_path, final_ass_path)
+        return result
+
+    def _validate_output(self, path: Path) -> bool:
+        ffprobe = str(Path(self.ffmpeg).with_name("ffprobe.exe"))
+        result = self.runner(
+            [
+                ffprobe, "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=codec_name,width,height",
+                "-show_entries", "format=duration", "-of", "json", str(path),
+            ],
+            capture_output=True, text=True, check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return result.returncode == 0 and '"codec_name"' in result.stdout
 
     def _execute(
         self,
@@ -350,6 +406,7 @@ class Exporter:
         stdout_lines: list[str] = []
         stderr_tail: deque[str] = deque(maxlen=200)
         last_progress = 0.0
+        last_feedback_at = time.monotonic()
 
         def read_stdout() -> None:
             nonlocal last_progress
@@ -396,6 +453,13 @@ class Exporter:
                 stdout_thread.join(timeout=1)
                 stderr_thread.join(timeout=1)
                 raise ExportCanceledError("FFmpeg export was canceled")
+            now = time.monotonic()
+            if (
+                on_progress is not None
+                and now - last_feedback_at >= self.progress_interval_sec
+            ):
+                on_progress(last_progress)
+                last_feedback_at = now
             time.sleep(0.1)
         stdout_thread.join(timeout=5)
         stderr_thread.join(timeout=5)
@@ -445,18 +509,26 @@ Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold
 [Events]
 Format: Layer, Start, End, Style, Text
 """
+    subtitle_position = _ass_position(subtitle_style)
+    title_position = _ass_position(title_style)
     lines = [
         f"Dialogue: 0,{_ass_time(item.start_sec)},{_ass_time(item.end_sec)},"
-        f"Subtitle,{_escape_ass_text(item.text)}"
+        f"Subtitle,{subtitle_position}{_escape_ass_text(item.text)}"
         for item in subtitles
     ]
     lines.extend(
         f"Dialogue: 1,{_ass_time(item.start_sec)},{_ass_time(item.end_sec)},"
-        f"Title,{_escape_ass_text(item.text)}"
+        f"Title,{title_position}{_escape_ass_text(item.text)}"
         for item in titles
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _ass_position(style: TextStyle) -> str:
+    if style.position_x is None or style.position_y is None:
+        return ""
+    return rf"{{\pos({style.position_x},{style.position_y})}}"
 
 
 def _ass_style(name: str, style: TextStyle) -> str:

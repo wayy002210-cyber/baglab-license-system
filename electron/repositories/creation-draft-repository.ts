@@ -17,11 +17,13 @@ export class CreationDraftRepository {
     const row = this.database
       .prepare("SELECT payload_json FROM creation_drafts WHERE id = ?")
       .get(ACTIVE_DRAFT_ID) as DraftRow | undefined;
-    return row ? creationDraftSchema.parse(JSON.parse(row.payload_json)) : null;
+    return row
+      ? creationDraftSchema.parse(normalizeStylePositions(JSON.parse(row.payload_json)))
+      : null;
   }
 
   save(input: CreationDraft): CreationDraft {
-    const draft = creationDraftSchema.parse(input);
+    const draft = creationDraftSchema.parse(normalizeStylePositions(input));
     const now = new Date().toISOString();
     this.database
       .prepare(
@@ -55,4 +57,18 @@ export class CreationDraftRepository {
     const draft = this.get();
     return draft ? structuredClone(draft) : null;
   }
+}
+
+function normalizeStylePositions(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const draft = structuredClone(value) as Record<string, any>;
+  if (draft.subtitleStyle) {
+    draft.subtitleStyle.positionX ??= 540;
+    draft.subtitleStyle.positionY ??= 1650;
+  }
+  if (draft.titleStyle) {
+    draft.titleStyle.positionX ??= 540;
+    draft.titleStyle.positionY ??= 180;
+  }
+  return draft;
 }

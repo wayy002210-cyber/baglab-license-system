@@ -14,6 +14,9 @@ export const textStyleSchema = z.object({
   shadowY: z.number().min(-30).max(30),
   alignment: z.number().int().min(1).max(9),
   marginV: z.number().int().min(0).max(960)
+  ,
+  positionX: z.number().int().min(0).max(1080).default(540),
+  positionY: z.number().int().min(0).max(1920).default(1650)
 }).strict();
 
 export type TextStyle = z.infer<typeof textStyleSchema>;
@@ -29,7 +32,9 @@ export const defaultSubtitleStyle: TextStyle = {
   shadowX: 0,
   shadowY: 0,
   alignment: 2,
-  marginV: 170
+  marginV: 170,
+  positionX: 540,
+  positionY: 1650
 };
 
 export const defaultTitleStyle: TextStyle = {
@@ -37,7 +42,9 @@ export const defaultTitleStyle: TextStyle = {
   fontSize: 82,
   primaryColor: "#FFE600",
   alignment: 8,
-  marginV: 120
+  marginV: 120,
+  positionX: 540,
+  positionY: 180
 };
 
 export const subtitleStylePresets = [

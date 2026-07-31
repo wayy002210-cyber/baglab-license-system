@@ -19,6 +19,8 @@ import keytar from "keytar";
 import {
   createBackendLaunchConfig,
   spawnBackend,
+  terminateStalePackagedBackends,
+  terminateBackendProcessTree,
   waitForBackendHealth
 } from "./backend-process.js";
 import { CredentialStore, type CredentialName } from "./credential-store.js";
@@ -220,14 +222,40 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
   } catch (error) {
     const current = taskRepository().get(task.id);
     if (current && !["completed", "failed", "canceled"].includes(current.status)) {
-      taskRepository().transition(task.id, "failed", {
-        errorCode: "WORKER_CONNECTION_FAILED",
-        errorMessage: error instanceof Error ? error.message : "任务执行失败"
+      logger?.write("warn", "generation.stream_disconnected", {
+        taskId: task.id, error
       });
-      logger?.write("error", "generation.connection_failed", {
-        taskId: task.id,
-        error
-      });
+      try {
+        while (true) {
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 5_000));
+          const response = await fetch(
+            `${backendState.baseUrl}/tasks/${task.id}`,
+            { headers: { "X-Autocut-Token": backendState.token } }
+          );
+          if (!response.ok) throw new Error(`任务状态查询失败 (${response.status})`);
+          const payload = await response.json() as {
+            status: TaskStatus;
+            progress: number;
+            errorCode?: string | null;
+            errorMessage?: string | null;
+          };
+          taskRepository().transition(task.id, payload.status, {
+            progress: payload.progress,
+            outputPath: payload.status === "completed" ? outputPath : undefined,
+            errorCode: payload.errorCode ?? undefined,
+            errorMessage: payload.errorMessage ?? undefined
+          });
+          if (["completed", "failed", "canceled"].includes(payload.status)) break;
+        }
+      } catch (pollError) {
+        taskRepository().transition(task.id, "failed", {
+          errorCode: "WORKER_CONNECTION_FAILED",
+          errorMessage: pollError instanceof Error ? pollError.message : "任务执行连接失败"
+        });
+        logger?.write("error", "generation.connection_failed", {
+          taskId: task.id, error: pollError
+        });
+      }
     }
   }
 }
@@ -334,6 +362,7 @@ function findFreePort(): Promise<number> {
 }
 
 async function startBackend(): Promise<void> {
+  if (app.isPackaged) terminateStalePackagedBackends();
   const port = await findFreePort();
   const token = randomBytes(32).toString("hex");
   const backendDirectory = app.isPackaged
@@ -793,6 +822,12 @@ ipcMain.handle("settings:getMedia", () => {
 ipcMain.handle("settings:saveMedia", (_event, input: MediaSettings) =>
   settingsRepository().saveMediaSettings(input)
 );
+ipcMain.handle("settings:getStylePresets", () =>
+  settingsRepository().getStylePresets()
+);
+ipcMain.handle("settings:saveStylePresets", (_event, input) =>
+  settingsRepository().saveStylePresets(input)
+);
 ipcMain.handle("media:selectBgmFile", async () => {
   if (!window) throw new Error("应用窗口尚未就绪");
   const result = await dialog.showOpenDialog(window, {
@@ -979,6 +1014,9 @@ ipcMain.handle("publishJobs:cancel", async (_event, id: string) => {
   }
   return publishRepository().cancelJob(id);
 });
+ipcMain.handle("publishJobs:delete", (_event, id: string) => ({
+  deleted: publishRepository().deleteJob(id)
+}));
 ipcMain.handle("diagnostics:export", async () => {
   if (!window || !database) throw new Error("应用尚未就绪");
   const selection = await dialog.showSaveDialog(window, {
@@ -1241,7 +1279,8 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  backend?.kill();
+  if (backend?.pid) terminateBackendProcessTree(backend.pid);
+  else backend?.kill();
   backend = null;
   database?.close();
   database = null;

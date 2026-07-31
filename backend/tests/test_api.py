@@ -18,7 +18,7 @@ def test_health_requires_session_token() -> None:
     assert response.json() == {
         "status": "ok",
         "service": "autocut-backend",
-        "buildId": "0.5.1",
+        "buildId": "0.5.2",
     }
 
 

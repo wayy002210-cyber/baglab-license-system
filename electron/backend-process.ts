@@ -1,4 +1,19 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+
+export function terminateStalePackagedBackends(
+  executor: (command: string, args: string[]) => unknown = (command, args) =>
+    spawnSync(command, args, { windowsHide: true, stdio: "ignore" })
+): void {
+  executor("taskkill.exe", ["/IM", "autocut-backend.exe", "/T", "/F"]);
+}
+
+export function terminateBackendProcessTree(
+  processId: number,
+  executor: (command: string, args: string[]) => unknown = (command, args) =>
+    spawnSync(command, args, { windowsHide: true, stdio: "ignore" })
+): void {
+  executor("taskkill.exe", ["/PID", String(processId), "/T", "/F"]);
+}
 
 export type BackendLaunchInput = {
   pythonExecutable: string;

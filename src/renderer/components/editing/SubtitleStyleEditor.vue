@@ -34,6 +34,8 @@ function patch(value: Partial<TextStyle>): void {
       <label>描边宽度<el-input-number :model-value="modelValue.outlineWidth" :min="0" :max="20" @update:model-value="patch({ outlineWidth: Number($event) })" /></label>
       <label>阴影颜色<el-color-picker :model-value="modelValue.shadowColor" @update:model-value="patch({ shadowColor: String($event) })" /></label>
       <label>垂直边距<el-input-number :model-value="modelValue.marginV" :min="0" :max="960" @update:model-value="patch({ marginV: Number($event) })" /></label>
+      <label>横向位置 X<el-input-number :model-value="modelValue.positionX" :min="0" :max="1080" @update:model-value="patch({ positionX: Number($event) })" /></label>
+      <label>纵向位置 Y<el-input-number :model-value="modelValue.positionY" :min="0" :max="1920" @update:model-value="patch({ positionY: Number($event) })" /></label>
     </div>
   </section>
 </template>

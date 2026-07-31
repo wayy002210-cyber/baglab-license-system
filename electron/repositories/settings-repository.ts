@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { TextStyle } from "../../src/shared/media-style.js";
 
 export type MediaSettings = {
   outputDirectory: string;
@@ -14,6 +15,13 @@ export type CopyModelSettings = {
   defaultModel: string;
   temperature: number;
   candidateModels: string[];
+};
+
+export type StylePreset = {
+  id: string;
+  name: string;
+  subtitleStyle: TextStyle;
+  titleStyle: TextStyle;
 };
 
 export const defaultMediaSettings: MediaSettings = {
@@ -106,5 +114,13 @@ export class SettingsRepository {
       temperature: settings.temperature,
       candidateModels: models
     });
+  }
+
+  getStylePresets(): StylePreset[] {
+    return this.get("text-style-presets", []);
+  }
+
+  saveStylePresets(presets: StylePreset[]): StylePreset[] {
+    return this.set("text-style-presets", structuredClone(presets));
   }
 }

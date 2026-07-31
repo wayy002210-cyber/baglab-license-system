@@ -15,6 +15,7 @@ import {
   toCopywritingContext,
   toCopywritingGenerationInput
 } from "../copywriting/copywriting-request";
+import { deriveShortTitle } from "../../shared/short-title";
 
 type Persona = Awaited<ReturnType<typeof window.autocut.listPersonas>>[number];
 type ComplianceIssue = Awaited<
@@ -161,6 +162,7 @@ async function generateScript(): Promise<void> {
         throw new Error("当前文案草稿已失效，请重新生成");
       }
       currentState.text = result.text;
+      currentState.mainTitle = deriveShortTitle(topic.title);
       currentState.complianceIssues = [];
       await draftState.saveImmediate();
     }, {

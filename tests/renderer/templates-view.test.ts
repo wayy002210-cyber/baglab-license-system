@@ -17,7 +17,9 @@ describe("TemplatesView", () => {
           audioSegments: [{ id: "s1", index: 0, text: "第一段。", sourceStart: 0, sourceEnd: 4, textHash: "a", parameterHash: "b", audioPath: "D:/a.mp3", durationSec: 2, status: "ready", errorMessage: null }],
           shots: [], bgm: null, titleStyle: null, subtitleStyle: null
         })),
-        saveCreationDraft: vi.fn(async (draft) => draft)
+        saveCreationDraft: vi.fn(async (draft) => draft),
+        getStylePresets: vi.fn(async () => []),
+        saveStylePresets: vi.fn(async (presets) => presets)
         ,listPersonas: vi.fn(async () => [{ id: "p1", name: "袋研官", industry: "工厂", brandFacts: ["自有工厂"], tone: "专业", cta: "欢迎咨询", bannedWords: [], isDefault: true, createdAt: "", updatedAt: "" }])
       }
     });

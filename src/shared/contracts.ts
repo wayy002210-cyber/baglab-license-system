@@ -26,6 +26,7 @@ const draftCopywritingSchema = z
         .strict()
     ),
     selectedTopicId: z.string().min(1).nullable(),
+    mainTitle: z.string().min(5).max(6).optional(),
     text: z.string(),
     complianceIssues: z.array(complianceIssueSchema)
   })
@@ -95,7 +96,9 @@ const draftTextStyleSchema = z
     shadowX: z.number(),
     shadowY: z.number(),
     alignment: z.number().int().min(1).max(9),
-    marginV: z.number().int().nonnegative()
+    marginV: z.number().int().nonnegative(),
+    positionX: z.number().int().min(0).max(1080).default(540),
+    positionY: z.number().int().min(0).max(1920).default(1650)
   })
   .strict();
 
@@ -121,6 +124,7 @@ export const taskStatusSchema = z.enum([
   "generating_voice",
   "selecting_assets",
   "composing",
+  "waiting_encoding",
   "encoding",
   "completed",
   "failed",

@@ -62,10 +62,11 @@ def test_worker_runs_pipeline_in_order_and_emits_progress() -> None:
         "generating_voice",
         "selecting_assets",
         "composing",
+        "waiting_encoding",
         "encoding",
         "completed",
     ]
-    assert [event.progress for event in events] == [5, 25, 45, 60, 75, 100]
+    assert [event.progress for event in events] == [5, 25, 45, 60, 70, 75, 100]
     assert result["outputPath"] == "D:/output/task-1.mp4"
 
 
@@ -153,6 +154,46 @@ def test_worker_allows_only_one_encoding_stage_at_a_time() -> None:
     assert maximum_active == 1
 
 
+def test_worker_does_not_report_encoding_until_it_owns_the_lock() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    second_events: list[TaskEvent] = []
+
+    async def encode(request, context):
+        if request.task_id == "one":
+            entered.set()
+            await release.wait()
+        return context
+
+    worker = GenerationWorker(stages={"encoding": encode})
+
+    async def run_both():
+        first = asyncio.create_task(
+            worker.run(TaskExecutionRequest(
+                taskId="one", seed=1, snapshot={}, outputPath="one.mp4"
+            ))
+        )
+        await entered.wait()
+        second = asyncio.create_task(
+            worker.run(
+                TaskExecutionRequest(
+                    taskId="two", seed=2, snapshot={}, outputPath="two.mp4"
+                ),
+                on_event=second_events.append,
+            )
+        )
+        await asyncio.sleep(0)
+        assert [event.status for event in second_events] == ["waiting_encoding"]
+        release.set()
+        await asyncio.gather(first, second)
+
+    asyncio.run(run_both())
+
+    assert [event.status for event in second_events] == [
+        "waiting_encoding", "encoding", "completed"
+    ]
+
+
 def test_encoding_stage_can_emit_real_progress_between_75_and_99() -> None:
     async def encode(request, context):
         context["emitEncodingProgress"](0.5)
@@ -175,4 +216,4 @@ def test_encoding_stage_can_emit_real_progress_between_75_and_99() -> None:
         )
     )
 
-    assert [event.progress for event in events] == [75, 87, 87, 99, 100]
+    assert [event.progress for event in events] == [70, 75, 87, 87, 99, 100]

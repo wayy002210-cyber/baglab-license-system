@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+from pathlib import Path
 from threading import Lock
 from time import monotonic
 from typing import Callable, ContextManager, Literal
@@ -28,8 +32,10 @@ class PublishingService:
         session_factory: Callable[
             [str], ContextManager
         ] = PersistentBrowserSession,
+        media_validator: Callable[[str], bool] | None = None,
     ) -> None:
         self.session_factory = session_factory
+        self.media_validator = media_validator or self._validate_media
         self._lock = Lock()
         self._cancellations: dict[str, PublishCancellation] = {}
 
@@ -71,25 +77,46 @@ class PublishingService:
         user_data_dir: str,
         request: PublishRequest,
     ) -> PublishResult:
-        adapter = (
-            DouyinPublisher()
-            if platform == "douyin"
-            else WechatChannelsPublisher()
-        )
         with self._lock:
             cancellation = self._cancellations.setdefault(
                 job_id, PublishCancellation()
             )
         try:
+            cancellation.raise_if_canceled()
+        except PublishCancelled as error:
+            with self._lock:
+                self._cancellations.pop(job_id, None)
+            return PublishResult(
+                status="canceled",
+                errorCode="PUBLISH_CANCELED",
+                errorMessage=str(error),
+            )
+        if not self.media_validator(request.video_path):
+            with self._lock:
+                self._cancellations.pop(job_id, None)
+            return PublishResult(
+                status="failed",
+                errorCode="INVALID_VIDEO",
+                errorMessage="成片文件无法播放或尚未完整写入，请重新生成后再发布。",
+            )
+        adapter = (
+            DouyinPublisher()
+            if platform == "douyin"
+            else WechatChannelsPublisher()
+        )
+        try:
             with self.session_factory(user_data_dir) as page:
                 cancellation.raise_if_canceled()
                 page.page.goto(UPLOAD_URLS[platform], wait_until="domcontentloaded")
                 page.page.wait_for_timeout(2_000)
-                return adapter.publish(
+                result = adapter.publish(
                     page,
                     request,
                     cancellation=cancellation,
                 )
+                if result.status == "needs_user":
+                    page.page.wait_for_timeout(180_000)
+                return result
         except PublishCancelled as error:
             return PublishResult(
                 status="canceled",
@@ -106,3 +133,27 @@ class PublishingService:
                 job_id, PublishCancellation()
             )
             return cancellation.cancel()
+
+    @staticmethod
+    def _validate_media(path: str) -> bool:
+        media_path = Path(path)
+        if not media_path.is_file() or media_path.stat().st_size == 0:
+            return False
+        ffprobe = os.environ.get("AUTOCUT_FFPROBE", "ffprobe")
+        try:
+            result = subprocess.run(
+                [
+                    ffprobe, "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=codec_name",
+                    "-show_entries", "format=duration", "-of", "json", path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=True,
+            )
+            payload = json.loads(result.stdout)
+            duration = float(payload.get("format", {}).get("duration", 0))
+            return bool(payload.get("streams")) and duration > 0
+        except (OSError, ValueError, subprocess.SubprocessError, json.JSONDecodeError):
+            return False

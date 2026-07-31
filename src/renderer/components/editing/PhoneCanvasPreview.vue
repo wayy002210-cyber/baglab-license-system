@@ -10,7 +10,10 @@ function css(style: TextStyle) {
     textShadow:
       style.shadowX || style.shadowY
         ? `${style.shadowX / 3}px ${style.shadowY / 3}px 1px ${style.shadowColor}`
-        : "none"
+        : "none",
+    left: `${style.positionX / 1080 * 100}%`,
+    top: `${style.positionY / 1920 * 100}%`,
+    transform: "translate(-50%, -50%)"
   };
 }
 </script>
@@ -21,5 +24,5 @@ function css(style: TextStyle) {
   </div>
 </template>
 <style scoped>
-.phone-canvas{position:relative;width:252px;aspect-ratio:9/16;border:8px solid #111;border-radius:30px;background:linear-gradient(145deg,#363636,#171717);overflow:hidden;box-shadow:0 18px 36px rgba(0,0,0,.16)}.phone-canvas::before{content:"9:16 成片预览";position:absolute;inset:48% 0 auto;text-align:center;color:#777;font-size:12px}.title,.subtitle{position:absolute;z-index:1;left:16px;right:16px;text-align:center;font-weight:800;line-height:1.28;word-break:break-word}.title{top:9%}.subtitle{bottom:9%}
+.phone-canvas{position:relative;width:252px;aspect-ratio:9/16;border:8px solid #111;border-radius:30px;background:linear-gradient(145deg,#363636,#171717);overflow:hidden;box-shadow:0 18px 36px rgba(0,0,0,.16)}.phone-canvas::before{content:"9:16 成片预览";position:absolute;inset:48% 0 auto;text-align:center;color:#777;font-size:12px}.title,.subtitle{position:absolute;z-index:1;width:calc(100% - 32px);text-align:center;font-weight:800;line-height:1.28;word-break:break-word}
 </style>

@@ -8,6 +8,7 @@ export const TASK_STATUSES = [
   "generating_voice",
   "selecting_assets",
   "composing",
+  "waiting_encoding",
   "encoding",
   "completed",
   "failed",
@@ -70,6 +71,7 @@ const ACTIVE_STATUSES: TaskStatus[] = [
   "generating_voice",
   "selecting_assets",
   "composing",
+  "waiting_encoding",
   "encoding"
 ];
 
