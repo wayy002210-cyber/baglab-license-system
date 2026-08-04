@@ -15,6 +15,7 @@ class PublishRequest(BaseModel):
     topics: list[str] = Field(default_factory=list)
     cover_path: str | None = Field(default=None, alias="coverPath")
     screenshot_dir: str = Field(alias="screenshotDir")
+    scheduled_at: datetime | None = Field(default=None, alias="scheduledAt")
 
 
 class PublishResult(BaseModel):
@@ -33,6 +34,13 @@ class PublisherPage(Protocol):
     def has_human_challenge(self) -> bool: ...
     def upload(self, selectors: list[str], path: str) -> None: ...
     def fill(self, selectors: list[str], value: str) -> None: ...
+    def set_schedule(
+        self,
+        toggle_selectors: list[str],
+        date_selectors: list[str],
+        time_selectors: list[str],
+        value: datetime,
+    ) -> None: ...
     def click(self, selectors: list[str]) -> None: ...
     def wait_for_publish_success(self) -> bool: ...
     def screenshot(self, path: str) -> None: ...
@@ -75,6 +83,21 @@ class PublisherAdapter:
     ]
     title_selectors: list[str]
     publish_selectors: list[str]
+    schedule_toggle_selectors = [
+        'label:has-text("定时发布")',
+        '[role=radio]:has-text("定时发布")',
+        'text="定时发布"',
+    ]
+    schedule_date_selectors = [
+        'input[placeholder*="发布日期"]',
+        'input[placeholder*="选择日期"]',
+        'input[placeholder*="日期"]',
+    ]
+    schedule_time_selectors = [
+        'input[placeholder*="发布时间"]',
+        'input[placeholder*="选择时间"]',
+        'input[placeholder*="时间"]',
+    ]
 
     def publish(
         self,
@@ -99,6 +122,14 @@ class PublisherAdapter:
                 copy += "\n" + " ".join(f"#{topic.lstrip('#')}" for topic in request.topics)
             page.fill(self.title_selectors, copy)
             control.raise_if_canceled()
+            if request.scheduled_at:
+                page.set_schedule(
+                    self.schedule_toggle_selectors,
+                    self.schedule_date_selectors,
+                    self.schedule_time_selectors,
+                    request.scheduled_at,
+                )
+                control.raise_if_canceled()
             if request.cover_path:
                 self._set_cover(page, request.cover_path)
             control.mark_submitted()

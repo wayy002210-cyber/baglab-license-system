@@ -99,7 +99,7 @@ export class CopywritingProjectRepository {
       mainTitle: source.mainTitle,
       text: source.text,
       model: source.model,
-      status: "library",
+      status: "review",
       complianceIssues: source.complianceIssues,
       errorMessage: null
       ,sourceProjectId: source.id

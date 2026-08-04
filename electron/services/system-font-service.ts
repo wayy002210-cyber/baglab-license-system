@@ -40,19 +40,47 @@ export function parseRegistryFontPaths(
   return parseRegistryFontEntries(output, windowsDirectory).map((entry) => entry.path);
 }
 
-function registryFontEntries(): RegistryFontEntry[] {
-  const entries: RegistryFontEntry[] = [];
-  for (const root of ["HKLM", "HKCU"]) {
-    const result = spawnSync(
-      "reg.exe",
-      ["query", `${root}\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts`],
-      { windowsHide: true, encoding: "utf8" }
-    );
-    if (result.status === 0 && result.stdout) {
-      entries.push(...parseRegistryFontEntries(result.stdout));
-    }
+export function parsePowerShellFontEntries(
+  output: string,
+  windowsDirectory = process.env.WINDIR ?? "C:\\Windows"
+): RegistryFontEntry[] {
+  if (!output.trim()) return [];
+  let values: Array<{ family?: unknown; path?: unknown }>;
+  try {
+    const parsed = JSON.parse(output) as Array<{ family?: unknown; path?: unknown }> | { family?: unknown; path?: unknown };
+    values = Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
   }
-  return entries;
+  return values.flatMap((entry) => {
+    if (typeof entry.family !== "string" || typeof entry.path !== "string") return [];
+    const family = entry.family.replace(/\s+\((?:TrueType|OpenType|Raster)\)\s*$/i, "").trim();
+    const value = entry.path.replace(/%WINDIR%/gi, windowsDirectory).trim();
+    if (!family || !SUPPORTED_EXTENSIONS.has(extname(value).toLowerCase())) return [];
+    return [{ family, path: isAbsolute(value) ? value : join(windowsDirectory, "Fonts", value) }];
+  });
+}
+
+function registryFontEntries(): RegistryFontEntry[] {
+  const script = [
+    "$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)",
+    "$roots = @('Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts','Registry::HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts')",
+    "$items = foreach ($root in $roots) {",
+    "  if (Test-Path $root) {",
+    "    $props = Get-ItemProperty -LiteralPath $root",
+    "    foreach ($prop in $props.PSObject.Properties) {",
+    "      if ($prop.Name -notmatch '^PS' -and $prop.Value -is [string]) { [pscustomobject]@{ family=$prop.Name; path=$prop.Value } }",
+    "    }",
+    "  }",
+    "}",
+    "@($items) | ConvertTo-Json -Compress"
+  ].join("; ");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    windowsHide: true,
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024
+  });
+  return result.status === 0 && result.stdout ? parsePowerShellFontEntries(result.stdout) : [];
 }
 
 export function defaultFontDirectories(): string[] {

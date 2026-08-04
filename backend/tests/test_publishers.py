@@ -20,6 +20,8 @@ class FakePage:
     def has_human_challenge(self): return self.challenge
     def upload(self, selectors, path): self.actions.append(("upload", selectors, path))
     def fill(self, selectors, value): self.actions.append(("fill", selectors, value))
+    def set_schedule(self, toggle_selectors, date_selectors, time_selectors, value):
+        self.actions.append(("schedule", toggle_selectors, date_selectors, time_selectors, value))
     def click(self, selectors): self.actions.append(("click", selectors))
     def wait_for_publish_success(self): return True
     def screenshot(self, path): self.actions.append(("screenshot", path))
@@ -33,6 +35,7 @@ def request(tmp_path):
         title="工厂实拍",
         topics=["工厂", "定制"],
         screenshotDir=str(tmp_path),
+        scheduledAt="2026-08-04T20:30:00+08:00",
     )
 
 
@@ -44,6 +47,7 @@ def test_douyin_publisher_uses_semantic_fallback_selectors(tmp_path: Path) -> No
     assert page.actions[0][0] == "upload"
     assert "input[type=file]" in page.actions[0][1]
     assert any(action[0] == "fill" and "#工厂" in action[2] for action in page.actions)
+    assert any(action[0] == "schedule" and action[4].isoformat() == "2026-08-04T20:30:00+08:00" for action in page.actions)
 
 
 def test_wechat_channels_publisher_requires_user_on_challenge(tmp_path: Path) -> None:

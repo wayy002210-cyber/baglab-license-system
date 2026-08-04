@@ -80,6 +80,16 @@ def test_spoken_copy_is_formatted_as_short_newline_separated_lines() -> None:
     result = clean_spoken_copy(source)
     lines = result.splitlines()
 
-    assert len(lines) >= 4
+    assert len(lines) >= 3
     assert all(line.strip() for line in lines)
-    assert all(len(line.rstrip("，。！？；：")) <= 20 for line in lines)
+    assert all(10 <= len(line.rstrip("，。！？；：")) <= 25 for line in lines)
+    assert all(line.endswith(tuple("，。！？；：")) for line in lines)
+
+
+def test_spoken_copy_merges_tiny_sentences_and_adds_punctuation() -> None:
+    result = clean_spoken_copy("品质很重要\n我们坚持做好每一道工序\n客户才能长期信任我们")
+
+    assert result.splitlines() == [
+        "品质很重要，我们坚持做好每一道工序。",
+        "客户才能长期信任我们。",
+    ]

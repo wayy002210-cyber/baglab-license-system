@@ -31,7 +31,7 @@ function css(style: TextStyle) {
     ? [[-1,0],[1,0],[0,-1],[0,1],[-.7,-.7],[.7,-.7],[-.7,.7],[.7,.7]]
       .map(([x,y]) => `${x! * outline}px ${y! * outline}px 0 ${cssColor(style.outlineColor)}`)
     : [];
-  const shadow = style.shadowX || style.shadowY
+  const shadow = style.shadowX || style.shadowY || style.shadowBlur
     ? [`${style.shadowX / 3}px ${style.shadowY / 3}px ${style.shadowBlur / 3}px ${cssColor(style.shadowColor)}`]
     : [];
   return {
@@ -45,6 +45,8 @@ function css(style: TextStyle) {
     lineHeight: `${1.25 + style.lineSpacing / 100}`,
     opacity: style.opacity / 100,
     textShadow: [...edges, ...shadow].join(",") || "none",
+    WebkitTextStroke: outline > 0 ? `${outline}px ${cssColor(style.outlineColor)}` : "0 transparent",
+    paintOrder: "stroke fill",
     left: `${style.positionX / 1080 * 100}%`,
     top: `${style.positionY / 1920 * 100}%`,
     transform: `translate(-50%, -50%) scale(${style.scale / 100})`

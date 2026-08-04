@@ -2,13 +2,18 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseRegistryFontEntries, parseRegistryFontPaths, scanSystemFonts } from "../../electron/services/system-font-service";
+import { parsePowerShellFontEntries, parseRegistryFontEntries, parseRegistryFontPaths, scanSystemFonts } from "../../electron/services/system-font-service";
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 const createTempDirectory = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
 
 describe("parseRegistryFontPaths", () => {
+  it("preserves Chinese names returned as UTF-8 JSON by PowerShell", () => {
+    expect(parsePowerShellFontEntries('[{"family":"郑庆科黄油体 Regular20170516 (TrueType)","path":"zqkhy.ttf"}]', "C:\\Windows")).toEqual([
+      { family: "郑庆科黄油体 Regular20170516", path: "C:\\Windows\\Fonts\\zqkhy.ttf" }
+    ]);
+  });
   it("resolves system-relative, legacy, and external installed font files", () => {
     const output = [
       "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts",

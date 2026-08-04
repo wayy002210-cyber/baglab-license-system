@@ -168,7 +168,7 @@ class TopicService:
 选题：{request.topic}
 禁用词：{json.dumps(request.banned_words, ensure_ascii=False)}
 
-写一篇 {request.min_length} 到 {request.max_length} 字的中文口播稿。全文必须是本人可直接朗读的自述或对观众说话，不写括号动作、舞台提示、镜头说明、旁白标签或表演指令。每句话单独回车换行，每句话尽量不超过20个汉字。短句、口语化、强开场、价值明确、行动引导克制；不得虚构明确事实，不得出现禁用词。只输出 JSON：{{"text":"完整口播稿"}}"""
+写一篇 {request.min_length} 到 {request.max_length} 字的中文口播稿。全文必须是本人可直接朗读的自述或对观众说话，不写括号动作、舞台提示、镜头说明、旁白标签或表演指令。每句单独回车换行，每行正文控制在10到25个汉字，并以逗号、句号、问号或感叹号等中文标点结尾。短句、口语化、强开场、价值明确、行动引导克制；不得虚构明确事实，不得出现禁用词。只输出 JSON：{{"text":"完整口播稿"}}"""
 
         def validate_copywriting(result: CopywritingResult) -> None:
             result.text = clean_spoken_copy(result.text)

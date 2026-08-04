@@ -21,14 +21,22 @@ const selected=computed(()=>projects.value.find(p=>p.id===selectedId.value)??nul
 const visibleProjects=computed(()=>projects.value.filter(p=>p.status===tab.value));
 const subtitleStyle=computed<TextStyle>({get:()=>draft.draft.value.subtitleStyle??defaultSubtitleStyle,set:v=>draft.draft.value.subtitleStyle=v});
 const titleStyle=computed<TextStyle>({get:()=>draft.draft.value.titleStyle??defaultTitleStyle,set:v=>draft.draft.value.titleStyle=v});
+const voiceSettings=ref<Awaited<ReturnType<typeof window.autocut.getVoiceSettings>>|null>(null);
+const voiceVolume=computed(()=>voiceSettings.value?.volume??1);
 
 async function load(){
   const loadedProjects=await window.autocut.listCopywritingProjects(["library","shots_ready","archived"]);
   projects.value=loadedProjects;
+  try{voiceSettings.value=await window.autocut.getVoiceSettings()}catch(e){ElMessage.warning(`声音设置读取失败，暂时使用默认音量：${e instanceof Error?e.message:"未知错误"}`)}
   try{categories.value=await window.autocut.listAssetCategories()}catch(e){ElMessage.warning(`素材分类读取失败：${e instanceof Error?e.message:"未知错误"}`)}
   try{await draft.load()}catch(e){ElMessage.warning(`媒体设置读取失败，文案库仍可使用：${e instanceof Error?e.message:"未知错误"}`)}
   const first=loadedProjects.find(p=>p.status==="library")??loadedProjects[0];
   if(first)await selectProject(first);
+}
+async function updateVoiceVolume(value:number){
+  if(!voiceSettings.value)return;
+  voiceSettings.value={...voiceSettings.value,volume:value};
+  voiceSettings.value=await window.autocut.saveVoiceSettings({...voiceSettings.value});
 }
 async function selectProject(project:Project){selectedId.value=project.id;shots.value=await window.autocut.listCopywritingShots(project.id)}
 function inputs(){return shots.value.map(s=>({copywriting:s.copywriting,suggestedCategoryId:s.suggestedCategoryId,assetCategoryId:s.assetCategoryId,suggestionSource:s.suggestionSource,suggestionConfirmed:s.suggestionConfirmed,durationMode:s.durationMode,durationSec:s.durationSec,muteOriginal:s.muteOriginal}))}
@@ -74,7 +82,7 @@ onMounted(load);
       <div v-if="shots.length" class="save-row"><el-button type="primary" :loading="saving" @click="saveShots">保存镜头修改</el-button></div>
     </main>
   </div>
-  <MediaSettingsPanel class="surface media-panel" :bgm="draft.draft.value.bgm" :voice-volume="1" :subtitle-style="subtitleStyle" :title-style="titleStyle" :title="selected?.mainTitle??''" :sample-text="shots[0]?.copywriting??''" @update:bgm="draft.draft.value.bgm=$event;draft.scheduleSave()" @update:subtitle-style="subtitleStyle=$event;draft.scheduleSave()" @update:title-style="titleStyle=$event;draft.scheduleSave()" />
+  <MediaSettingsPanel class="surface media-panel" :bgm="draft.draft.value.bgm" :voice-volume="voiceVolume" :subtitle-style="subtitleStyle" :title-style="titleStyle" :title="selected?.mainTitle??''" :sample-text="shots[0]?.copywriting??''" @update:bgm="draft.draft.value.bgm=$event;draft.scheduleSave()" @update:voice-volume="updateVoiceVolume" @update:subtitle-style="subtitleStyle=$event;draft.scheduleSave()" @update:title-style="titleStyle=$event;draft.scheduleSave()" />
 </div></template>
 <style scoped>.editing-page{display:grid;gap:18px}.task-bar{position:sticky;top:12px;z-index:5;padding:16px 20px;display:flex;align-items:center;justify-content:flex-end;gap:10px}.task-bar>div{display:grid;margin-right:auto}.task-bar small,.shot-workspace p,.project span,.project small,.workspace-empty{color:var(--text-muted)}.editor-grid{display:grid;grid-template-columns:290px minmax(0,1fr);gap:18px}.library,.shot-workspace,.media-panel{padding:20px}.library h3,.shot-workspace h3,.shot-workspace p{margin:0}.tabs{display:grid;gap:7px;margin:16px 0}.tabs button,.project{border:0;text-align:left;cursor:pointer}.tabs button{padding:10px 12px;border-radius:10px;background:#f2f2ee}.tabs button.active{background:#151512;color:#fff}.project-list{display:grid;gap:10px;max-height:620px;overflow:auto}.project{display:grid;gap:5px;padding:14px;border-radius:14px;background:#f7f7f3;border:1px solid transparent}.project.selected{border-color:var(--brand-yellow);background:#fffbe0}.shot-workspace>header{display:flex;justify-content:space-between;gap:16px}.shot-workspace>header>div:last-child{display:flex;gap:8px}.workspace-empty{min-height:300px;display:grid;place-items:center;align-content:center;gap:8px}.shot-card{display:grid;grid-template-columns:34px minmax(280px,1fr) 250px;gap:12px;padding:16px 0;border-bottom:1px solid var(--border)}.number{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:var(--brand-yellow);font-weight:800}.shot-copy,.shot-settings{display:grid;gap:8px}.shot-copy small{color:#8b6a00}.shot-settings label{display:grid;gap:5px;font-size:12px}.shot-card footer{grid-column:2/4;text-align:right}.save-row{text-align:right;padding-top:18px}.media-panel{margin-bottom:30px}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.task-bar{position:static;flex-wrap:wrap}.shot-card{grid-template-columns:34px 1fr}.shot-settings,.shot-card footer{grid-column:2}}
 </style>

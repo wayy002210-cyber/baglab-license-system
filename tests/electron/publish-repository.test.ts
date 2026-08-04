@@ -93,6 +93,19 @@ describe("PublishRepository", () => {
     expect(second?.id).not.toBe(first?.id);
   });
 
+  it("claims a future platform-scheduled job immediately so the website can receive its time", () => {
+    seedTask("task-future");
+    const account = repository.createAccount({
+      name: "抖音定时号", platform: "douyin", userDataDir: "D:/profiles/future"
+    });
+    const job = repository.createJob({
+      taskId: "task-future", accountId: account.id, title: "提前上传",
+      topics: [], scheduledAt: "2099-08-04T20:30:00.000Z", idempotencyKey: "future-job"
+    });
+
+    expect(repository.claimNextDue("2026-08-04T12:00:00.000Z")?.id).toBe(job.id);
+  });
+
   it("moves human verification failures to needs_user without retrying", () => {
     seedTask("task-1");
     const account = repository.createAccount({

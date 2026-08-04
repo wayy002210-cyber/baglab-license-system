@@ -62,7 +62,7 @@ describe("CopywritingProjectRepository", () => {
     repository.archive(original.id);
     const clone = repository.cloneArchived(original.id);
     expect(clone.id).not.toBe(original.id);
-    expect(clone.status).toBe("library");
+    expect(clone.status).toBe("review");
     expect(clone.sourceProjectId).toBe(original.id);
     expect(repository.require(original.id).status).toBe("archived");
     database.close();

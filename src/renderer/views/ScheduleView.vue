@@ -20,14 +20,15 @@ async function load() {
 }
 function openCreate() {
   form.taskId = tasks.value.find(t => t.status === "completed")?.id ?? "";
-  form.accountId = accounts.value[0]?.id ?? ""; form.title = ""; form.topics = ""; form.scheduledAt = null;
+  form.accountId = accounts.value[0]?.id ?? ""; form.title = ""; form.topics = "";
+  form.scheduledAt = new Date(Date.now() + 20 * 60 * 1000);
   dialogOpen.value = true;
 }
 async function create() {
   await window.autocut.createPublishJob({
     taskId: form.taskId, accountId: form.accountId, title: form.title,
     topics: form.topics.split(/[,，\s]+/).map(v => v.trim()).filter(Boolean),
-    scheduledAt: form.scheduledAt ? form.scheduledAt.toISOString() : null
+    scheduledAt: (form.scheduledAt ?? new Date(Date.now() + 20 * 60 * 1000)).toISOString()
   });
   dialogOpen.value = false; await load(); ElMessage.success("发布任务已创建");
 }
@@ -63,7 +64,7 @@ onMounted(load);
         <el-table-column prop="title" label="发布内容" min-width="200" />
         <el-table-column label="账号" min-width="150"><template #default="{row}">{{ accountName(row.accountId) }}</template></el-table-column>
         <el-table-column label="状态" width="110"><template #default="{row}"><el-tag>{{ statusName[row.status as Job['status']] }}</el-tag></template></el-table-column>
-        <el-table-column label="发布时间" min-width="180"><template #default="{row}">{{ row.scheduledAt ? new Date(row.scheduledAt).toLocaleString("zh-CN") : "立即发布" }}</template></el-table-column>
+        <el-table-column label="平台定时发布时间" min-width="180"><template #default="{row}">{{ row.scheduledAt ? new Date(row.scheduledAt).toLocaleString("zh-CN") : "创建后20分钟" }}</template></el-table-column>
         <el-table-column prop="attemptCount" label="尝试" width="80" />
         <el-table-column prop="errorMessage" label="错误" min-width="180" />
         <el-table-column label="操作" width="150">
@@ -89,7 +90,7 @@ onMounted(load);
         <el-form-item label="发布账号"><el-select v-model="form.accountId"><el-option v-for="account in accounts" :key="account.id" :label="account.name" :value="account.id" /></el-select></el-form-item>
         <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
         <el-form-item label="话题"><el-input v-model="form.topics" placeholder="工厂, 定制, 实拍" /></el-form-item>
-        <el-form-item label="发布时间"><el-date-picker v-model="form.scheduledAt" type="datetime" format="YYYY年MM月DD日 HH:mm" placeholder="留空为立即发布" /></el-form-item>
+        <el-form-item label="平台定时发布时间"><el-date-picker v-model="form.scheduledAt" type="datetime" format="YYYY年MM月DD日 HH:mm" placeholder="留空则自动设为20分钟后" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogOpen=false">取消</el-button><el-button type="primary" :disabled="!form.taskId || !form.accountId || !form.title.trim()" @click="create">创建</el-button></template>
     </el-dialog>

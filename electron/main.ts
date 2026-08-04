@@ -315,6 +315,7 @@ async function runNextPublishJob(): Promise<void> {
           videoPath: task.outputPath,
           title: job.title,
           topics: job.topics,
+          scheduledAt: job.scheduledAt,
           coverPath: job.coverPath,
           screenshotDir: join(app.getPath("userData"), "logs", "publish", job.id)
         })

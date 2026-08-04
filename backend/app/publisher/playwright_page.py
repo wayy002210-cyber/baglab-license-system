@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 from typing import Iterable
 
 from playwright.sync_api import BrowserContext, Page, Playwright, sync_playwright
@@ -37,6 +38,24 @@ class PlaywrightPublisherPage:
     def click(self, selectors: list[str]) -> None:
         locator = self._first(selectors)
         locator.click(timeout=self.timeout_ms)
+
+    def set_schedule(
+        self,
+        toggle_selectors: list[str],
+        date_selectors: list[str],
+        time_selectors: list[str],
+        value: datetime,
+    ) -> None:
+        self.click(toggle_selectors)
+        self._force_fill(date_selectors, value.strftime("%Y-%m-%d"))
+        self._force_fill(time_selectors, value.strftime("%H:%M"))
+
+    def _force_fill(self, selectors: list[str], value: str) -> None:
+        locator = self._first(selectors)
+        locator.evaluate("element => element.removeAttribute('readonly')")
+        locator.fill(value, timeout=self.timeout_ms)
+        locator.dispatch_event("input")
+        locator.dispatch_event("change")
 
     def wait_for_publish_success(self) -> bool:
         success = self.page.get_by_text(

@@ -154,13 +154,12 @@ export class PublishRepository {
     return row ? mapJob(row) : null;
   }
 
-  claimNextDue(now: string): PublishJob | null {
+  claimNextDue(_now: string): PublishJob | null {
     const claim = this.database.transaction(() => {
       const row = this.database
         .prepare(
           `SELECT job.id FROM publish_jobs job
            WHERE job.status IN ('pending', 'scheduled')
-             AND (job.scheduled_at IS NULL OR job.scheduled_at <= ?)
              AND NOT EXISTS (
                SELECT 1 FROM publish_jobs active
                WHERE active.account_id = job.account_id
@@ -169,7 +168,7 @@ export class PublishRepository {
            ORDER BY COALESCE(job.scheduled_at, job.created_at), job.created_at
            LIMIT 1`
         )
-        .get(now) as { id: string } | undefined;
+        .get() as { id: string } | undefined;
       return row ? this.claim(row.id) : null;
     });
     return claim();

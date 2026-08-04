@@ -19,6 +19,7 @@ const projects = ref<Project[]>([]);
 const mode = ref<"ai" | "custom">("ai");
 const customText = ref("");
 const customTitle = ref("");
+const customEditingProjectId = ref<string | null>(null);
 const loadingTopics = ref(false);
 const topicElapsedSec = ref(0);
 const batchRunning = ref(false);
@@ -116,7 +117,10 @@ async function saveProject(project: Project): Promise<void> {
 async function checkProject(project: Project): Promise<void> {
   if (!persona.value || !project.text.trim()) return void ElMessage.warning("请先生成或填写文案");
   try {
-    const result = await window.autocut.checkCopywritingCompliance({ text: project.text, personaBannedWords: persona.value.bannedWords });
+    const result = await window.autocut.checkCopywritingCompliance({
+      text: project.text,
+      personaBannedWords: [...persona.value.bannedWords]
+    });
     const updated = await window.autocut.updateCopywritingProject(project.id, { complianceIssues: result.issues });
     projects.value = projects.value.map((item) => item.id === updated.id ? updated : item);
     ElMessage[result.issues.length ? "warning" : "success"](result.issues.length ? `发现 ${result.issues.length} 处风险词` : "未发现风险词");
@@ -150,13 +154,29 @@ async function retry(project: Project): Promise<void> {
 async function addCustom(): Promise<void> {
   if (!persona.value || customText.value.replace(/\s/g, "").length < 50) return void ElMessage.warning("请粘贴至少50字的完整口播文案");
   const title = deriveShortTitle(customTitle.value.trim() || customText.value);
-  await createFromTopic({ id: crypto.randomUUID(), shortTitle: title, description: customTitle.value.trim() || "用户自定义口播文案", hook: "" }, customText.value, "review", null);
+  if (customEditingProjectId.value) {
+    const updated = await window.autocut.updateCopywritingProject(customEditingProjectId.value, {
+      text: customText.value,
+      mainTitle: title,
+      status: "review",
+      errorMessage: null
+    });
+    projects.value = projects.value.map((item) => item.id === updated.id ? updated : item);
+  } else {
+    await createFromTopic({ id: crypto.randomUUID(), shortTitle: title, description: customTitle.value.trim() || "用户自定义口播文案", hook: "" }, customText.value, "review", null);
+  }
+  customEditingProjectId.value = null;
   customText.value = ""; customTitle.value = "";
 }
 
 async function editArchived(project: Project): Promise<void> {
   const clone = await window.autocut.cloneArchivedCopywritingProject(project.id);
   projects.value = [clone, ...projects.value];
+  mode.value = "custom";
+  customEditingProjectId.value = clone.id;
+  customTitle.value = clone.mainTitle;
+  customText.value = clone.text;
+  requestAnimationFrame(() => document.querySelector(".custom-box")?.scrollIntoView({ behavior: "smooth", block: "center" }));
   ElMessage.success("已复制为新版本，历史任务和成片不会改变");
 }
 
