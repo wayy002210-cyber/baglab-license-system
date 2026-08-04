@@ -170,6 +170,47 @@ CREATE TABLE IF NOT EXISTS creation_drafts (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS copywriting_projects (
+  id TEXT PRIMARY KEY,
+  persona_id TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+  topic_id TEXT,
+  topic_title TEXT NOT NULL DEFAULT '',
+  main_title TEXT NOT NULL DEFAULT '',
+  content TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL,
+  status TEXT NOT NULL,
+  compliance_issues_json TEXT NOT NULL DEFAULT '[]',
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  archived_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS copywriting_projects_status_idx
+  ON copywriting_projects(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS copywriting_shots (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES copywriting_projects(id) ON DELETE CASCADE,
+  shot_index INTEGER NOT NULL,
+  copywriting TEXT NOT NULL,
+  suggested_category_id TEXT,
+  asset_category_id TEXT,
+  suggestion_source TEXT NOT NULL,
+  suggestion_confirmed INTEGER NOT NULL DEFAULT 0 CHECK (suggestion_confirmed IN (0, 1)),
+  duration_mode TEXT NOT NULL DEFAULT 'voice',
+  duration_sec REAL,
+  mute_original INTEGER NOT NULL DEFAULT 1 CHECK (mute_original IN (0, 1)),
+  UNIQUE(project_id, shot_index)
+);
+
+CREATE TABLE IF NOT EXISTS queue_state (
+  id TEXT PRIMARY KEY CHECK (id = 'generation'),
+  status TEXT NOT NULL,
+  active_task_id TEXT,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS reference_scripts (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -193,6 +234,16 @@ export function applyMigrations(database: Database.Database): void {
          VALUES (1, ?)`
       )
       .run(new Date().toISOString());
+    database
+      .prepare(
+        `INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+         VALUES (2, ?)`
+      )
+      .run(new Date().toISOString());
+    database.prepare(
+      `INSERT OR IGNORE INTO queue_state(id, status, active_task_id, updated_at)
+       VALUES ('generation', 'idle', NULL, ?)`
+    ).run(new Date().toISOString());
   });
   migrate();
 }

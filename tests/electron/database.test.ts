@@ -13,11 +13,14 @@ describe("database migrations", () => {
       "asset_categories",
       "asset_usage_history",
       "assets",
+      "copywriting_projects",
+      "copywriting_shots",
       "creation_drafts",
       "generation_tasks",
       "personas",
       "publish_accounts",
       "publish_jobs",
+      "queue_state",
       "reference_scripts",
       "schema_migrations",
       "task_shots",
@@ -35,6 +38,6 @@ describe("database migrations", () => {
     const row = database
       .prepare("SELECT COUNT(*) AS count FROM schema_migrations")
       .get() as { count: number };
-    expect(row.count).toBe(1);
+    expect(row.count).toBe(2);
   });
 });
