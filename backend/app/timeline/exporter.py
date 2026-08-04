@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from .subtitle_layout import layout_subtitle_event
+
 
 @dataclass(frozen=True)
 class VideoClip:
@@ -531,10 +533,23 @@ Format: Layer, Start, End, Style, Text
 """
     subtitle_position = _ass_position(subtitle_style)
     title_position = _ass_position(title_style)
+    laid_out_subtitles = [
+        laid_out
+        for item in subtitles
+        for laid_out in layout_subtitle_event(
+            start_sec=item.start_sec,
+            end_sec=item.end_sec,
+            text=item.text,
+            font_size=subtitle_style.font_size,
+            scale=subtitle_style.scale,
+            letter_spacing=subtitle_style.letter_spacing,
+            outline_width=subtitle_style.outline_width,
+        )
+    ]
     lines = [
         f"Dialogue: 0,{_ass_time(item.start_sec)},{_ass_time(item.end_sec)},"
         f"Subtitle,{subtitle_position}{_escape_ass_text(item.text)}"
-        for item in subtitles
+        for item in laid_out_subtitles
     ]
     lines.extend(
         f"Dialogue: 1,{_ass_time(item.start_sec)},{_ass_time(item.end_sec)},"
