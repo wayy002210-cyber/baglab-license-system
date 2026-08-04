@@ -7,10 +7,10 @@ export type SystemFont = {
   displayName: string;
   family: string;
   path: string;
-  extension: "ttf" | "otf" | "ttc" | "otc";
+  extension: "ttf" | "otf" | "ttc" | "otc" | "fon" | "fnt";
 };
 
-const SUPPORTED_EXTENSIONS = new Set([".ttf", ".otf", ".ttc", ".otc"]);
+const SUPPORTED_EXTENSIONS = new Set([".ttf", ".otf", ".ttc", ".otc", ".fon", ".fnt"]);
 
 export function parseRegistryFontPaths(
   output: string,
@@ -89,7 +89,9 @@ export function scanSystemFonts(
         | "ttf"
         | "otf"
         | "ttc"
-        | "otc";
+        | "otc"
+        | "fon"
+        | "fnt";
       const displayName = basename(path, extname(path))
         .replace(/[_-]+/g, " ")
         .trim();

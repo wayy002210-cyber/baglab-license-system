@@ -275,14 +275,14 @@ const audioLibraryResultSchema = z.object({
 const fontMetadataSchema = z.object({
   path: z.string(),
   family: z.string().min(1),
-  format: z.enum(["ttf", "otf", "ttc", "otc"])
+  format: z.enum(["ttf", "otf", "ttc", "otc", "fon", "fnt"])
 });
 const systemFontSchema = z.object({
   id: z.string().min(1),
   displayName: z.string().min(1),
   family: z.string().min(1),
   path: z.string().min(1),
-  extension: z.enum(["ttf", "otf", "ttc", "otc"])
+  extension: z.enum(["ttf", "otf", "ttc", "otc", "fon", "fnt"])
 });
 const copyModelSettingsSchema = z.object({
   defaultModel: z.string().trim().min(1),

@@ -307,14 +307,14 @@ declare global {
       selectAndProbeFont(): Promise<{
         path: string;
         family: string;
-        format: "ttf" | "otf";
+        format: "ttf" | "otf" | "ttc" | "otc" | "fon" | "fnt";
       } | null>;
       listSystemFonts(): Promise<Array<{
         id: string;
         displayName: string;
         family: string;
         path: string;
-        extension: "ttf" | "otf" | "ttc";
+        extension: "ttf" | "otf" | "ttc" | "otc" | "fon" | "fnt";
       }>>;
       getCopyModelSettings(): Promise<CopyModelSettings>;
       saveCopyModelSettings(input: CopyModelSettings): Promise<CopyModelSettings>;

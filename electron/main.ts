@@ -924,7 +924,7 @@ ipcMain.handle("media:selectAndProbeFont", async () => {
   const result = await dialog.showOpenDialog(window, {
     title: "选择字幕字体",
     properties: ["openFile"],
-    filters: [{ name: "字体", extensions: ["ttf", "otf", "ttc", "otc"] }]
+    filters: [{ name: "字体", extensions: ["ttf", "otf", "ttc", "otc", "fon", "fnt"] }]
   });
   const fontPath = result.canceled ? null : result.filePaths[0] ?? null;
   if (!fontPath) return null;
