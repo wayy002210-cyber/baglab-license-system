@@ -363,6 +363,12 @@ def _text_style(value: dict[str, Any] | None) -> TextStyle | None:
     return TextStyle(
         font_family=str(value.get("fontFamily", "Microsoft YaHei")),
         font_size=int(value.get("fontSize", 58)),
+        bold=bool(value.get("bold", False)),
+        italic=bool(value.get("italic", False)),
+        underline=bool(value.get("underline", False)),
+        letter_spacing=float(value.get("letterSpacing", 0)),
+        scale=float(value.get("scale", 100)),
+        opacity=float(value.get("opacity", 100)),
         primary_color=color("primaryColor", "#FFFFFF"),
         outline_color=color(
             "outlineColor", "#00000000" if outline_width == 0 else "#101010"
@@ -374,6 +380,7 @@ def _text_style(value: dict[str, Any] | None) -> TextStyle | None:
         ),
         shadow_x=shadow_x,
         shadow_y=shadow_y,
+        shadow_blur=float(value.get("shadowBlur", 0)),
         alignment=int(value.get("alignment", 2)),
         margin_v=int(value.get("marginV", 170)),
         position_x=(

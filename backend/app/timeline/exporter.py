@@ -45,12 +45,19 @@ class TitleClip:
 class TextStyle:
     font_family: str = "Microsoft YaHei"
     font_size: int = 58
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    letter_spacing: float = 0
+    scale: float = 100
+    opacity: float = 100
     primary_color: str = "#FFFFFF"
     outline_color: str = "#101010"
     outline_width: float = 4
     shadow_color: str = "#80000000"
     shadow_x: float = 1
     shadow_y: float = 1
+    shadow_blur: float = 0
     alignment: int = 2
     margin_v: int = 170
     position_x: int | None = None
@@ -502,7 +509,7 @@ PlayResY: 1920
 WrapStyle: 2
 
 [V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Alignment, MarginL, MarginR, MarginV, Outline, Shadow
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 {subtitle_ass}
 {title_ass}
 
@@ -535,10 +542,20 @@ def _ass_style(name: str, style: TextStyle) -> str:
     shadow = max(abs(style.shadow_x), abs(style.shadow_y))
     return (
         f"Style: {name},{style.font_family},{style.font_size},"
-        f"{_ass_color(style.primary_color)},{_ass_color(style.outline_color)},"
-        f"{_ass_color(style.shadow_color)},-1,{style.alignment},80,80,"
-        f"{style.margin_v},{style.outline_width:g},{shadow:g}"
+        f"{_ass_color(_with_opacity(style.primary_color, style.opacity))},&H000000FF,"
+        f"{_ass_color(style.outline_color)},{_ass_color(style.shadow_color)},"
+        f"{-1 if style.bold else 0},{-1 if style.italic else 0},{-1 if style.underline else 0},0,"
+        f"{style.scale:g},{style.scale:g},{style.letter_spacing:g},0,1,"
+        f"{style.outline_width:g},{shadow:g},{style.alignment},80,80,{style.margin_v},1"
     )
+
+
+def _with_opacity(color: str, opacity: float) -> str:
+    value = color.removeprefix("#")
+    if len(value) != 6:
+        return color
+    alpha = round(255 * (1 - max(0, min(100, opacity)) / 100))
+    return f"#{value}{alpha:02X}"
 
 
 def _ass_color(color: str) -> str:

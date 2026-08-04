@@ -1,46 +1,17 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { ElMessage } from "element-plus";
-import type { CreationDraft } from "../../../shared/contracts";
-import type { TextStyle } from "../../../shared/media-style";
-import SubtitleStyleEditor from "./SubtitleStyleEditor.vue";
-import TitleStyleEditor from "./TitleStyleEditor.vue";
-import PhoneCanvasPreview from "./PhoneCanvasPreview.vue";
-type Bgm = NonNullable<CreationDraft["bgm"]>;
-const props = defineProps<{ bgm: Bgm | null; voiceVolume: number; subtitleStyle: TextStyle; titleStyle: TextStyle; title: string; sampleText: string }>();
-const emit = defineEmits<{ "update:bgm": [value:Bgm|null]; "update:voiceVolume":[value:number]; "update:subtitleStyle":[value:TextStyle]; "update:titleStyle":[value:TextStyle] }>();
-const tracks = ref<Array<{path:string;name:string;format:string}>>([]);
-const invalidCount = ref(0);
-const presets = ref<Awaited<ReturnType<typeof window.autocut.getStylePresets>>>([]);
-const selectedPreset = ref("");
-const presetName = ref("");
-async function chooseFile(){const path=await window.autocut.selectBgmFile();if(path)emit("update:bgm",{sourceType:"file",path,mode:"fixed",volume:.16,fadeInSec:1,fadeOutSec:1});}
-async function chooseFolder(){const path=await window.autocut.selectBgmFolder();if(!path)return;const result=await window.autocut.scanAudioLibrary({folderPath:path,recursive:true});tracks.value=result.tracks;invalidCount.value=result.invalid.length;emit("update:bgm",{sourceType:"folder",path,mode:"random",volume:.16,fadeInSec:1,fadeOutSec:1});}
-function applyPreset(id:string){const preset=presets.value.find(item=>item.id===id);if(!preset)return;emit("update:subtitleStyle",structuredClone(preset.subtitleStyle));emit("update:titleStyle",structuredClone(preset.titleStyle));}
-function safeStyle(style:TextStyle):TextStyle{const valid=(value:unknown):value is string=>typeof value==="string"&&/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value);return{...structuredClone(style),primaryColor:valid(style.primaryColor)?style.primaryColor:"#FFFFFF",outlineColor:valid(style.outlineColor)?style.outlineColor:(style.outlineWidth>0?"#101010":"#00000000"),shadowColor:valid(style.shadowColor)?style.shadowColor:"#00000000"};}
-async function savePreset(){const name=presetName.value.trim();if(!name)return ElMessage.warning("请输入样式模板名称");try{const preset={id:globalThis.crypto?.randomUUID?.()??`style-${Date.now()}`,name,subtitleStyle:safeStyle(props.subtitleStyle),titleStyle:safeStyle(props.titleStyle)};presets.value=await window.autocut.saveStylePresets([...presets.value,preset]);selectedPreset.value=preset.id;presetName.value="";ElMessage.success("字幕与标题样式模板已保存");}catch(error){ElMessage.error(`保存样式模板失败：${error instanceof Error?error.message:"未知错误"}`);}}
-async function deletePreset(){if(!selectedPreset.value)return;presets.value=await window.autocut.saveStylePresets(presets.value.filter(item=>item.id!==selectedPreset.value));selectedPreset.value="";ElMessage.success("样式模板已删除");}
-onMounted(async()=>{presets.value=await window.autocut.getStylePresets();});
+import{onMounted,ref}from"vue";import{ElMessage}from"element-plus";import type{CreationDraft}from"../../../shared/contracts";import type{TextStyle}from"../../../shared/media-style";import SubtitleStyleEditor from"./SubtitleStyleEditor.vue";import TitleStyleEditor from"./TitleStyleEditor.vue";import PhoneCanvasPreview from"./PhoneCanvasPreview.vue";
+type Bgm=NonNullable<CreationDraft["bgm"]>;const props=defineProps<{bgm:Bgm|null;voiceVolume:number;subtitleStyle:TextStyle;titleStyle:TextStyle;title:string;sampleText:string}>();const emit=defineEmits<{"update:bgm":[Bgm|null];"update:voiceVolume":[number];"update:subtitleStyle":[TextStyle];"update:titleStyle":[TextStyle]}>();
+const tracks=ref<Array<{path:string;name:string;format:string}>>([]),invalidCount=ref(0),presets=ref<Awaited<ReturnType<typeof window.autocut.getStylePresets>>>([]),selectedPreset=ref("__random__"),presetName=ref("");
+async function chooseFile(){const path=await window.autocut.selectBgmFile();if(path)emit("update:bgm",{sourceType:"file",path,mode:"fixed",volume:.16,fadeInSec:1,fadeOutSec:1})}
+async function chooseFolder(){const path=await window.autocut.selectBgmFolder();if(!path)return;const result=await window.autocut.scanAudioLibrary({folderPath:path,recursive:true});tracks.value=result.tracks;invalidCount.value=result.invalid.length;emit("update:bgm",{sourceType:"folder",path,mode:"random",volume:.16,fadeInSec:1,fadeOutSec:1})}
+function applyPreset(id:string){if(id==="__random__")return;const p=presets.value.find(v=>v.id===id);if(p){emit("update:subtitleStyle",structuredClone(p.subtitleStyle));emit("update:titleStyle",structuredClone(p.titleStyle))}}
+async function savePreset(){const name=presetName.value.trim();if(!name)return ElMessage.warning("请输入样式模板名称");const preset={id:globalThis.crypto?.randomUUID?.()??`style-${Date.now()}`,name,subtitleStyle:structuredClone(props.subtitleStyle),titleStyle:structuredClone(props.titleStyle)};presets.value=await window.autocut.saveStylePresets([...presets.value,preset]);selectedPreset.value=preset.id;presetName.value="";ElMessage.success("字幕与标题组合模板已保存")}
+async function deletePreset(){if(selectedPreset.value==="__random__")return;presets.value=await window.autocut.saveStylePresets(presets.value.filter(p=>p.id!==selectedPreset.value));selectedPreset.value="__random__";ElMessage.success("样式模板已删除")}
+onMounted(async()=>presets.value=await window.autocut.getStylePresets());
 </script>
-<template>
-  <aside class="panel media-panel">
-    <header><h3>背景音乐与字幕</h3><p>集中设置成片声音、标题和字幕。</p></header>
-    <section><strong>声音混合</strong><div class="actions"><el-button size="small" @click="chooseFile">选择单曲</el-button><el-button size="small" @click="chooseFolder">选择文件夹</el-button></div><p class="path">{{ bgm?.path || "未选择，支持 MP3 / WAV / M4A / AAC / FLAC" }}</p><el-select v-if="bgm?.sourceType==='folder'" :model-value="bgm.mode" @update:model-value="$emit('update:bgm',{...bgm,mode:$event})"><el-option label="随机" value="random"/><el-option label="顺序" value="sequential"/></el-select><p v-if="tracks.length">{{ tracks.length }} 首可用，{{ invalidCount }} 首无法读取</p><div class="mix-grid"><label>人声音量 {{ voiceVolume.toFixed(1) }}<el-slider :model-value="voiceVolume" :min="0" :max="3" :step=".1" @update:model-value="$emit('update:voiceVolume',Number($event))"/></label><label v-if="bgm">背景音乐音量 {{ bgm.volume.toFixed(2) }}<el-slider :model-value="bgm.volume" :min="0" :max="1" :step=".01" @update:model-value="$emit('update:bgm',{...bgm,volume:Number($event)})"/></label><label v-else>背景音乐音量<small>选择音乐后可调节</small></label></div></section>
-    <section class="preview-section">
-      <div class="preview-heading"><strong>成片字幕预览</strong><span>9:16 · 1080×1920</span></div>
-      <PhoneCanvasPreview :subtitle-style="subtitleStyle" :title-style="titleStyle" :title="title" :subtitle="sampleText" />
-    </section>
-    <section class="style-presets">
-      <strong>字幕与标题样式模板</strong>
-      <el-select v-model="selectedPreset" placeholder="选择已保存模板" @change="applyPreset">
-        <el-option v-for="preset in presets" :key="preset.id" :label="preset.name" :value="preset.id"/>
-      </el-select>
-      <div class="actions"><el-input v-model="presetName" placeholder="输入模板名称"/><el-button type="primary" @click="savePreset">保存当前样式</el-button><el-button :disabled="!selectedPreset" @click="deletePreset">删除</el-button></div>
-    </section>
-    <SubtitleStyleEditor :model-value="subtitleStyle" @update:model-value="$emit('update:subtitleStyle',$event)"/>
-    <TitleStyleEditor :model-value="titleStyle" @update:model-value="$emit('update:titleStyle',$event)"/>
-  </aside>
-</template>
-<style scoped>
-.panel{padding:22px;display:grid;gap:22px}.panel h3,.panel p{margin:0}.panel header p,.path{font-size:12px;color:var(--muted);word-break:break-all}.panel section{display:grid;gap:10px}.actions{display:flex;gap:8px;flex-wrap:wrap}.mix-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.mix-grid label{display:grid;gap:7px;font-size:12px}.mix-grid small{color:var(--muted)}.preview-section{padding:16px;border-radius:16px;background:#f5f5f2}.preview-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.preview-heading span{font-size:12px;color:var(--muted)}.panel :deep(.phone-canvas){margin:auto}
-</style>
+<template><aside class="media-panel"><header><h3>背景音乐、字幕与标题</h3><p>左侧精细设置，右侧固定 9:16 实时预览。</p></header><div class="design-grid"><div class="controls">
+ <section><strong>声音混合</strong><div class="actions"><el-button @click="chooseFile">选择单曲</el-button><el-button @click="chooseFolder">选择文件夹</el-button></div><p class="path">{{bgm?.path||'未选择，支持 MP3 / WAV / M4A / AAC / FLAC'}}</p><el-select v-if="bgm?.sourceType==='folder'" :model-value="bgm.mode" @update:model-value="$emit('update:bgm',{...bgm,mode:$event})"><el-option label="随机" value="random"/><el-option label="顺序" value="sequential"/></el-select><p v-if="tracks.length">{{tracks.length}} 首可用，{{invalidCount}} 首无法读取</p><div class="mix"><label>人声音量 {{voiceVolume.toFixed(1)}}<el-slider :model-value="voiceVolume" :min="0" :max="3" :step=".1" @update:model-value="$emit('update:voiceVolume',Number($event))"/></label><label v-if="bgm">背景音乐音量 {{bgm.volume.toFixed(2)}}<el-slider :model-value="bgm.volume" :min="0" :max="1" :step=".01" @update:model-value="$emit('update:bgm',{...bgm,volume:Number($event)})"/></label></div></section>
+ <section class="template"><strong>字幕与标题样式模板</strong><el-select v-model="selectedPreset" @change="applyPreset"><el-option label="随机样式模板（批量任务自动轮换）" value="__random__"/><el-option v-for="p in presets" :key="p.id" :label="p.name" :value="p.id"/></el-select><div class="actions"><el-input v-model="presetName" placeholder="输入模板名称"/><el-button type="primary" @click="savePreset">保存当前样式</el-button><el-button :disabled="selectedPreset==='__random__'" @click="deletePreset">删除</el-button></div></section>
+ <SubtitleStyleEditor :model-value="subtitleStyle" @update:model-value="$emit('update:subtitleStyle',$event)"/><TitleStyleEditor :model-value="titleStyle" @update:model-value="$emit('update:titleStyle',$event)"/>
+ </div><div class="preview"><div><strong>成片实时预览</strong><span>9:16 · 1080×1920</span></div><PhoneCanvasPreview :subtitle-style="subtitleStyle" :title-style="titleStyle" :title="title" :subtitle="sampleText"/></div></div></aside></template>
+<style scoped>.media-panel{display:grid;gap:18px}.media-panel h3,.media-panel p{margin:0}.media-panel header p,.path{color:var(--text-muted);font-size:12px;word-break:break-all}.design-grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:24px;align-items:start}.controls{display:grid;gap:24px}.controls>section{display:grid;gap:12px;padding-bottom:22px;border-bottom:1px solid var(--border)}.actions{display:flex;gap:9px;flex-wrap:wrap}.actions .el-input{flex:1;min-width:220px}.mix{display:grid;grid-template-columns:1fr 1fr;gap:20px}.mix label{display:grid;gap:8px}.preview{position:sticky;top:90px;display:grid;gap:16px;padding:18px;border-radius:18px;background:#f4f4f0}.preview>div{display:flex;justify-content:space-between}.preview span{color:var(--text-muted);font-size:12px}.preview :deep(.phone-canvas){margin:auto}@media(max-width:1100px){.design-grid{grid-template-columns:1fr}.preview{position:static}.mix{grid-template-columns:1fr}}</style>

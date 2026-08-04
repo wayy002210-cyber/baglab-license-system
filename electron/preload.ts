@@ -250,8 +250,11 @@ const mediaSettingsSchema = z.object({
 });
 const textStyleSchema = z.object({
   fontPath: z.string().nullable(), fontFamily: z.string(), fontSize: z.number(),
+  bold:z.boolean().default(false),italic:z.boolean().default(false),underline:z.boolean().default(false),
+  letterSpacing:z.number().default(0),lineSpacing:z.number().default(0),scale:z.number().default(100),opacity:z.number().default(100),
   primaryColor: z.string(), outlineColor: z.string(), outlineWidth: z.number(),
   shadowColor: z.string(), shadowX: z.number(), shadowY: z.number(),
+  shadowBlur:z.number().default(0),
   alignment: z.number(), marginV: z.number(),
   positionX: z.number(), positionY: z.number()
 });
@@ -272,14 +275,14 @@ const audioLibraryResultSchema = z.object({
 const fontMetadataSchema = z.object({
   path: z.string(),
   family: z.string().min(1),
-  format: z.enum(["ttf", "otf"])
+  format: z.enum(["ttf", "otf", "ttc", "otc"])
 });
 const systemFontSchema = z.object({
   id: z.string().min(1),
   displayName: z.string().min(1),
   family: z.string().min(1),
   path: z.string().min(1),
-  extension: z.enum(["ttf", "otf", "ttc"])
+  extension: z.enum(["ttf", "otf", "ttc", "otc"])
 });
 const copyModelSettingsSchema = z.object({
   defaultModel: z.string().trim().min(1),

@@ -1,66 +1,16 @@
 <script setup lang="ts">
-import type { TextStyle } from "../../../shared/media-style";
-import { subtitleStylePresets } from "../../../shared/media-style";
-import FontPicker from "./FontPicker.vue";
-
-const props = defineProps<{ modelValue: TextStyle; title?: string }>();
-const emit = defineEmits<{ "update:modelValue": [value: TextStyle] }>();
-
-function patch(value: Partial<TextStyle>): void {
-  emit("update:modelValue", { ...props.modelValue, ...value });
-}
-
-function patchColor(
-  key: "primaryColor" | "outlineColor" | "shadowColor",
-  value: unknown
-): void {
-  if (typeof value === "string" && value.startsWith("#")) patch({ [key]: value });
-}
-
-function toggleOutline(enabled: boolean): void {
-  patch({ outlineWidth: enabled ? Math.max(2, props.modelValue.outlineWidth) : 0 });
-}
-
-function toggleShadow(enabled: boolean): void {
-  patch(enabled
-    ? { shadowColor: "#40000000", shadowX: 2, shadowY: 2 }
-    : { shadowColor: "#00000000", shadowX: 0, shadowY: 0 });
-}
+import type{TextStyle}from"../../../shared/media-style";import{subtitleStylePresets}from"../../../shared/media-style";import FontPicker from"./FontPicker.vue";
+const props=defineProps<{modelValue:TextStyle;title?:string}>();const emit=defineEmits<{"update:modelValue":[value:TextStyle]}>();
+function patch(value:Partial<TextStyle>){emit("update:modelValue",{...props.modelValue,...value})}
+function color(key:"primaryColor"|"outlineColor"|"shadowColor",value:unknown){if(typeof value==="string"&&value.startsWith("#"))patch({[key]:value})}
+function outline(on:boolean){patch({outlineWidth:on?Math.max(2,props.modelValue.outlineWidth):0,outlineColor:on?props.modelValue.outlineColor:"#00000000"})}
+function shadow(on:boolean){patch(on?{shadowColor:"#80000000",shadowX:2,shadowY:2,shadowBlur:2}:{shadowColor:"#00000000",shadowX:0,shadowY:0,shadowBlur:0})}
 </script>
-
-<template>
-  <section class="style-editor">
-    <header><strong>{{ title ?? "字幕样式" }}</strong><span>所见即所得预览</span></header>
-    <div class="presets">
-      <span>预设</span>
-      <el-button v-for="preset in subtitleStylePresets" :key="preset.name" size="small" @click="patch(preset.value)">
-        {{ preset.name }}
-      </el-button>
-    </div>
-    <div class="style-grid">
-      <label class="font-control">字体
-        <FontPicker
-          :font-family="modelValue.fontFamily"
-          :font-path="modelValue.fontPath"
-          @change="patch($event)"
-        />
-      </label>
-      <label>字号<el-input-number :model-value="modelValue.fontSize" :min="12" :max="240" @update:model-value="patch({ fontSize: Number($event) })" /></label>
-      <label>文字颜色<el-color-picker :model-value="modelValue.primaryColor" @update:model-value="patchColor('primaryColor',$event)" /></label>
-      <label>描边（可选）<el-switch :model-value="modelValue.outlineWidth > 0" active-text="开启" inactive-text="关闭" @update:model-value="toggleOutline(Boolean($event))" /></label>
-      <label v-if="modelValue.outlineWidth > 0">描边颜色<el-color-picker :model-value="modelValue.outlineColor" @update:model-value="patchColor('outlineColor',$event)" /></label>
-      <label>描边宽度<el-input-number :model-value="modelValue.outlineWidth" :min="0" :max="20" @update:model-value="patch({ outlineWidth: Number($event) })" /></label>
-      <label>阴影（可选）<el-switch :model-value="Boolean(modelValue.shadowX || modelValue.shadowY)" active-text="开启" inactive-text="关闭" @update:model-value="toggleShadow(Boolean($event))" /></label>
-      <label v-if="modelValue.shadowX || modelValue.shadowY">阴影颜色<el-color-picker :model-value="modelValue.shadowColor" @update:model-value="patchColor('shadowColor',$event)" /></label>
-      <label>垂直边距<el-input-number :model-value="modelValue.marginV" :min="0" :max="960" @update:model-value="patch({ marginV: Number($event) })" /></label>
-      <label>横向位置 X<el-input-number :model-value="modelValue.positionX" :min="0" :max="1080" @update:model-value="patch({ positionX: Number($event) })" /></label>
-      <label>纵向位置 Y<el-input-number :model-value="modelValue.positionY" :min="0" :max="1920" @update:model-value="patch({ positionY: Number($event) })" /></label>
-    </div>
-  </section>
-</template>
-
-<style scoped>
-.style-editor{display:grid;gap:14px;padding-top:4px}.style-editor header,.inline,.presets{display:flex;align-items:center;justify-content:space-between;gap:10px}.style-editor header span{color:var(--muted);font-size:12px}.presets{justify-content:flex-start;flex-wrap:wrap}.style-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.style-grid label{display:grid;align-content:start;gap:7px;min-width:0;font-size:13px;color:var(--muted)}.style-grid :deep(.el-input-number){width:100%}.inline{justify-content:flex-start}
-.font-control{grid-column:1/-1}
-@media(max-width:520px){.style-grid{grid-template-columns:1fr}.font-control{grid-column:auto}}
-</style>
+<template><section class="style-editor"><header><strong>{{title??'字幕样式'}}</strong><span>右侧实时预览</span></header>
+ <div class="presets"><span>预设样式</span><el-button v-for="preset in subtitleStylePresets" :key="preset.name" @click="patch(preset.value)">{{preset.name}}</el-button></div>
+ <div class="grid"><label class="wide">字体<FontPicker :font-family="modelValue.fontFamily" :font-path="modelValue.fontPath" @change="patch($event)"/></label><label>字号<el-input-number :model-value="modelValue.fontSize" :min="12" :max="240" @update:model-value="patch({fontSize:Number($event)})"/></label><label>样式<div class="style-buttons"><el-button :type="modelValue.bold?'primary':''" @click="patch({bold:!modelValue.bold})">B</el-button><el-button :type="modelValue.italic?'primary':''" @click="patch({italic:!modelValue.italic})"><i>I</i></el-button><el-button :type="modelValue.underline?'primary':''" @click="patch({underline:!modelValue.underline})"><u>U</u></el-button></div></label>
+ <label>文字颜色<el-color-picker :model-value="modelValue.primaryColor" @update:model-value="color('primaryColor',$event)"/></label><label>不透明度 {{modelValue.opacity}}%<el-slider :model-value="modelValue.opacity" :min="0" :max="100" @update:model-value="patch({opacity:Number($event)})"/></label><label>字间距<el-input-number :model-value="modelValue.letterSpacing" :min="-20" :max="100" @update:model-value="patch({letterSpacing:Number($event)})"/></label><label>行间距<el-input-number :model-value="modelValue.lineSpacing" :min="-20" :max="100" @update:model-value="patch({lineSpacing:Number($event)})"/></label><label>缩放 {{modelValue.scale}}%<el-slider :model-value="modelValue.scale" :min="10" :max="300" @update:model-value="patch({scale:Number($event)})"/></label><label>对齐<el-select :model-value="modelValue.alignment" @update:model-value="patch({alignment:Number($event)})"><el-option label="左对齐" :value="1"/><el-option label="居中" :value="2"/><el-option label="右对齐" :value="3"/></el-select></label><label>横向位置 X<el-input-number :model-value="modelValue.positionX" :min="0" :max="1080" @update:model-value="patch({positionX:Number($event)})"/></label><label>纵向位置 Y<el-input-number :model-value="modelValue.positionY" :min="0" :max="1920" @update:model-value="patch({positionY:Number($event)})"/></label>
+ <div class="effect wide"><el-switch :model-value="modelValue.outlineWidth>0" active-text="描边" @update:model-value="outline(Boolean($event))"/><template v-if="modelValue.outlineWidth>0"><label>描边颜色<el-color-picker :model-value="modelValue.outlineColor" @update:model-value="color('outlineColor',$event)"/></label><label>向外描边宽度<el-input-number :model-value="modelValue.outlineWidth" :min="0" :max="20" @update:model-value="patch({outlineWidth:Number($event)})"/></label></template></div>
+ <div class="effect wide"><el-switch :model-value="Boolean(modelValue.shadowX||modelValue.shadowY||modelValue.shadowBlur)" active-text="阴影" @update:model-value="shadow(Boolean($event))"/><template v-if="modelValue.shadowX||modelValue.shadowY||modelValue.shadowBlur"><label>阴影颜色<el-color-picker :model-value="modelValue.shadowColor" @update:model-value="color('shadowColor',$event)"/></label><label>水平距离<el-input-number :model-value="modelValue.shadowX" :min="-30" :max="30" @update:model-value="patch({shadowX:Number($event)})"/></label><label>垂直距离<el-input-number :model-value="modelValue.shadowY" :min="-30" :max="30" @update:model-value="patch({shadowY:Number($event)})"/></label><label>模糊度<el-input-number :model-value="modelValue.shadowBlur" :min="0" :max="30" @update:model-value="patch({shadowBlur:Number($event)})"/></label></template></div>
+ </div></section></template>
+<style scoped>.style-editor{display:grid;gap:16px}.style-editor header,.presets,.style-buttons,.effect{display:flex;align-items:center;gap:9px}.style-editor header{justify-content:space-between}.style-editor header span,.grid label{color:var(--text-muted);font-size:12px}.presets{flex-wrap:wrap}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.grid label{display:grid;gap:7px}.wide{grid-column:1/-1}.effect{padding:14px;border:1px solid var(--border);border-radius:13px;flex-wrap:wrap}.effect label{min-width:150px;flex:1}.grid :deep(.el-input-number){width:100%}@media(max-width:700px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}}</style>

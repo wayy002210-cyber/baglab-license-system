@@ -1,32 +1,6 @@
 <script setup lang="ts">
-import type { TextStyle } from "../../../shared/media-style";
-defineProps<{ subtitleStyle: TextStyle; titleStyle: TextStyle; title?: string; subtitle?: string }>();
-function css(style: TextStyle) {
-  const outline = Math.max(0, style.outlineWidth / 3);
-  const outlineShadows = outline > 0
-    ? [[-1,0],[1,0],[0,-1],[0,1],[-.7,-.7],[.7,-.7],[-.7,.7],[.7,.7]]
-        .map(([x,y]) => `${x! * outline}px ${y! * outline}px 0 ${style.outlineColor}`)
-    : [];
-  const dropShadow = style.shadowX || style.shadowY
-    ? [`${style.shadowX / 3}px ${style.shadowY / 3}px 1px ${style.shadowColor}`]
-    : [];
-  return {
-    color: style.primaryColor,
-    fontFamily: style.fontFamily,
-    fontSize: `${Math.max(13, style.fontSize / 4.25)}px`,
-    textShadow: [...outlineShadows, ...dropShadow].join(",") || "none",
-    left: `${style.positionX / 1080 * 100}%`,
-    top: `${style.positionY / 1920 * 100}%`,
-    transform: "translate(-50%, -50%)"
-  };
-}
+import type{TextStyle}from"../../../shared/media-style";defineProps<{subtitleStyle:TextStyle;titleStyle:TextStyle;title?:string;subtitle?:string}>();
+function css(style:TextStyle){const outline=Math.max(0,style.outlineWidth/3);const edges=outline>0?[[-1,0],[1,0],[0,-1],[0,1],[-.7,-.7],[.7,-.7],[-.7,.7],[.7,.7]].map(([x,y])=>`${x!*outline}px ${y!*outline}px 0 ${style.outlineColor}`):[];const shadow=style.shadowX||style.shadowY?[`${style.shadowX/3}px ${style.shadowY/3}px ${style.shadowBlur/3}px ${style.shadowColor}`]:[];return{color:style.primaryColor,fontFamily:style.fontFamily,fontSize:`${Math.max(13,style.fontSize/4.25)}px`,fontWeight:style.bold?"800":"400",fontStyle:style.italic?"italic":"normal",textDecoration:style.underline?"underline":"none",letterSpacing:`${style.letterSpacing/4}px`,lineHeight:`${1.25+style.lineSpacing/100}`,opacity:style.opacity/100,textShadow:[...edges,...shadow].join(",")||"none",left:`${style.positionX/1080*100}%`,top:`${style.positionY/1920*100}%`,transform:`translate(-50%, -50%) scale(${style.scale/100})`}}
 </script>
-<template>
-  <div class="phone-canvas">
-    <div class="title" :style="css(titleStyle)">{{ title || "袋研官矩阵混剪" }}</div>
-    <div class="subtitle" :style="css(subtitleStyle)">{{ subtitle || "这里预览口播字幕效果" }}</div>
-  </div>
-</template>
-<style scoped>
-.phone-canvas{position:relative;width:252px;aspect-ratio:9/16;border:8px solid #111;border-radius:30px;background:linear-gradient(145deg,#363636,#171717);overflow:hidden;box-shadow:0 18px 36px rgba(0,0,0,.16)}.phone-canvas::before{content:"9:16 成片预览";position:absolute;inset:48% 0 auto;text-align:center;color:#777;font-size:12px}.title,.subtitle{position:absolute;z-index:1;width:calc(100% - 32px);text-align:center;font-weight:800;line-height:1.28;word-break:break-word}
-</style>
+<template><div class="phone-canvas"><div class="title" :style="css(titleStyle)">{{title||'袋研官矩阵混剪'}}</div><div class="subtitle" :style="css(subtitleStyle)">{{subtitle||'这里预览口播字幕效果'}}</div></div></template>
+<style scoped>.phone-canvas{position:relative;width:300px;aspect-ratio:9/16;border:8px solid #111;border-radius:30px;background:linear-gradient(145deg,#363636,#171717);overflow:hidden;box-shadow:0 18px 36px rgba(0,0,0,.16)}.phone-canvas::before{content:"9:16 成片预览";position:absolute;inset:48% 0 auto;text-align:center;color:#777;font-size:12px}.title,.subtitle{position:absolute;z-index:1;width:calc(100% - 32px);text-align:center;word-break:break-word}</style>
