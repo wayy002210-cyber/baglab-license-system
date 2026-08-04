@@ -29,7 +29,7 @@ describe("TaskRepository", () => {
 
     expect(created).toHaveLength(3);
     expect(created.map((task) => task.seed)).toEqual([500, 501, 502]);
-    expect(created.every((task) => task.status === "queued")).toBe(true);
+    expect(created.every((task) => task.status === "pending")).toBe(true);
     expect(repository.get(created[0].id)?.snapshot).toEqual({
       template: { name: "门店口播" }
     });
@@ -71,7 +71,7 @@ describe("TaskRepository", () => {
     expect(encoding.progress).toBe(80);
     expect(completed.completedAt).not.toBeNull();
     expect(completed.outputPath).toBe("D:/output/final.mp4");
-    expect(() => repository.transition(task.id, "queued")).toThrow(
+    expect(() => repository.transition(task.id, "pending")).toThrow(
       InvalidTaskTransitionError
     );
   });
@@ -93,7 +93,7 @@ describe("TaskRepository", () => {
     expect(repository.cancel(active.id).status).toBe("canceled");
     const retried = repository.retry(failed.id);
 
-    expect(retried.status).toBe("queued");
+    expect(retried.status).toBe("pending");
     expect(retried.progress).toBe(0);
     expect(retried.errorCode).toBeNull();
     expect(retried.snapshot).toEqual({ shots: [{ copywriting: "原始快照" }] });
@@ -124,5 +124,13 @@ describe("TaskRepository", () => {
     repository.cancel(task.id);
     expect(repository.delete(task.id)).toBe(true);
     expect(repository.get(task.id)).toBeNull();
+  });
+
+  it("persists serial queue state and returns pending tasks oldest first", () => {
+    repository.createBatch({ templateId:"t",personaId:"p",count:2,seed:1,snapshot:{} });
+    expect(repository.listPending().map(task=>task.seed)).toEqual([1,2]);
+    expect(repository.getQueueState()).toMatchObject({status:"idle",activeTaskId:null,pendingCount:2});
+    repository.saveQueueState("running",repository.listPending()[0].id);
+    expect(repository.getQueueState()).toMatchObject({status:"running",pendingCount:2});
   });
 });

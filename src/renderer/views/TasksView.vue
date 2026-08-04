@@ -1,367 +1,48 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { computed,onBeforeUnmount,onMounted,ref } from "vue";
+import { ElMessage,ElMessageBox } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
 import { toUserMessage } from "../lib/user-error";
-import {
-  selectPreferredVoices,
-  voiceDisplayName
-} from "../audio/voice-labels";
-
-type Task = Awaited<ReturnType<typeof window.autocut.listTasks>>[number];
-type Persona = Awaited<ReturnType<typeof window.autocut.listPersonas>>[number];
-type Template = Awaited<ReturnType<typeof window.autocut.listTemplates>>[number];
-
-const tasks = ref<Task[]>([]);
-const personas = ref<Persona[]>([]);
-const templates = ref<Template[]>([]);
-const voices = ref<Array<{ voiceId: string; name: string; kind: string }>>([]);
-const loading = ref(false);
-const dialogOpen = ref(false);
-const creating = ref(false);
-const previewTask = ref<Task | null>(null);
-const form = reactive({
-  personaId: "",
-  templateId: "",
-  count: 1,
-  voiceId: ""
-});
-let refreshTimer: ReturnType<typeof setInterval> | undefined;
-
-const statusMeta: Record<
-  Task["status"],
-  { label: string; type: "info" | "primary" | "warning" | "success" | "danger" }
-> = {
-  draft: { label: "草稿", type: "info" },
-  queued: { label: "排队中", type: "info" },
-  preparing_copy: { label: "生成文案", type: "primary" },
-  generating_voice: { label: "生成配音", type: "primary" },
-  selecting_assets: { label: "选择素材", type: "primary" },
-  composing: { label: "编排镜头", type: "warning" },
-  waiting_encoding: { label: "等待编码器", type: "info" },
-  encoding: { label: "编码成片", type: "warning" },
-  completed: { label: "已完成", type: "success" },
-  failed: { label: "失败", type: "danger" },
-  canceled: { label: "已取消", type: "info" }
+type Task=Awaited<ReturnType<typeof window.autocut.listTasks>>[number];
+type Queue=Awaited<ReturnType<typeof window.autocut.getQueueState>>;
+const tasks=ref<Task[]>([]),queue=ref<Queue>({status:"idle",activeTaskId:null,pendingCount:0});
+const loading=ref(false),previewTask=ref<Task|null>(null);let timer:ReturnType<typeof setInterval>|undefined;
+const statusMeta:Record<Task["status"],{label:string;type:"info"|"primary"|"warning"|"success"|"danger"}>={
+  draft:{label:"草稿",type:"info"},pending:{label:"待合成",type:"info"},queued:{label:"旧版排队",type:"info"},
+  preparing_copy:{label:"准备文案",type:"primary"},generating_voice:{label:"生成配音",type:"primary"},
+  selecting_assets:{label:"选择素材",type:"primary"},composing:{label:"编排镜头",type:"warning"},
+  waiting_encoding:{label:"等待编码器",type:"info"},encoding:{label:"编码成片",type:"warning"},
+  completed:{label:"已完成",type:"success"},failed:{label:"失败",type:"danger"},canceled:{label:"已取消",type:"info"}
 };
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    [tasks.value, personas.value, templates.value] = await Promise.all([
-      window.autocut.listTasks(),
-      window.autocut.listPersonas(),
-      window.autocut.listTemplates()
-    ]);
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function openCreate(): Promise<void> {
-  form.personaId =
-    personas.value.find((persona) => persona.isDefault)?.id ??
-    personas.value[0]?.id ??
-    "";
-  form.templateId = templates.value[0]?.id ?? "";
-  form.count = 1;
-  try {
-    voices.value = selectPreferredVoices(await window.autocut.listVoices());
-    form.voiceId = voices.value[0]?.voiceId ?? "";
-  } catch {
-    voices.value = [];
-    form.voiceId = "";
-  }
-  dialogOpen.value = true;
-}
-
-async function createTasks(): Promise<void> {
-  const persona = personas.value.find((item) => item.id === form.personaId);
-  const template = templates.value.find((item) => item.id === form.templateId);
-  if (!persona || !template) {
-    ElMessage.warning("请先创建账号档案和镜头模板");
-    return;
-  }
-  if (!form.voiceId) {
-    ElMessage.warning("请先配置 MiniMax Key 并选择配音音色");
-    return;
-  }
-  creating.value = true;
-  try {
-    const categoryIds = [
-      ...new Set(
-        template.shots
-          .map((shot) => shot.assetCategoryId)
-          .filter((id): id is string => Boolean(id))
-      )
-    ];
-    const assets = (
-      await Promise.all(categoryIds.map((id) => window.autocut.listAssets(id)))
-    ).flat();
-    const created = await window.autocut.createTaskBatch({
-      personaId: persona.id,
-      templateId: template.id,
-      count: form.count,
-      seed: Date.now(),
-      snapshot: {
-        persona,
-        template,
-        assets,
-        voice: { voiceId: form.voiceId }
-      }
-    });
-    tasks.value = [...created, ...tasks.value];
-    dialogOpen.value = false;
-    ElMessage.success(`已创建 ${created.length} 个任务`);
-  } catch (error) {
-    ElMessage.error(toUserMessage(error, "创建任务失败"));
-  } finally {
-    creating.value = false;
-  }
-}
-async function previewSelectedVoice(): Promise<void> {
-  if (!form.voiceId) return void ElMessage.warning("请先选择音色");
-  try {
-    const source = await window.autocut.previewVoice({
-      text: "你好，这是一段混剪工作台音色试听。",
-      voiceId: form.voiceId
-    });
-    await new Audio(source).play();
-  } catch (error) {
-    ElMessage.error(toUserMessage(error, "试听失败"));
-  }
-}
-
-async function cancelTask(task: Task): Promise<void> {
-  try {
-    await window.autocut.cancelTask(task.id);
-    await load();
-  } catch (error) {
-    ElMessage.error(toUserMessage(error, "取消失败"));
-  }
-}
-
-async function retryTask(task: Task): Promise<void> {
-  try {
-    await window.autocut.retryTask(task.id);
-    await load();
-    ElMessage.success("任务已重新加入队列");
-  } catch (error) {
-    ElMessage.error(toUserMessage(error, "重试失败"));
-  }
-}
-async function deleteTask(task: Task): Promise<void> {
-  await ElMessageBox.confirm("只删除任务记录，不删除已生成的视频文件。", "删除任务");
-  await window.autocut.deleteTask(task.id);
-  await load();
-}
-async function openOutput(task: Task): Promise<void> {
-  await window.autocut.openTaskOutput(task.id);
-}
-function preview(task: Task): void {
-  previewTask.value = task;
-}
-
-function snapshotName(task: Task, key: "persona" | "template"): string {
-  const value = task.snapshot[key];
-  return value && typeof value === "object" && "name" in value
-    ? String(value.name)
-    : "已删除";
-}
-
-function isActive(task: Task): boolean {
-  return !["completed", "failed", "canceled"].includes(task.status);
-}
-
-function taskStatusMeta(task: Task) {
-  return statusMeta[task.status];
-}
-
-onMounted(async () => {
-  await load();
-  refreshTimer = setInterval(() => void load(), 5_000);
-});
-onBeforeUnmount(() => {
-  if (refreshTimer) clearInterval(refreshTimer);
-});
+const running=computed(()=>queue.value.status==="running"||queue.value.status==="pause_requested");
+async function load(){loading.value=true;try{[tasks.value,queue.value]=await Promise.all([window.autocut.listTasks(),window.autocut.getQueueState()])}finally{loading.value=false}}
+async function action(run:()=>Promise<unknown>,success?:string){try{await run();if(success)ElMessage.success(success);await load()}catch(e){ElMessage.error(toUserMessage(e,"操作失败"))}}
+function start(task:Task){return action(()=>window.autocut.startTask(task.id),"任务已开始合成")}
+function startAll(){return action(()=>window.autocut.startAllPendingTasks(),"串行合成队列已启动")}
+function pause(){return action(()=>window.autocut.requestQueuePause(),"当前任务完成后将暂停队列")}
+function resume(){return action(()=>window.autocut.resumeQueue(),"队列已继续")}
+function cancel(task:Task){return action(()=>window.autocut.cancelTask(task.id),"任务已取消")}
+function retry(task:Task){return action(()=>window.autocut.retryTask(task.id),"任务已恢复为待合成")}
+async function remove(task:Task){await ElMessageBox.confirm("只删除任务记录，不删除已生成的成片文件。","删除任务");await action(()=>window.autocut.deleteTask(task.id))}
+function open(task:Task){return action(()=>window.autocut.openTaskOutput(task.id))}
+function name(task:Task,key:"persona"|"template"){const value=task.snapshot[key];return value&&typeof value==="object"&&"name" in value?String(value.name):key==="template"?String(task.snapshot.mainTitle??"创作文案"):"账号档案"}
+function elapsed(task:Task){if(!task.startedAt)return"—";const end=task.completedAt?Date.parse(task.completedAt):Date.now();const sec=Math.max(0,Math.floor((end-Date.parse(task.startedAt))/1000));return sec<60?`${sec}秒`:`${Math.floor(sec/60)}分${sec%60}秒`}
+function active(task:Task){return!["pending","completed","failed","canceled"].includes(task.status)}
+function meta(task:Task){return statusMeta[task.status]}
+onMounted(async()=>{await load();timer=setInterval(()=>void load(),5000)});onBeforeUnmount(()=>timer&&clearInterval(timer));
 </script>
-
-<template>
-  <div class="page">
-    <PageIntro
-      title="任务中心"
-      description="查看文案、配音、选片、合成与编码进度，失败任务可从原始快照恢复"
-      action="创建任务"
-      @action="openCreate"
-    />
-
-    <section class="surface task-panel">
-      <el-table v-loading="loading" :data="tasks" height="100%">
-        <el-table-column label="模板 / 档案" min-width="210">
-          <template #default="{ row }">
-            <strong>{{ snapshotName(row, "template") }}</strong>
-            <div class="muted">{{ snapshotName(row, "persona") }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">
-            <el-tag :type="taskStatusMeta(row).type">
-              {{ taskStatusMeta(row).label }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="进度" min-width="200">
-          <template #default="{ row }">
-            <el-progress
-              :percentage="Math.round(row.progress)"
-              :status="row.status === 'failed' ? 'exception' : row.status === 'completed' ? 'success' : undefined"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column prop="seed" label="任务种子" width="150" />
-        <el-table-column label="错误" min-width="180">
-          <template #default="{ row }">
-            <span class="error-text">{{ row.errorMessage || "—" }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
-          <template #default="{ row }">
-            <el-button
-              v-if="isActive(row)"
-              link
-              type="danger"
-              @click="cancelTask(row)"
-            >
-              取消
-            </el-button>
-            <el-button
-              v-if="row.status === 'failed' || row.status === 'canceled'"
-              link
-              type="primary"
-              @click="retryTask(row)"
-            >
-              重试
-            </el-button>
-            <el-button v-if="row.status === 'completed'" link type="primary" @click="openOutput(row)">打开成片</el-button>
-            <el-button v-if="row.status === 'completed'" link type="primary" @click="preview(row)">预览</el-button>
-            <el-button v-if="!isActive(row)" link type="danger" @click="deleteTask(row)">删除记录</el-button>
-          </template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="还没有生成任务" />
-        </template>
-      </el-table>
-    </section>
-
-    <el-dialog v-model="dialogOpen" title="创建批量任务" width="520px">
-      <el-form label-position="top">
-        <el-form-item label="账号档案">
-          <el-select v-model="form.personaId" placeholder="选择账号档案">
-            <el-option
-              v-for="persona in personas"
-              :key="persona.id"
-              :label="persona.name"
-              :value="persona.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="镜头模板">
-          <el-select v-model="form.templateId" placeholder="选择镜头模板">
-            <el-option
-              v-for="template in templates"
-              :key="template.id"
-              :label="`${template.name} · ${template.shots.length} 镜头`"
-              :value="template.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="生成数量">
-          <el-input-number v-model="form.count" :min="1" :max="20" />
-          <span class="form-tip">每条任务拥有独立且可复现的随机种子</span>
-        </el-form-item>
-        <el-form-item label="配音音色">
-          <div class="voice-row">
-            <el-select v-model="form.voiceId" placeholder="选择 MiniMax 音色">
-              <el-option
-                v-for="voice in voices"
-                :key="voice.voiceId"
-                  :label="voiceDisplayName(voice)"
-                :value="voice.voiceId"
-              />
-            </el-select>
-            <el-button @click="previewSelectedVoice">试听</el-button>
-          </div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogOpen = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="createTasks">
-          加入队列
-        </el-button>
-      </template>
-    </el-dialog>
-    <el-dialog
-      :model-value="Boolean(previewTask)"
-      title="成片预览"
-      width="430px"
-      destroy-on-close
-      @close="previewTask = null"
-    >
-      <div class="phone-preview">
-        <video
-          v-if="previewTask"
-          :src="`autocut-media://task/${previewTask.id}`"
-          controls
-          autoplay
-        />
-      </div>
-    </el-dialog>
-  </div>
-</template>
-
-<style scoped>
-.task-panel {
-  height: calc(100vh - 210px);
-  min-height: 420px;
-  padding: 14px 18px;
-}
-
-.muted,
-.form-tip {
-  color: #8a96aa;
-  font-size: 12px;
-  margin-top: 5px;
-}
-.voice-row {
-  display: flex;
-  width: 100%;
-  gap: 10px;
-}
-
-.error-text {
-  color: #d45353;
-  font-size: 13px;
-}
-
-.el-select {
-  width: 100%;
-}
-
-.form-tip {
-  margin-left: 12px;
-}
-.phone-preview {
-  width: 320px;
-  aspect-ratio: 9 / 16;
-  margin: 0 auto;
-  overflow: hidden;
-  border-radius: 28px;
-  background: #10131a;
-  box-shadow: 0 18px 42px rgba(26, 38, 62, 0.24);
-}
-.phone-preview video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-</style>
+<template><div class="page task-page">
+  <PageIntro title="任务中心" description="任务创建后先进入待合成列表，由你手动启动单条或严格串行合成全部任务。" />
+  <section class="surface queue-bar"><div><strong>串行合成队列</strong><span>{{queue.status==='running'?'正在合成':queue.status==='pause_requested'?'等待当前任务结束后暂停':queue.status==='paused'?'已暂停':'空闲'}} · {{queue.pendingCount}} 条待合成</span></div><el-button type="primary" :disabled="running||queue.pendingCount===0" @click="startAll">一键合成所有任务</el-button><el-button :disabled="queue.status!=='running'" @click="pause">暂停合成任务</el-button><el-button :disabled="queue.status!=='paused'" @click="resume">继续合成任务</el-button></section>
+  <section class="surface task-panel"><el-table v-loading="loading" :data="tasks" height="100%">
+    <el-table-column label="脚本 / 档案" min-width="220"><template #default="{row}"><strong>{{name(row,'template')}}</strong><div class="muted">{{name(row,'persona')}}</div></template></el-table-column>
+    <el-table-column label="阶段" width="125"><template #default="{row}"><el-tag :type="meta(row).type">{{meta(row).label}}</el-tag></template></el-table-column>
+    <el-table-column label="进度" min-width="210"><template #default="{row}"><el-progress :percentage="Math.round(row.progress)" :status="row.status==='failed'?'exception':row.status==='completed'?'success':undefined"/></template></el-table-column>
+    <el-table-column label="耗时" width="100"><template #default="{row}">{{elapsed(row)}}</template></el-table-column>
+    <el-table-column label="错误与处理建议" min-width="230"><template #default="{row}"><span class="error-text">{{row.errorMessage||'—'}}</span></template></el-table-column>
+    <el-table-column label="操作" min-width="285" fixed="right"><template #default="{row}"><el-button v-if="row.status==='pending'" link type="primary" :disabled="running" @click="start(row)">开始合成</el-button><el-button v-if="active(row)" link type="danger" @click="cancel(row)">取消</el-button><el-button v-if="row.status==='failed'||row.status==='canceled'" link type="primary" @click="retry(row)">失败重试</el-button><el-button v-if="row.status==='completed'" link type="primary" @click="open(row)">打开成片</el-button><el-button v-if="row.status==='completed'" link @click="previewTask=row">预览</el-button><el-button v-if="['completed','failed','canceled'].includes(row.status)" link type="danger" @click="remove(row)">删除记录</el-button></template></el-table-column>
+    <template #empty><el-empty description="还没有待合成任务，请先在镜头剪辑页面创建"/></template>
+  </el-table></section>
+  <el-dialog :model-value="Boolean(previewTask)" title="成片预览" width="430px" @close="previewTask=null"><video v-if="previewTask?.outputPath" class="video" controls :src="`autocut-file://${previewTask.outputPath}`"/></el-dialog>
+</div></template>
+<style scoped>.task-page{display:grid;gap:18px}.queue-bar{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:18px 20px}.queue-bar>div{display:grid;margin-right:auto}.queue-bar span,.muted{color:var(--text-muted);font-size:12px;margin-top:4px}.task-panel{height:calc(100vh - 285px);min-height:420px;padding:12px}.error-text{color:#d33;white-space:normal}.video{width:100%;max-height:70vh;background:#111;border-radius:14px}@media(max-width:800px){.queue-bar{align-items:stretch;flex-direction:column}.queue-bar>div{margin-right:0}.task-panel{height:600px}}</style>

@@ -119,6 +119,7 @@ export const creationDraftSchema = z
 
 export const taskStatusSchema = z.enum([
   "draft",
+  "pending",
   "queued",
   "preparing_copy",
   "generating_voice",

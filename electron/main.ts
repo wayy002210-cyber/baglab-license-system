@@ -76,12 +76,16 @@ import {
   type CreateCopywritingProjectInput,
   type ReplaceShotInput
 } from "./repositories/copywriting-project-repository.js";
+import { GenerationQueue } from "./services/generation-queue.js";
+import { createProjectTasks } from "./services/copywriting-task-service.js";
+import { defaultSubtitleStyle,defaultTitleStyle } from "../src/shared/media-style.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
 let database: Database.Database | null = null;
 let publishScheduler: ReturnType<typeof setInterval> | null = null;
 let logger: JsonLogger | null = null;
+let generationQueue: GenerationQueue | null = null;
 let logPath = "";
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -139,6 +143,10 @@ function referenceScriptRepository(): ReferenceScriptRepository {
 function copywritingProjectRepository(): CopywritingProjectRepository {
   if (!database) throw new Error("Database is not ready");
   return new CopywritingProjectRepository(database);
+}
+function queue():GenerationQueue{
+  if(!generationQueue)generationQueue=new GenerationQueue(taskRepository(),runGenerationTask);
+  return generationQueue;
 }
 
 async function runGenerationTask(task: GenerationTask): Promise<void> {
@@ -722,6 +730,12 @@ ipcMain.handle("copywritingProjects:shots", (_event, id: string) =>
 ipcMain.handle("copywritingProjects:replaceShots", (_event, id: string, shots: ReplaceShotInput[]) =>
   copywritingProjectRepository().replaceShots(id, shots)
 );
+ipcMain.handle("copywritingProjects:createTasks",(_event,input:{projectIds:string[];seed:number})=>{
+  if(!database)throw new Error("数据库尚未就绪");
+  const draft=creationDraftRepository().get();const bgm=draft?.bgm??null;
+  const bgmCandidates=bgm?.sourceType==="folder"&&existsSync(bgm.path)?readdirSync(bgm.path,{withFileTypes:true}).filter(entry=>entry.isFile()&&[".mp3",".wav",".m4a",".aac",".flac"].includes(extname(entry.name).toLowerCase())).map(entry=>join(bgm.path,entry.name)).sort():[];
+  return createProjectTasks({database,projectRepository:copywritingProjectRepository(),taskRepository:taskRepository(),projectIds:input.projectIds,seed:input.seed,personas:personaRepository().list(),assets:assetRepository().listCategories().flatMap(category=>assetRepository().listAssets(category.id)),voice:settingsRepository().getVoiceSettings(),media:settingsRepository().getMediaSettings(),bgm,bgmCandidates,stylePresets:settingsRepository().getStylePresets(),subtitleStyle:draft?.subtitleStyle??defaultSubtitleStyle,titleStyle:draft?.titleStyle??defaultTitleStyle});
+});
 ipcMain.handle("templates:create", (_event, input: TemplateInput) =>
   templateRepository().create(input)
 );
@@ -780,7 +794,6 @@ ipcMain.handle("tasks:createBatch", (_event, input: CreateTaskBatchInput) => {
       bgmPath: media.bgmPath
     }
   });
-  for (const task of tasks) void runGenerationTask(task);
   return tasks;
 });
 ipcMain.handle(
@@ -834,7 +847,6 @@ ipcMain.handle(
       });
       tasks.push(task);
     }
-    for (const task of tasks) void runGenerationTask(task);
     return tasks;
   }
 );
@@ -961,10 +973,13 @@ ipcMain.handle("tasks:cancel", async (_event, id: string) => {
   return taskRepository().cancel(id);
 });
 ipcMain.handle("tasks:retry", (_event, id: string) => {
-  const task = taskRepository().retry(id);
-  void runGenerationTask(task);
-  return task;
+  return taskRepository().retry(id);
 });
+ipcMain.handle("tasks:start", (_event,id:string)=>queue().startTask(id));
+ipcMain.handle("tasks:startAll", ()=>queue().startAllPending());
+ipcMain.handle("tasks:pause", ()=>queue().requestPause());
+ipcMain.handle("tasks:resume", ()=>queue().resume());
+ipcMain.handle("tasks:queueState", ()=>queue().getState());
 ipcMain.handle("tasks:openOutput", (_event, id: string) => {
   const task = taskRepository().get(id);
   if (!task?.outputPath || !existsSync(task.outputPath)) {

@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 
 export const TASK_STATUSES = [
   "draft",
+  "pending",
   "queued",
   "preparing_copy",
   "generating_voice",
@@ -48,6 +49,8 @@ export type TransitionPatch = {
   errorCode?: string;
   errorMessage?: string;
 };
+export type QueueStatus = "idle" | "running" | "pause_requested" | "paused";
+export type QueueState = { status:QueueStatus;activeTaskId:string|null;pendingCount:number };
 
 type TaskRow = {
   id: string;
@@ -96,7 +99,7 @@ export class TaskRepository {
         id, template_id, persona_id, status, progress, seed, snapshot_json,
         output_path, error_code, error_message, created_at, started_at,
         completed_at, updated_at
-      ) VALUES (?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?)`
+      ) VALUES (?, ?, ?, 'pending', 0, ?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?)`
     );
     const create = this.database.transaction(() => {
       const tasks: GenerationTask[] = [];
@@ -124,6 +127,21 @@ export class TaskRepository {
       .prepare("SELECT * FROM generation_tasks ORDER BY created_at DESC, id DESC")
       .all() as TaskRow[];
     return rows.map(mapTask);
+  }
+
+  listPending(): GenerationTask[] {
+    return (this.database.prepare("SELECT * FROM generation_tasks WHERE status = 'pending' ORDER BY created_at ASC, rowid ASC").all() as TaskRow[]).map(mapTask);
+  }
+
+  getQueueState(): QueueState {
+    const row=this.database.prepare("SELECT status, active_task_id FROM queue_state WHERE id='generation'").get() as {status:QueueStatus;active_task_id:string|null};
+    const pendingCount=Number((this.database.prepare("SELECT COUNT(*) count FROM generation_tasks WHERE status='pending'").get() as {count:number}).count);
+    return {status:row.status,activeTaskId:row.active_task_id,pendingCount};
+  }
+
+  saveQueueState(status:QueueStatus,activeTaskId:string|null):QueueState {
+    this.database.prepare("UPDATE queue_state SET status=?, active_task_id=?, updated_at=? WHERE id='generation'").run(status,activeTaskId,new Date().toISOString());
+    return this.getQueueState();
   }
 
   get(id: string): GenerationTask | null {
@@ -193,7 +211,7 @@ export class TaskRepository {
     this.database
       .prepare(
         `UPDATE generation_tasks
-         SET status = 'queued', progress = 0, output_path = NULL,
+         SET status = 'pending', progress = 0, output_path = NULL,
              error_code = NULL, error_message = NULL, started_at = NULL,
              completed_at = NULL, updated_at = ?
          WHERE id = ?`
@@ -240,7 +258,7 @@ export class TaskRepository {
         `Cannot transition terminal task from ${current} to ${next}`
       );
     }
-    if (next === "draft" || next === "queued") {
+    if (next === "draft" || next === "pending" || next === "queued") {
       throw new InvalidTaskTransitionError(
         `Cannot transition task from ${current} to ${next}`
       );

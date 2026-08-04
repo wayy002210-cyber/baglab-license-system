@@ -8,6 +8,7 @@ type Persona = PersonaInput & {
 type CopywritingStatus = "generating" | "failed" | "review" | "library" | "shots_ready" | "tasked" | "archived";
 type CopywritingProject = { id:string; personaId:string; topicId:string|null; topicTitle:string; mainTitle:string; text:string; model:string; status:CopywritingStatus; complianceIssues:ComplianceIssue[]; errorMessage:string|null; createdAt:string; updatedAt:string; archivedAt:string|null };
 type CopywritingShot = { id:string; projectId:string; index:number; copywriting:string; suggestedCategoryId:string|null; assetCategoryId:string|null; suggestionSource:"ai"|"keyword"|"default"|"manual"; suggestionConfirmed:boolean; durationMode:"voice"|"fixed"|"auto"; durationSec:number|null; muteOriginal:boolean };
+type QueueState={status:"idle"|"running"|"pause_requested"|"paused";activeTaskId:string|null;pendingCount:number};
 
 declare global {
   interface Window {
@@ -144,6 +145,7 @@ declare global {
       collectCopywritingProject(id:string):Promise<CopywritingProject>;
       listCopywritingShots(id:string):Promise<CopywritingShot[]>;
       replaceCopywritingShots(id:string,shots:Array<Omit<CopywritingShot,"id"|"projectId"|"index">>):Promise<CopywritingShot[]>;
+      createTasksFromCopywriting(input:{projectIds:string[];seed:number}):Promise<GenerationTask[]>;
       checkCopywritingCompliance(input: {
         text: string;
         personaBannedWords: string[];
@@ -234,6 +236,11 @@ declare global {
       }): Promise<GenerationTask[]>;
       cancelTask(id: string): Promise<GenerationTask>;
       retryTask(id: string): Promise<GenerationTask>;
+      startTask(id:string):Promise<QueueState>;
+      startAllPendingTasks():Promise<QueueState>;
+      requestQueuePause():Promise<QueueState>;
+      resumeQueue():Promise<QueueState>;
+      getQueueState():Promise<QueueState>;
       openTaskOutput(id: string): Promise<{ opened: boolean }>;
       deleteTask(id: string): Promise<{ deleted: boolean }>;
       listPublishAccounts(): Promise<PublishAccount[]>;
@@ -345,6 +352,7 @@ type GenerationTask = {
   personaId: string;
   status:
     | "draft"
+    | "pending"
     | "queued"
     | "preparing_copy"
     | "generating_voice"

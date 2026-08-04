@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
+import { useRouter } from "vue-router";
 import PageIntro from "../components/PageIntro.vue";
 import MediaSettingsPanel from "../components/editing/MediaSettingsPanel.vue";
 import { useCreationDraft } from "../composables/useCreationDraft";
@@ -11,9 +12,11 @@ type Project=Awaited<ReturnType<typeof window.autocut.listCopywritingProjects>>[
 type Shot=Awaited<ReturnType<typeof window.autocut.listCopywritingShots>>[number];
 type Category=Awaited<ReturnType<typeof window.autocut.listAssetCategories>>[number];
 const draft=useCreationDraft();
+const router=useRouter();
 const projects=ref<Project[]>([]),categories=ref<Category[]>([]),shots=ref<Shot[]>([]);
 const selectedId=ref<string|null>(null),tab=ref<"library"|"shots_ready"|"archived">("library");
 const splitting=ref(false),saving=ref(false);
+const creating=ref(false);
 const selected=computed(()=>projects.value.find(p=>p.id===selectedId.value)??null);
 const visibleProjects=computed(()=>projects.value.filter(p=>p.status===tab.value));
 const subtitleStyle=computed<TextStyle>({get:()=>draft.draft.value.subtitleStyle??defaultSubtitleStyle,set:v=>draft.draft.value.subtitleStyle=v});
@@ -45,12 +48,17 @@ function updateShot(index:number,patch:Partial<Shot>){shots.value=shots.value.ma
 function move(index:number,offset:number){const target=index+offset;if(target<0||target>=shots.value.length)return;const copy=[...shots.value];[copy[index],copy[target]]=[copy[target],copy[index]];shots.value=copy.map((s,i)=>({...s,index:i}))}
 function remove(index:number){shots.value=shots.value.filter((_,i)=>i!==index).map((s,i)=>({...s,index:i}))}
 async function saveShots(){if(!selected.value)return;saving.value=true;try{shots.value=await window.autocut.replaceCopywritingShots(selected.value.id,inputs());ElMessage.success("镜头修改已保存")}finally{saving.value=false}}
+async function createTasks(all:boolean){
+  const ids=all?projects.value.filter(p=>p.status==="shots_ready").map(p=>p.id):selected.value?.status==="shots_ready"?[selected.value.id]:[];
+  if(!ids.length)return ElMessage.warning("没有已完成拆镜的文案可创建任务");creating.value=true;
+  try{if(shots.value.length&&selected.value?.status==="shots_ready")await saveShots();await draft.saveImmediate();const tasks=await window.autocut.createTasksFromCopywriting({projectIds:ids,seed:Date.now()&0x7fffffff});ElMessage.success(`已创建 ${tasks.length} 条待合成任务`);await router.push("/tasks")}catch(e){ElMessage.error(e instanceof Error?e.message:"创建混剪任务失败")}finally{creating.value=false}
+}
 onMounted(load);
 </script>
 
 <template><div class="page editing-page">
   <PageIntro title="镜头剪辑" description="从文案库批量拆分台词镜头，自动建议素材类型，再统一设置背景音乐、标题和字幕。" />
-  <section class="task-bar surface"><div><strong>批量混剪准备</strong><small>完成拆镜和样式后，可创建当前脚本或所有脚本任务</small></div><el-button>创建当前脚本任务</el-button><el-button type="primary">创建所有脚本任务</el-button></section>
+  <section class="task-bar surface"><div><strong>批量混剪准备</strong><small>完成拆镜和样式后，可创建当前脚本或所有脚本任务</small></div><el-button :loading="creating" @click="createTasks(false)">创建当前脚本任务</el-button><el-button type="primary" :loading="creating" @click="createTasks(true)">创建所有脚本任务</el-button></section>
   <div class="editor-grid">
     <aside class="surface library">
       <h3>文案库</h3><div class="tabs"><button :class="{active:tab==='library'}" @click="tab='library'">待剪辑文案</button><button :class="{active:tab==='shots_ready'}" @click="tab='shots_ready'">已拆镜文案</button><button :class="{active:tab==='archived'}" @click="tab='archived'">归档文案</button></div>

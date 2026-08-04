@@ -177,6 +177,7 @@ const voiceCapabilitiesSchema = z.object({
 });
 const taskStatusSchema = z.enum([
   "draft",
+  "pending",
   "queued",
   "preparing_copy",
   "generating_voice",
@@ -203,6 +204,10 @@ const taskSchema = z.object({
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
   updatedAt: z.string()
+});
+const queueStateSchema=z.object({
+  status:z.enum(["idle","running","pause_requested","paused"]),
+  activeTaskId:z.string().uuid().nullable(),pendingCount:z.number().int().nonnegative()
 });
 const createTaskBatchSchema = z.object({
   templateId: z.string().min(1),
@@ -562,6 +567,9 @@ contextBridge.exposeInMainWorld("autocut", {
   replaceCopywritingShots: async (id: unknown, shots: unknown) => z.array(copywritingShotSchema).parse(
     await ipcRenderer.invoke("copywritingProjects:replaceShots", z.string().uuid().parse(id), z.array(replaceShotSchema).parse(shots))
   ),
+  createTasksFromCopywriting: async (input: unknown) => z.array(taskSchema).parse(
+    await ipcRenderer.invoke("copywritingProjects:createTasks", z.object({ projectIds: z.array(z.string().uuid()).min(1), seed: z.number().int() }).parse(input))
+  ),
   checkCopywritingCompliance: async (input: unknown) =>
     z
       .object({
@@ -640,6 +648,11 @@ contextBridge.exposeInMainWorld("autocut", {
     taskSchema.parse(
       await ipcRenderer.invoke("tasks:retry", z.string().uuid().parse(id))
     ),
+  startTask: async (id:string)=>queueStateSchema.parse(await ipcRenderer.invoke("tasks:start",z.string().uuid().parse(id))),
+  startAllPendingTasks: async ()=>queueStateSchema.parse(await ipcRenderer.invoke("tasks:startAll")),
+  requestQueuePause: async ()=>queueStateSchema.parse(await ipcRenderer.invoke("tasks:pause")),
+  resumeQueue: async ()=>queueStateSchema.parse(await ipcRenderer.invoke("tasks:resume")),
+  getQueueState: async ()=>queueStateSchema.parse(await ipcRenderer.invoke("tasks:queueState")),
   openTaskOutput: async (id: string) => z.object({ opened: z.boolean() }).parse(
     await ipcRenderer.invoke("tasks:openOutput", z.string().uuid().parse(id))
   ),
