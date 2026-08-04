@@ -1,567 +1,187 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { EditPen, MagicStick } from "@element-plus/icons-vue";
 import PageIntro from "../components/PageIntro.vue";
-import TopicPicker from "../components/copywriting/TopicPicker.vue";
-import CompliancePanel from "../components/copywriting/CompliancePanel.vue";
-import {
-  createEmptyDraft,
-  useCreationDraft
-} from "../composables/useCreationDraft";
-import { createOperationState } from "../lib/operation-state";
-import {
-  toCopywritingContext,
-  toCopywritingGenerationInput
-} from "../copywriting/copywriting-request";
+import { generateCopywritingBatch, type BatchProgress, type BatchTopic } from "../copywriting/generate-copywriting-batch";
+import { toCopywritingContext, toCopywritingGenerationInput } from "../copywriting/copywriting-request";
 import { deriveShortTitle } from "../../shared/short-title";
+import { toUserMessage } from "../lib/user-error";
 
 type Persona = Awaited<ReturnType<typeof window.autocut.listPersonas>>[number];
-type ComplianceIssue = Awaited<
-  ReturnType<typeof window.autocut.checkCopywritingCompliance>
->["issues"][number];
+type Project = Awaited<ReturnType<typeof window.autocut.listCopywritingProjects>>[number];
 
-const router = useRouter();
-const draftState = useCreationDraft();
 const personas = ref<Persona[]>([]);
-const modelSettings = ref({
-  defaultModel: "deepseek-v3",
-  temperature: 0.7,
-  candidateModels: ["deepseek-v3", "qwen-plus"]
-});
+const personaId = ref("");
+const model = ref("deepseek-v3");
+const topics = ref<BatchTopic[]>([]);
+const selectedIds = ref<string[]>([]);
+const projects = ref<Project[]>([]);
 const mode = ref<"ai" | "custom">("ai");
-const topicOperation = createOperationState();
-const scriptOperation = createOperationState();
-const complianceOperation = createOperationState();
-const loadingTopics = computed(() => topicOperation.busy.value);
-const generating = computed(() => scriptOperation.busy.value);
-const checking = computed(() => complianceOperation.busy.value);
-const disclaimer = ref("风险提示仅用于内容检查，不构成法律结论。");
-const initialized = ref(false);
+const customText = ref("");
+const customTitle = ref("");
+const loadingTopics = ref(false);
+const batchRunning = ref(false);
+const progress = ref<BatchProgress>({ total: 0, completed: 0, succeeded: 0, failed: 0, currentTopicId: null });
 
-const currentPersona = computed(
-  () =>
-    personas.value.find(
-      (persona) => persona.id === draftState.draft.value.personaId
-    ) ?? null
-);
-const copywriting = computed(() => draftState.draft.value.copywriting);
-const characterCount = computed(
-  () => copywriting.value?.text.replace(/\s/g, "").length ?? 0
-);
-
-function initializeCopywriting(): void {
-  if (draftState.draft.value.copywriting) return;
-  draftState.draft.value.copywriting = {
-    model: modelSettings.value.defaultModel,
-    temperature: modelSettings.value.temperature,
-    topics: [],
-    selectedTopicId: null,
-    text: "",
-    complianceIssues: []
-  };
-}
+const persona = computed(() => personas.value.find((item) => item.id === personaId.value) ?? null);
+const reviewProjects = computed(() => projects.value.filter((item) => ["review", "failed"].includes(item.status)));
 
 async function load(): Promise<void> {
-  const [loadedPersonas, loadedSettings] = await Promise.all([
-    window.autocut.listPersonas(),
-    window.autocut.getCopyModelSettings(),
-    draftState.load()
+  const [loadedPersonas, settings, loadedProjects] = await Promise.all([
+    window.autocut.listPersonas(), window.autocut.getCopyModelSettings(),
+    window.autocut.listCopywritingProjects(["review", "failed"])
   ]);
   personas.value = loadedPersonas;
-  modelSettings.value = loadedSettings;
-  if (!draftState.draft.value.personaId) {
-    draftState.draft.value.personaId =
-      loadedPersonas.find((persona) => persona.isDefault)?.id ??
-      loadedPersonas[0]?.id ??
-      null;
-  }
-  initializeCopywriting();
-  initialized.value = true;
+  personaId.value = loadedPersonas.find((item) => item.isDefault)?.id ?? loadedPersonas[0]?.id ?? "";
+  model.value = settings.defaultModel;
+  projects.value = loadedProjects;
 }
 
-async function referenceScripts(): Promise<string[]> {
-  const persona = currentPersona.value;
-  if (!persona) return [];
-  const scripts = await window.autocut.searchReferenceScripts({
-    industry: persona.industry,
-    query:
-      copywriting.value?.topics.find(
-        (topic) => topic.id === copywriting.value?.selectedTopicId
-      )?.title ?? "",
-    limit: 3
-  });
-  return scripts.map((script) => script.content);
+async function references(topic = ""): Promise<string[]> {
+  if (!persona.value) return [];
+  return (await window.autocut.searchReferenceScripts({ industry: persona.value.industry, query: topic, limit: 3 })).map((item) => item.content);
 }
 
-function contextInput(persona: Persona) {
-  return toCopywritingContext(
-    persona,
-    copywriting.value?.model ?? modelSettings.value.defaultModel
-  );
+function context() {
+  if (!persona.value) throw new Error("请先选择人设档案");
+  return toCopywritingContext(persona.value, model.value);
 }
 
 async function generateTopics(): Promise<void> {
-  const persona = currentPersona.value;
-  if (!persona || !copywriting.value) {
-    ElMessage.warning("请先选择人设档案");
-    return;
-  }
+  if (!persona.value) return void ElMessage.warning("请先选择人设档案");
+  loadingTopics.value = true;
   try {
-    await topicOperation.run(async () => {
-      const result = await window.autocut.generateTopics({
-        ...contextInput(persona),
-        referenceScripts: await referenceScripts()
-      });
-      copywriting.value!.topics = result.topics;
-      copywriting.value!.selectedTopicId = null;
-      copywriting.value!.complianceIssues = [];
-      await draftState.saveImmediate();
-    }, {
-      phase: "requesting",
-      progress: 45,
-      message: "正在通过百炼生成 5 个选题",
-      fallback: "生成选题失败"
-    });
-  } catch {
-    const failure = topicOperation.error.value;
-    if (failure) ElMessage.error(`${failure.title}：${failure.action}`);
-  }
+    const result = await window.autocut.generateTopics({ ...context(), referenceScripts: await references() });
+    topics.value = result.topics;
+    selectedIds.value = [];
+  } catch (error) { ElMessage.error(toUserMessage(error, "生成选题失败")); }
+  finally { loadingTopics.value = false; }
 }
 
-function selectTopic(id: string): void {
-  if (!copywriting.value) return;
-  copywriting.value.selectedTopicId = id;
+function toggleTopic(id: string): void {
+  selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter((item) => item !== id) : [...selectedIds.value, id];
 }
 
-async function generateScript(): Promise<void> {
-  const persona = currentPersona.value;
-  const state = copywriting.value;
-  const topic = state?.topics.find(
-    (candidate) => candidate.id === state.selectedTopicId
-  );
-  if (!persona || !state || !topic) {
-    ElMessage.warning("请先选择一个选题");
-    return;
-  }
+async function createFromTopic(topic: BatchTopic, text: string, status: "review" | "failed", errorMessage: string | null): Promise<void> {
+  if (!persona.value) return;
+  const project = await window.autocut.createCopywritingProject({
+    personaId: persona.value.id, topicId: topic.id, topicTitle: topic.title,
+    mainTitle: deriveShortTitle(topic.title), text, model: model.value, status, errorMessage
+  });
+  projects.value = [project, ...projects.value];
+}
+
+async function generateSelected(): Promise<void> {
+  const selected = topics.value.filter((item) => selectedIds.value.includes(item.id));
+  if (!selected.length) return void ElMessage.warning("请至少选择一个选题");
+  if (!persona.value) return;
+  batchRunning.value = true;
+  progress.value = { total: selected.length, completed: 0, succeeded: 0, failed: 0, currentTopicId: null };
+  const base = toCopywritingGenerationInput(context(), persona.value.bannedWords);
+  const result = await generateCopywritingBatch({
+    topics: selected,
+    generate: async (topic) => window.autocut.generateCopywriting({ ...base, referenceScripts: await references(topic.title), topic: topic.title, minLength: 200, maxLength: 1000 }),
+    saveSuccess: async (topic, text) => createFromTopic(topic, text, "review", null),
+    saveFailure: async (topic, error) => createFromTopic(topic, "", "failed", toUserMessage(error, "生成文案失败")),
+    onProgress: (state) => { progress.value = state; }
+  });
+  batchRunning.value = false;
+  ElMessage[result.failed ? "warning" : "success"](`批量生成完成：成功 ${result.succeeded} 条，失败 ${result.failed} 条`);
+}
+
+async function generateCurrent(): Promise<void> {
+  if (selectedIds.value.length !== 1) return void ElMessage.warning("生成当前文案时请选择一个选题");
+  await generateSelected();
+}
+
+async function saveProject(project: Project): Promise<void> {
+  const updated = await window.autocut.updateCopywritingProject(project.id, { text: project.text, mainTitle: project.mainTitle });
+  projects.value = projects.value.map((item) => item.id === updated.id ? updated : item);
+  ElMessage.success("文案已保存");
+}
+
+async function checkProject(project: Project): Promise<void> {
+  if (!persona.value || !project.text.trim()) return void ElMessage.warning("请先生成或填写文案");
   try {
-    await scriptOperation.run(async () => {
-      const result = await window.autocut.generateCopywriting({
-        ...toCopywritingGenerationInput(
-          contextInput(persona),
-          persona.bannedWords
-        ),
-        referenceScripts: await referenceScripts(),
-        topic: topic.title,
-        minLength: 200,
-        maxLength: 1000
-      });
-      const currentState = copywriting.value;
-      if (!currentState) {
-        throw new Error("当前文案草稿已失效，请重新生成");
-      }
-      currentState.text = result.text;
-      currentState.mainTitle = deriveShortTitle(topic.title);
-      currentState.complianceIssues = [];
-      await draftState.saveImmediate();
-    }, {
-      phase: "requesting",
-      progress: 45,
-      message: "正在生成完整口播文案",
-      fallback: "生成文案失败"
-    });
-  } catch {
-    const failure = scriptOperation.error.value;
-    if (failure) ElMessage.error(`${failure.title}：${failure.action}`);
-  }
+    const result = await window.autocut.checkCopywritingCompliance({ text: project.text, personaBannedWords: persona.value.bannedWords });
+    const updated = await window.autocut.updateCopywritingProject(project.id, { complianceIssues: result.issues });
+    projects.value = projects.value.map((item) => item.id === updated.id ? updated : item);
+    ElMessage[result.issues.length ? "warning" : "success"](result.issues.length ? `发现 ${result.issues.length} 处风险词` : "未发现风险词");
+  } catch (error) { ElMessage.error(toUserMessage(error, "违禁词检查失败")); }
 }
 
-async function checkCompliance(): Promise<void> {
-  const persona = currentPersona.value;
-  const state = copywriting.value;
-  if (!persona || !state?.text.trim()) {
-    ElMessage.warning("请先填写或生成文案");
-    return;
-  }
+async function collect(project: Project): Promise<void> {
+  if (project.text.replace(/\s/g, "").length < 50) return void ElMessage.warning("文案内容过短，请先完善");
+  await window.autocut.collectCopywritingProject(project.id);
+  projects.value = projects.value.filter((item) => item.id !== project.id);
+  ElMessage.success("已收进文案库，可继续生成更多内容");
+}
+
+async function retry(project: Project): Promise<void> {
+  const topic = { id: project.topicId ?? project.id, title: project.topicTitle, angle: "", hook: "" };
+  projects.value = projects.value.filter((item) => item.id !== project.id);
+  selectedIds.value = [];
+  batchRunning.value = true;
   try {
-    await complianceOperation.run(async () => {
-      const result = await window.autocut.checkCopywritingCompliance({
-        text: state.text,
-        personaBannedWords: persona.bannedWords
-      });
-      state.complianceIssues = result.issues;
-      disclaimer.value = result.disclaimer;
-      await draftState.saveImmediate();
-    }, {
-      phase: "processing",
-      progress: 65,
-      message: "正在检查平台与广告法风险词",
-      fallback: "违禁词检查失败"
-    });
-  } catch {
-    const failure = complianceOperation.error.value;
-    if (failure) ElMessage.error(`${failure.title}：${failure.action}`);
-  }
-}
-
-function applySuggestion(issue: ComplianceIssue): void {
-  const state = copywriting.value;
-  if (!state) return;
-  if (state.text.slice(issue.start, issue.end) !== issue.term) {
-    ElMessage.warning("文案已经变化，请重新检查后再替换");
-    return;
-  }
-  state.text =
-    state.text.slice(0, issue.start) +
-    issue.suggestion +
-    state.text.slice(issue.end);
-  state.complianceIssues = [];
-  draftState.scheduleSave();
-}
-
-async function goToAudio(): Promise<void> {
-  if (!copywriting.value) return;
-  if (characterCount.value < 200 || characterCount.value > 1000) {
-    ElMessage.warning("口播文案请控制在 200–1000 字");
-    return;
-  }
-  const previousStage = draftState.draft.value.stage;
-  draftState.draft.value.stage = "audio";
-  try {
-    await draftState.saveImmediate();
-    ElMessage.success("文案已保存，正在进入音频制作");
-    await router.push("/audio");
+    const current = persona.value;
+    if (!current) throw new Error("人设档案不存在");
+    const result = await window.autocut.generateCopywriting({ ...toCopywritingGenerationInput(context(), current.bannedWords), referenceScripts: await references(topic.title), topic: topic.title, minLength: 200, maxLength: 1000 });
+    const updated = await window.autocut.updateCopywritingProject(project.id, { text: result.text, mainTitle: deriveShortTitle(topic.title), status: "review", errorMessage: null });
+    projects.value = [updated, ...projects.value];
   } catch (error) {
-    draftState.draft.value.stage = previousStage;
-    ElMessage.error(
-      `文案保存失败：${
-        error instanceof Error ? error.message : "请稍后重试"
-      }`
-    );
-  }
+    const updated = await window.autocut.updateCopywritingProject(project.id, { status: "failed", errorMessage: toUserMessage(error, "生成文案失败") });
+    projects.value = [updated, ...projects.value];
+  } finally { batchRunning.value = false; }
 }
 
-watch(
-  () => draftState.draft.value,
-  () => {
-    if (initialized.value) draftState.scheduleSave();
-  },
-  { deep: true }
-);
+async function addCustom(): Promise<void> {
+  if (!persona.value || customText.value.replace(/\s/g, "").length < 50) return void ElMessage.warning("请粘贴至少50字的完整口播文案");
+  await createFromTopic({ id: crypto.randomUUID(), title: customTitle.value.trim() || "自定义文案", angle: "", hook: "" }, customText.value, "review", null);
+  customText.value = ""; customTitle.value = "";
+}
 
 onMounted(load);
 </script>
 
 <template>
   <div class="page copy-page">
-    <PageIntro
-      title="文案生成"
-      description="结合人设档案生成选题和口播稿，也可以直接粘贴自己的完整文案"
-    />
-    <section class="surface creation-card">
-      <header class="creation-toolbar">
-        <div class="context-selectors">
-          <label>
-            人设档案
-            <el-select v-model="draftState.draft.value.personaId">
-              <el-option
-                v-for="persona in personas"
-                :key="persona.id"
-                :label="persona.name"
-                :value="persona.id"
-              />
-            </el-select>
-          </label>
-          <label>
-            文案模型
-            <el-select v-if="copywriting" v-model="copywriting.model">
-              <el-option
-                v-for="model in modelSettings.candidateModels"
-                :key="model"
-                :label="model"
-                :value="model"
-              />
-            </el-select>
-          </label>
-        </div>
-        <el-tag v-if="currentPersona" effect="plain">
-          {{ currentPersona.name }} · {{ currentPersona.industry || "未设置行业" }}
-        </el-tag>
-      </header>
-
-      <div class="mode-tabs">
-        <button
-          type="button"
-          :class="{ active: mode === 'ai' }"
-          @click="mode = 'ai'"
-        >
-          <el-icon><MagicStick /></el-icon>
-          AI 自动选题
-        </button>
-        <button
-          type="button"
-          :class="{ active: mode === 'custom' }"
-          @click="mode = 'custom'"
-        >
-          <el-icon><EditPen /></el-icon>
-          自定义文案
-        </button>
+    <PageIntro title="文案批量生产" description="多选选题批量生成，检查后持续收进待剪辑文案库" />
+    <section class="surface workspace">
+      <div class="selectors">
+        <label>人设档案<el-select v-model="personaId"><el-option v-for="item in personas" :key="item.id" :label="item.name" :value="item.id" /></el-select></label>
+        <label>文案模型<el-input :model-value="model" disabled /></label>
       </div>
+      <div class="mode-tabs"><button :class="{active:mode==='ai'}" @click="mode='ai'">AI 自动选题</button><button :class="{active:mode==='custom'}" @click="mode='custom'">自定义文案</button></div>
 
-      <section
-        v-if="topicOperation.phase.value !== 'idle'"
-        class="operation-feedback"
-        :class="{ failed: topicOperation.phase.value === 'error' }"
-      >
-        <div>
-          <strong>{{ topicOperation.error.value?.title || topicOperation.message.value }}</strong>
-          <p v-if="topicOperation.error.value">
-            {{ topicOperation.error.value.detail }} {{ topicOperation.error.value.action }}
-          </p>
-          <p v-else>生成过程通常需要 10–60 秒，请不要关闭软件。</p>
+      <template v-if="mode==='ai'">
+        <div class="topic-header"><div><strong>选题库</strong><span>一次生成5个内容角度，可多选</span></div><el-button data-action="generate-topics" :loading="loadingTopics" @click="generateTopics">{{ topics.length?'换一批':'生成选题' }}</el-button></div>
+        <div v-if="topics.length" class="topic-list">
+          <button v-for="(topic,index) in topics" :key="topic.id" :data-topic-id="topic.id" :class="{selected:selectedIds.includes(topic.id)}" @click="toggleTopic(topic.id)">
+            <span>{{ String.fromCharCode(65+index) }}</span><div><strong>{{ topic.title }}</strong><small>{{ topic.hook }} · {{ topic.angle }}</small></div><b>{{ selectedIds.includes(topic.id)?'✓':'' }}</b>
+          </button>
         </div>
-        <el-progress
-          v-if="topicOperation.phase.value !== 'error'"
-          :percentage="topicOperation.progress.value"
-          :indeterminate="topicOperation.busy.value"
-          :duration="2"
-        />
-        <el-button
-          v-else
-          type="primary"
-          @click="topicOperation.retry().catch(() => undefined)"
-        >
-          重试生成
-        </el-button>
+        <div v-else class="empty-topics"><p>根据当前人设生成5个不同内容角度</p><el-button type="primary" data-action="generate-topics" @click="generateTopics">生成选题</el-button></div>
+        <div class="batch-actions"><el-button :disabled="selectedIds.length!==1" @click="generateCurrent">生成当前文案</el-button><el-button type="primary" data-action="generate-selected-copywriting" :loading="batchRunning" :disabled="!selectedIds.length" @click="generateSelected">生成所选文案（{{ selectedIds.length }}）</el-button></div>
+        <div v-if="batchRunning || progress.completed" class="batch-progress"><div><strong>批量生成进度</strong><span>{{ progress.completed }}/{{ progress.total }}，成功 {{ progress.succeeded }}，失败 {{ progress.failed }}</span></div><el-progress :percentage="progress.total?Math.round(progress.completed/progress.total*100):0" /></div>
+      </template>
+
+      <div v-else class="custom-box"><el-input v-model="customTitle" placeholder="文案标题/选题" /><el-input v-model="customText" type="textarea" :rows="10" maxlength="1000" show-word-limit placeholder="粘贴自己的完整口播文案" /><el-button type="primary" @click="addCustom">加入待检查文案</el-button></div>
+
+      <section class="results"><header><div><strong>待检查文案</strong><span>逐条修改、筛查后收进文案库</span></div><el-tag>{{ reviewProjects.length }} 条</el-tag></header>
+        <article v-for="project in reviewProjects" :key="project.id" class="project-card" :class="{failed:project.status==='failed'}">
+          <div class="project-title"><el-input v-model="project.mainTitle" maxlength="6" /><strong>{{ project.topicTitle }}</strong><el-tag :type="project.status==='failed'?'danger':'warning'">{{ project.status==='failed'?'生成失败':'待检查' }}</el-tag></div>
+          <template v-if="project.status==='failed'"><p class="error">{{ project.errorMessage }}</p><el-button type="primary" @click="retry(project)">重新生成</el-button></template>
+          <template v-else><el-input v-model="project.text" type="textarea" :rows="9" maxlength="1000" show-word-limit />
+            <div v-if="project.complianceIssues.length" class="issues">发现 {{ project.complianceIssues.length }} 处风险词，请人工修改后重新检查。</div>
+            <div class="project-actions"><el-button @click="saveProject(project)">保存修改</el-button><el-button @click="checkProject(project)">AI违禁词检查</el-button><el-button type="primary" @click="collect(project)">收进文案库</el-button></div>
+          </template>
+        </article>
+        <el-empty v-if="!reviewProjects.length" description="还没有待检查文案" />
       </section>
-      <TopicPicker
-        v-if="mode === 'ai' && copywriting"
-        :topics="copywriting.topics"
-        :selected-id="copywriting.selectedTopicId"
-        :loading="loadingTopics"
-        @select="selectTopic"
-        @refresh="generateTopics"
-      />
-      <div
-        v-if="mode === 'ai' && copywriting && !copywriting.topics.length"
-        class="empty-topics"
-      >
-        <p>根据当前人设生成 5 个不同内容角度。</p>
-        <el-button type="primary" :loading="loadingTopics" @click="generateTopics">
-          生成选题
-        </el-button>
-      </div>
-      <div v-if="mode === 'ai'" class="center-action">
-        <el-button
-          data-action="generate-copywriting"
-          type="primary"
-          :loading="generating"
-          :disabled="!copywriting?.selectedTopicId"
-          @click="generateScript"
-        >
-          生成完整文案
-        </el-button>
-      </div>
-
-      <section
-        v-if="scriptOperation.phase.value !== 'idle'"
-        class="operation-feedback"
-        :class="{ failed: scriptOperation.phase.value === 'error' }"
-      >
-        <div>
-          <strong>{{ scriptOperation.error.value?.title || scriptOperation.message.value }}</strong>
-          <p v-if="scriptOperation.error.value">
-            {{ scriptOperation.error.value.detail }} {{ scriptOperation.error.value.action }}
-          </p>
-          <p v-else>正在生成完整口播文案，通常需要 10–60 秒，请不要关闭软件。</p>
-        </div>
-        <el-progress
-          v-if="scriptOperation.phase.value !== 'error'"
-          :percentage="scriptOperation.progress.value"
-          :indeterminate="scriptOperation.busy.value"
-          :duration="2"
-        />
-        <el-button
-          v-else
-          type="primary"
-          @click="scriptOperation.retry().catch(() => undefined)"
-        >
-          重试生成完整文案
-        </el-button>
-      </section>
-
-      <section v-if="copywriting" class="editor-section">
-        <div class="section-title">
-          <div>
-            <h3>文案与编辑</h3>
-            <p>生成结果可继续手动修改，系统会自动保存草稿</p>
-          </div>
-          <span :class="{ invalid: characterCount < 200 || characterCount > 1000 }">
-            {{ characterCount }} / 1000
-          </span>
-        </div>
-        <textarea
-          v-model="copywriting.text"
-          rows="15"
-          maxlength="1000"
-          placeholder="生成文案，或在这里粘贴自己的完整口播稿"
-        />
-        <div class="editor-actions">
-          <span
-            class="save-state"
-            :class="{ failed: draftState.saveStatus.value === 'failed' }"
-          >
-            {{
-              draftState.saveStatus.value === "saving"
-                ? "正在保存草稿…"
-                : draftState.saveStatus.value === "saved"
-                  ? "草稿已保存"
-                  : draftState.saveStatus.value === "failed"
-                    ? `保存失败：${draftState.saveError.value}`
-                    : "修改后自动保存"
-            }}
-          </span>
-          <div>
-            <el-button :loading="checking" @click="checkCompliance">
-              AI 违禁词检查
-            </el-button>
-            <el-button
-              type="primary"
-              :loading="draftState.saving.value"
-              @click="goToAudio"
-            >
-              保存并进入音频制作
-            </el-button>
-          </div>
-        </div>
-      </section>
-
-      <CompliancePanel
-        v-if="copywriting?.complianceIssues.length"
-        :issues="copywriting.complianceIssues"
-        :disclaimer="disclaimer"
-        @apply="applySuggestion"
-      />
     </section>
   </div>
 </template>
 
 <style scoped>
-.creation-card {
-  max-width: 1240px;
-  padding: 26px;
-  display: grid;
-  gap: 22px;
-}
-.creation-toolbar,
-.section-title,
-.editor-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.context-selectors {
-  display: grid;
-  grid-template-columns: 260px 220px;
-  gap: 14px;
-}
-label {
-  display: grid;
-  gap: 7px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-.save-state{font-size:12px;color:var(--text-muted)}.save-state.failed{color:var(--el-color-danger)}
-.mode-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.mode-tabs button {
-  min-height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: #fff;
-}
-.mode-tabs .active {
-  color: var(--brand-yellow);
-  border-color: var(--brand-black);
-  background: var(--brand-black);
-}
-.empty-topics {
-  min-height: 190px;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 12px;
-  border: 1px dashed var(--border);
-  border-radius: 16px;
-  color: var(--text-muted);
-}
-.center-action {
-  display: flex;
-  justify-content: center;
-}
-.operation-feedback {
-  display: grid;
-  gap: 12px;
-  padding: 16px 18px;
-  border: 1px solid #f1d400;
-  border-radius: 14px;
-  background: #fffbe0;
-}
-.operation-feedback.failed {
-  border-color: #f2b8b5;
-  background: #fff4f3;
-}
-.operation-feedback strong,
-.operation-feedback p {
-  margin: 0;
-}
-.operation-feedback p {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-.editor-section {
-  display: grid;
-  gap: 12px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-.section-title h3,
-.section-title p {
-  margin: 0;
-}
-.section-title p {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.section-title span {
-  color: var(--text-muted);
-}
-.section-title .invalid {
-  color: var(--warning);
-}
-textarea {
-  width: 100%;
-  min-height: 320px;
-  padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  resize: vertical;
-  line-height: 1.8;
-}
-@media (max-width: 900px) {
-  .context-selectors {
-    grid-template-columns: 1fr;
-  }
-}
+.workspace{padding:26px;display:grid;gap:22px}.selectors{display:grid;grid-template-columns:260px 220px;gap:16px}.selectors label{display:grid;gap:7px;color:var(--text-muted)}.mode-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mode-tabs button{height:48px;border:1px solid var(--border);border-radius:14px;background:#fff;font-weight:700}.mode-tabs .active{color:var(--brand-yellow);background:var(--brand-black)}.topic-header,.results>header,.project-title,.project-actions,.batch-actions,.batch-progress>div{display:flex;align-items:center;justify-content:space-between;gap:12px}.topic-header span,.results header span{display:block;margin-top:4px;color:var(--text-muted);font-size:13px}.topic-list{display:grid;gap:10px}.topic-list button{display:grid;grid-template-columns:34px 1fr 28px;gap:14px;align-items:center;padding:15px;border:1px solid transparent;border-radius:14px;text-align:left;background:var(--surface-muted)}.topic-list button>span{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#111}.topic-list button small{display:block;margin-top:4px;color:var(--text-muted)}.topic-list button.selected{border-color:var(--brand-yellow);background:#171714;color:#fff}.topic-list button.selected small{color:#ccc}.topic-list button.selected b{color:var(--brand-yellow)}.empty-topics{min-height:180px;display:grid;place-content:center;justify-items:center;border:1px dashed var(--border);border-radius:16px;color:var(--text-muted)}.batch-actions{justify-content:center}.batch-progress{padding:16px;border-radius:14px;background:#fff9c9}.custom-box{display:grid;gap:14px}.results{display:grid;gap:15px;padding-top:20px;border-top:1px solid var(--border)}.project-card{display:grid;gap:13px;padding:18px;border:1px solid var(--border);border-radius:16px;background:#fff}.project-card.failed{border-color:#ffb4ac;background:#fff7f6}.project-title{justify-content:flex-start}.project-title .el-input{width:180px}.project-title strong{flex:1}.project-actions{justify-content:flex-end}.error,.issues{color:#b42318}.issues{padding:10px;border-radius:10px;background:#fff1ef}@media(max-width:850px){.selectors{grid-template-columns:1fr}.project-title{align-items:stretch;flex-direction:column}.project-title .el-input{width:100%}}
 </style>

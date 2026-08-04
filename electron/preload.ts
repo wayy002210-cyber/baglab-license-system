@@ -332,6 +332,26 @@ const complianceRequestSchema = z.object({
   text: z.string().min(1).max(20_000),
   personaBannedWords: z.array(z.string())
 });
+const copywritingStatusSchema = z.enum(["generating", "failed", "review", "library", "shots_ready", "tasked", "archived"]);
+const copywritingProjectSchema = z.object({
+  id: z.string().uuid(), personaId: z.string().min(1), topicId: z.string().nullable(),
+  topicTitle: z.string(), mainTitle: z.string(), text: z.string(), model: z.string(),
+  status: copywritingStatusSchema, complianceIssues: z.array(z.unknown()),
+  errorMessage: z.string().nullable(), createdAt: z.string(), updatedAt: z.string(), archivedAt: z.string().nullable()
+});
+const copywritingProjectInputSchema = copywritingProjectSchema.pick({
+  personaId: true, topicId: true, topicTitle: true, mainTitle: true, text: true, model: true, status: true
+}).extend({ complianceIssues: z.array(z.unknown()).optional(), errorMessage: z.string().nullable().optional() });
+const copywritingProjectPatchSchema = copywritingProjectSchema.pick({
+  text: true, mainTitle: true, status: true, complianceIssues: true, errorMessage: true
+}).partial();
+const copywritingShotSchema = z.object({
+  id: z.string().uuid(), projectId: z.string().uuid(), index: z.number().int().nonnegative(),
+  copywriting: z.string().min(1), suggestedCategoryId: z.string().nullable(), assetCategoryId: z.string().nullable(),
+  suggestionSource: z.enum(["ai", "keyword", "default", "manual"]), suggestionConfirmed: z.boolean(),
+  durationMode: z.enum(["voice", "fixed", "auto"]), durationSec: z.number().positive().nullable(), muteOriginal: z.boolean()
+});
+const replaceShotSchema = copywritingShotSchema.omit({ id: true, projectId: true, index: true });
 
 contextBridge.exposeInMainWorld("autocut", {
   backendStatus: async () =>
@@ -519,6 +539,24 @@ contextBridge.exposeInMainWorld("autocut", {
           generateCopywritingRequestSchema.parse(input)
         )
       ),
+  listCopywritingProjects: async (statuses?: unknown) => z.array(copywritingProjectSchema).parse(
+    await ipcRenderer.invoke("copywritingProjects:list", z.array(copywritingStatusSchema).optional().parse(statuses))
+  ),
+  createCopywritingProject: async (input: unknown) => copywritingProjectSchema.parse(
+    await ipcRenderer.invoke("copywritingProjects:create", copywritingProjectInputSchema.parse(input))
+  ),
+  updateCopywritingProject: async (id: unknown, patch: unknown) => copywritingProjectSchema.parse(
+    await ipcRenderer.invoke("copywritingProjects:update", z.string().uuid().parse(id), copywritingProjectPatchSchema.parse(patch))
+  ),
+  collectCopywritingProject: async (id: unknown) => copywritingProjectSchema.parse(
+    await ipcRenderer.invoke("copywritingProjects:collect", z.string().uuid().parse(id))
+  ),
+  listCopywritingShots: async (id: unknown) => z.array(copywritingShotSchema).parse(
+    await ipcRenderer.invoke("copywritingProjects:shots", z.string().uuid().parse(id))
+  ),
+  replaceCopywritingShots: async (id: unknown, shots: unknown) => z.array(copywritingShotSchema).parse(
+    await ipcRenderer.invoke("copywritingProjects:replaceShots", z.string().uuid().parse(id), z.array(replaceShotSchema).parse(shots))
+  ),
   checkCopywritingCompliance: async (input: unknown) =>
     z
       .object({

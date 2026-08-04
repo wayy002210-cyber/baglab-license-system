@@ -70,6 +70,12 @@ import {
 import type { CopyModelSettings } from "./repositories/settings-repository.js";
 import { buildDraftTaskSnapshot } from "./services/task-snapshot-service.js";
 import { scanSystemFonts } from "./services/system-font-service.js";
+import {
+  CopywritingProjectRepository,
+  type CopywritingStatus,
+  type CreateCopywritingProjectInput,
+  type ReplaceShotInput
+} from "./repositories/copywriting-project-repository.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -129,6 +135,10 @@ function creationDraftRepository(): CreationDraftRepository {
 function referenceScriptRepository(): ReferenceScriptRepository {
   if (!database) throw new Error("Database is not ready");
   return new ReferenceScriptRepository(database);
+}
+function copywritingProjectRepository(): CopywritingProjectRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new CopywritingProjectRepository(database);
 }
 
 async function runGenerationTask(task: GenerationTask): Promise<void> {
@@ -692,6 +702,24 @@ ipcMain.handle("assets:selectAndScan", async () => {
   });
 });
 ipcMain.handle("templates:list", () => templateRepository().list());
+ipcMain.handle("copywritingProjects:list", (_event, statuses?: CopywritingStatus[]) =>
+  copywritingProjectRepository().list(statuses)
+);
+ipcMain.handle("copywritingProjects:create", (_event, input: CreateCopywritingProjectInput) =>
+  copywritingProjectRepository().create(input)
+);
+ipcMain.handle("copywritingProjects:update", (_event, id: string, patch: Parameters<CopywritingProjectRepository["update"]>[1]) =>
+  copywritingProjectRepository().update(id, patch)
+);
+ipcMain.handle("copywritingProjects:collect", (_event, id: string) =>
+  copywritingProjectRepository().collect(id)
+);
+ipcMain.handle("copywritingProjects:shots", (_event, id: string) =>
+  copywritingProjectRepository().listShots(id)
+);
+ipcMain.handle("copywritingProjects:replaceShots", (_event, id: string, shots: ReplaceShotInput[]) =>
+  copywritingProjectRepository().replaceShots(id, shots)
+);
 ipcMain.handle("templates:create", (_event, input: TemplateInput) =>
   templateRepository().create(input)
 );

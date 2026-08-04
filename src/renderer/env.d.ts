@@ -5,6 +5,9 @@ type Persona = PersonaInput & {
   createdAt: string;
   updatedAt: string;
 };
+type CopywritingStatus = "generating" | "failed" | "review" | "library" | "shots_ready" | "tasked" | "archived";
+type CopywritingProject = { id:string; personaId:string; topicId:string|null; topicTitle:string; mainTitle:string; text:string; model:string; status:CopywritingStatus; complianceIssues:ComplianceIssue[]; errorMessage:string|null; createdAt:string; updatedAt:string; archivedAt:string|null };
+type CopywritingShot = { id:string; projectId:string; index:number; copywriting:string; suggestedCategoryId:string|null; assetCategoryId:string|null; suggestionSource:"ai"|"keyword"|"default"|"manual"; suggestionConfirmed:boolean; durationMode:"voice"|"fixed"|"auto"; durationSec:number|null; muteOriginal:boolean };
 
 declare global {
   interface Window {
@@ -135,6 +138,12 @@ declare global {
           maxLength: number;
         }
       ): Promise<{ text: string }>;
+      listCopywritingProjects(statuses?: CopywritingStatus[]): Promise<CopywritingProject[]>;
+      createCopywritingProject(input: Omit<CopywritingProject,"id"|"createdAt"|"updatedAt"|"archivedAt"|"complianceIssues"|"errorMessage"> & {complianceIssues?:ComplianceIssue[];errorMessage?:string|null}): Promise<CopywritingProject>;
+      updateCopywritingProject(id:string,patch:Partial<Pick<CopywritingProject,"text"|"mainTitle"|"status"|"complianceIssues"|"errorMessage">>):Promise<CopywritingProject>;
+      collectCopywritingProject(id:string):Promise<CopywritingProject>;
+      listCopywritingShots(id:string):Promise<CopywritingShot[]>;
+      replaceCopywritingShots(id:string,shots:Array<Omit<CopywritingShot,"id"|"projectId"|"index">>):Promise<CopywritingShot[]>;
       checkCopywritingCompliance(input: {
         text: string;
         personaBannedWords: string[];
