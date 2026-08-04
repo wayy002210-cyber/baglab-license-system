@@ -235,6 +235,14 @@ export class TaskRepository {
     return result.changes;
   }
 
+  recoverQueueState(): QueueState {
+    const current = this.getQueueState();
+    const status: QueueStatus = current.status === "paused" || current.status === "pause_requested"
+      ? "paused"
+      : "idle";
+    return this.saveQueueState(status, null);
+  }
+
   delete(id: string): boolean {
     const task = this.require(id);
     if (!TERMINAL_STATUSES.includes(task.status)) {
