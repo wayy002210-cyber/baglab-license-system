@@ -125,9 +125,6 @@ onBeforeUnmount(stopPreview);
         <label>音调 {{ settings.pitch }}
           <el-slider v-model="settings.pitch" :min="-12" :max="12" :step="1" />
         </label>
-        <label>人声音量 {{ settings.volume.toFixed(1) }}
-          <el-slider v-model="settings.volume" :min="0" :max="3" :step="0.1" />
-        </label>
       </div>
       <p class="pipeline-note">任务中心流水线：生成逐镜头配音 → 选择素材 → 编排镜头 → 编码成片</p>
     </section>

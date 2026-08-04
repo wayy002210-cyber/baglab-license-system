@@ -1,4 +1,4 @@
-export type BatchTopic = { id: string; title: string; angle: string; hook: string };
+export type BatchTopic = { id: string; shortTitle: string; description: string; hook: string };
 export type BatchProgress = { total: number; completed: number; succeeded: number; failed: number; currentTopicId: string | null };
 
 export async function generateCopywritingBatch(input: {

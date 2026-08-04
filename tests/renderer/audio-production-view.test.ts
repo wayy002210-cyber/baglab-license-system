@@ -3,6 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import AudioProductionView from "../../src/renderer/views/AudioProductionView.vue";
 
 describe("AudioProductionView", () => {
+  it("keeps voice volume in editing instead of duplicating it here", async () => {
+    Object.assign(window, { autocut: {
+      listVoices: vi.fn(async () => []), getVoiceSettings: vi.fn(async () => ({ voiceId:"male-qn-qingse",source:"system",model:"speech-2.8-hd",emotion:null,speed:1,volume:1,pitch:0,languageBoost:"Chinese" })),
+      getVoiceCapabilities: vi.fn(async () => ({ available:false, message:"" }))
+    } });
+    const wrapper = mount(AudioProductionView, { global: { stubs: { "el-button":true, "el-input":true, "el-select":true, "el-option":true, "el-slider":true } } });
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("人声音量");
+  });
   it("only saves global voice settings and never generates narration", async () => {
     const saveVoiceSettings = vi.fn(async (settings) => settings);
     const synthesizeVoice = vi.fn();

@@ -322,8 +322,8 @@ const contentContextSchema = z.object({
 });
 const topicSchema = z.object({
   id: z.string().min(1),
-  title: z.string().min(1),
-  angle: z.string().min(1),
+  shortTitle: z.string().regex(/^[\u3400-\u9fff]{5,8}$/),
+  description: z.string().min(10).max(160),
   hook: z.string().min(1)
 });
 const topicRequestSchema = contentContextSchema;
@@ -563,6 +563,9 @@ contextBridge.exposeInMainWorld("autocut", {
   ),
   collectCopywritingProject: async (id: unknown) => copywritingProjectSchema.parse(
     await ipcRenderer.invoke("copywritingProjects:collect", z.string().uuid().parse(id))
+  ),
+  cloneArchivedCopywritingProject: async (id: unknown) => copywritingProjectSchema.parse(
+    await ipcRenderer.invoke("copywritingProjects:cloneArchived", z.string().uuid().parse(id))
   ),
   listCopywritingShots: async (id: unknown) => z.array(copywritingShotSchema).parse(
     await ipcRenderer.invoke("copywritingProjects:shots", z.string().uuid().parse(id))

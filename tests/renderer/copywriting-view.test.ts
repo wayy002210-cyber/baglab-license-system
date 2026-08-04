@@ -23,9 +23,9 @@ describe("CopywritingView", () => {
       listPersonas: vi.fn(async () => [persona]), getCopyModelSettings: vi.fn(async () => ({ defaultModel: "deepseek-v3", temperature: 0.7, candidateModels: ["deepseek-v3"] })),
       searchReferenceScripts: vi.fn(async () => []), listCopywritingProjects: vi.fn(async () => []),
       generateTopics: vi.fn(async () => ({ topics: [
-        { id: "a", title: "选题A", angle: "角度A", hook: "钩子A" }, { id: "b", title: "选题B", angle: "角度B", hook: "钩子B" },
-        { id: "c", title: "选题C", angle: "角度C", hook: "钩子C" }, { id: "d", title: "选题D", angle: "角度D", hook: "钩子D" },
-        { id: "e", title: "选题E", angle: "角度E", hook: "钩子E" }
+        { id: "a", shortTitle: "工厂选题一号", description: "这是第一个详细内容方向说明", hook: "钩子A" }, { id: "b", shortTitle: "工厂选题二号", description: "这是第二个详细内容方向说明", hook: "钩子B" },
+        { id: "c", shortTitle: "工厂选题三号", description: "这是第三个详细内容方向说明", hook: "钩子C" }, { id: "d", shortTitle: "工厂选题四号", description: "这是第四个详细内容方向说明", hook: "钩子D" },
+        { id: "e", shortTitle: "工厂选题五号", description: "这是第五个详细内容方向说明", hook: "钩子E" }
       ] })), generateCopywriting: vi.fn(async (input) => ({ text: `${input.topic}完整文案`.repeat(30) })), createCopywritingProject: create
     } });
     const wrapper = mountView(); await flushPromises();
@@ -36,6 +36,7 @@ describe("CopywritingView", () => {
     await wrapper.get('[data-action="generate-selected-copywriting"]').trigger("click"); await flushPromises();
 
     expect(create).toHaveBeenCalledTimes(2);
-    expect(create.mock.calls.map(([input]) => input.topicTitle)).toEqual(["选题A", "选题B"]);
+    expect(create.mock.calls.map(([input]) => input.mainTitle)).toEqual(["工厂选题一号", "工厂选题二号"]);
+    expect(wrapper.find('[data-action="select-all-topics"]').exists()).toBe(true);
   });
 });

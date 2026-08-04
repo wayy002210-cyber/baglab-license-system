@@ -74,7 +74,7 @@ describe("useCreationDraft", () => {
       model: "deepseek-v3",
       temperature: 0.7,
       topics: [
-        { id: "a", title: "选题", angle: "角度", hook: "钩子" }
+        { id: "a", shortTitle: "工厂选题一号", description: "这是详细内容方向说明", hook: "钩子" }
       ],
       selectedTopicId: null,
       text: "",

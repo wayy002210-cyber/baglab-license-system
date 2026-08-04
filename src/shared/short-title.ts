@@ -4,10 +4,26 @@ const STOP_PHRASES = [
 ];
 
 export function deriveShortTitle(topic: string): string {
-  let chinese = (topic.match(/[\u3400-\u9fff]/g) ?? []).join("");
+  let chinese = normalizeShortTitle(topic);
   for (const phrase of STOP_PHRASES) {
     chinese = chinese.replaceAll(phrase, "");
   }
   if (chinese.length < 5) return "袋研官做定制";
-  return chinese.slice(0, 6);
+  return chinese.slice(0, 8);
+}
+
+export function normalizeShortTitle(value: string): string {
+  return (value.match(/[\u3400-\u9fff]/g) ?? []).join("");
+}
+
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+export function toSafeOutputStem(value: string): string {
+  const cleaned = value
+    .normalize("NFKC")
+    .replace(/[<>:"/\\|?*“”‘’：，。！？、]/g, "")
+    .replace(/[\u0000-\u001f]/g, "")
+    .trim()
+    .replace(/[. ]+$/g, "") || "未命名视频";
+  return WINDOWS_RESERVED.test(cleaned) ? `视频${cleaned}` : cleaned;
 }

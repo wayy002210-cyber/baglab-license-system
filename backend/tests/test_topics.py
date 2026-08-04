@@ -20,11 +20,11 @@ def test_topics_returns_five_unique_candidates() -> None:
     chat = FixtureChat(
         [
             """{"topics":[
-              {"id":"a","title":"工厂宣传片为什么没人看","angle":"客户损失","hook":"别再只拍设备"},
-              {"id":"b","title":"一条视频讲清工厂实力","angle":"信任","hook":"客户先看这三点"},
-              {"id":"c","title":"宣传成本浪费在哪里","angle":"成本","hook":"贵的不一定有效"},
-              {"id":"d","title":"素材如何重复产生价值","angle":"复用","hook":"一次拍摄多次使用"},
-              {"id":"e","title":"门店口播如何留住客户","angle":"转化","hook":"开场三秒别说欢迎"}
+              {"id":"a","shortTitle":"工厂宣传真相","description":"从客户损失解释只拍设备为什么无效","hook":"别再只拍设备"},
+              {"id":"b","shortTitle":"工厂实力三点","description":"用三个可验证角度建立客户信任","hook":"客户先看这三点"},
+              {"id":"c","shortTitle":"宣传浪费在哪","description":"解释宣传成本被无效内容浪费的原因","hook":"贵的不一定有效"},
+              {"id":"d","shortTitle":"素材重复生钱","description":"说明一次拍摄如何拆成多条内容复用","hook":"一次拍摄多次使用"},
+              {"id":"e","shortTitle":"门店口播留客","description":"讲清开场三秒如何提升门店转化","hook":"开场三秒别说欢迎"}
             ]}"""
         ]
     )
@@ -44,7 +44,7 @@ def test_topics_returns_five_unique_candidates() -> None:
     )
 
     assert len(result.topics) == 5
-    assert len({topic.title for topic in result.topics}) == 5
+    assert len({topic.short_title for topic in result.topics}) == 5
     assert chat.calls[0][0] == "deepseek-v3"
 
 
@@ -52,12 +52,12 @@ def test_topics_normalizes_provider_extras_without_retrying() -> None:
     chat = FixtureChat(
         [
             """{"topics":[
-              {"id":"a","title":" 选题一 ","angle":"角度一","hook":"钩子一"},
-              {"id":"b","title":"选题二","angle":"角度二","hook":"钩子二"},
-              {"id":"c","title":"选题三","angle":"角度三","hook":"钩子三"},
-              {"id":"d","title":"选题四","angle":"角度四","hook":"钩子四"},
-              {"id":"e","title":"选题五","angle":"角度五","hook":"钩子五"},
-              {"id":"f","title":"多余选题","angle":"多余角度","hook":"多余钩子"}
+              {"id":"a","shortTitle":" 工厂选题一号 ","description":"第一个内容方向的详细解释","hook":"钩子一"},
+              {"id":"b","shortTitle":"工厂选题二号","description":"第二个内容方向的详细解释","hook":"钩子二"},
+              {"id":"c","shortTitle":"工厂选题三号","description":"第三个内容方向的详细解释","hook":"钩子三"},
+              {"id":"d","shortTitle":"工厂选题四号","description":"第四个内容方向的详细解释","hook":"钩子四"},
+              {"id":"e","shortTitle":"工厂选题五号","description":"第五个内容方向的详细解释","hook":"钩子五"},
+              {"id":"f","shortTitle":"工厂多余选题","description":"这是多余内容方向的详细解释","hook":"钩子六"}
             ]}"""
         ]
     )
@@ -71,14 +71,28 @@ def test_topics_normalizes_provider_extras_without_retrying() -> None:
         ),
     )
 
-    assert [topic.title for topic in result.topics] == [
-        "选题一",
-        "选题二",
-        "选题三",
-        "选题四",
-        "选题五",
+    assert [topic.short_title for topic in result.topics] == [
+        "工厂选题一号",
+        "工厂选题二号",
+        "工厂选题三号",
+        "工厂选题四号",
+        "工厂选题五号",
     ]
     assert len(chat.calls) == 1
+
+
+def test_generate_copywriting_removes_stage_directions() -> None:
+    text = "（叉腰叹气）同行价格越来越低。【停顿】但质量不能降。" + ("好" * 210)
+    service = TopicService(FixtureChat([f'{{"text":"{text}"}}']))
+    result = service.generate_copywriting(
+        api_key="secret",
+        request=CopywritingGenerationRequest(
+            model="deepseek-v3", personaName="袋研官", topic="同行低价真相",
+            minLength=200, maxLength=1000,
+        ),
+    )
+    assert "叉腰" not in result.text
+    assert "停顿" not in result.text
 
 
 def test_generate_copywriting_enforces_requested_length() -> None:

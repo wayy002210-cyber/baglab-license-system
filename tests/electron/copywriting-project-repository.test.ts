@@ -54,4 +54,16 @@ describe("CopywritingProjectRepository", () => {
     expect(archived.some((item) => item.topicTitle === "选题0")).toBe(false);
     database.close();
   });
+
+  it("clones an archived project without mutating its history", () => {
+    const database = databaseWithPersona();
+    const repository = new CopywritingProjectRepository(database);
+    const original = repository.create({ personaId: "p1", topicId: "t1", topicTitle: "低价竞争", mainTitle: "同行低价真相", text: "原始口播文案", model: "deepseek-v3", status: "library" });
+    repository.archive(original.id);
+    const clone = repository.cloneArchived(original.id);
+    expect(clone.id).not.toBe(original.id);
+    expect(clone.status).toBe("library");
+    expect(repository.require(original.id).status).toBe("archived");
+    database.close();
+  });
 });

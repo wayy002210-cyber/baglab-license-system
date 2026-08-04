@@ -19,14 +19,14 @@ const draftCopywritingSchema = z
       z
         .object({
           id: z.string().min(1),
-          title: z.string().min(1),
-          angle: z.string(),
+          shortTitle: z.string().regex(/^[\u3400-\u9fff]{5,8}$/),
+          description: z.string().min(10).max(160),
           hook: z.string()
         })
         .strict()
     ),
     selectedTopicId: z.string().min(1).nullable(),
-    mainTitle: z.string().min(5).max(6).optional(),
+    mainTitle: z.string().min(5).max(8).optional(),
     text: z.string(),
     complianceIssues: z.array(complianceIssueSchema)
   })

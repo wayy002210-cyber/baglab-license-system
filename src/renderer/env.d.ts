@@ -143,6 +143,7 @@ declare global {
       createCopywritingProject(input: Omit<CopywritingProject,"id"|"createdAt"|"updatedAt"|"archivedAt"|"complianceIssues"|"errorMessage"> & {complianceIssues?:ComplianceIssue[];errorMessage?:string|null}): Promise<CopywritingProject>;
       updateCopywritingProject(id:string,patch:Partial<Pick<CopywritingProject,"text"|"mainTitle"|"status"|"complianceIssues"|"errorMessage">>):Promise<CopywritingProject>;
       collectCopywritingProject(id:string):Promise<CopywritingProject>;
+      cloneArchivedCopywritingProject(id:string):Promise<CopywritingProject>;
       listCopywritingShots(id:string):Promise<CopywritingShot[]>;
       replaceCopywritingShots(id:string,shots:Array<Omit<CopywritingShot,"id"|"projectId"|"index">>):Promise<CopywritingShot[]>;
       createTasksFromCopywriting(input:{projectIds:string[];seed:number}):Promise<GenerationTask[]>;
@@ -419,8 +420,8 @@ type CopywritingContext = {
 };
 type CopywritingTopic = {
   id: string;
-  title: string;
-  angle: string;
+  shortTitle: string;
+  description: string;
   hook: string;
 };
 type ComplianceIssue = {

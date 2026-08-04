@@ -130,8 +130,8 @@ def test_content_creation_endpoints_use_selected_bailian_model() -> None:
                 topics=[
                     {
                         "id": str(index),
-                        "title": f"选题{index}",
-                        "angle": f"角度{index}",
+                        "shortTitle": f"工厂选题{'一二三四五'[index]}号",
+                        "description": f"这是第{index}个选题的详细内容方向说明",
                         "hook": f"钩子{index}",
                     }
                     for index in range(5)

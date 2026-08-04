@@ -86,6 +86,22 @@ export class CopywritingProjectRepository {
 
   collect(id: string): CopywritingProject { return this.update(id, { status: "library", errorMessage: null }); }
 
+  cloneArchived(id: string): CopywritingProject {
+    const source = this.require(id);
+    if (source.status !== "archived") throw new Error("只有归档文案可以创建新版本");
+    return this.create({
+      personaId: source.personaId,
+      topicId: source.topicId,
+      topicTitle: source.topicTitle,
+      mainTitle: source.mainTitle,
+      text: source.text,
+      model: source.model,
+      status: "library",
+      complianceIssues: source.complianceIssues,
+      errorMessage: null
+    });
+  }
+
   replaceShots(projectId: string, shots: ReplaceShotInput[]): CopywritingShot[] {
     this.require(projectId);
     const transaction = this.database.transaction(() => {

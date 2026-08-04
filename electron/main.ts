@@ -724,6 +724,9 @@ ipcMain.handle("copywritingProjects:update", (_event, id: string, patch: Paramet
 ipcMain.handle("copywritingProjects:collect", (_event, id: string) =>
   copywritingProjectRepository().collect(id)
 );
+ipcMain.handle("copywritingProjects:cloneArchived", (_event, id: string) =>
+  copywritingProjectRepository().cloneArchived(id)
+);
 ipcMain.handle("copywritingProjects:shots", (_event, id: string) =>
   copywritingProjectRepository().listShots(id)
 );
