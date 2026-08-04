@@ -116,7 +116,8 @@ def test_generate_copywriting_enforces_requested_length() -> None:
         ),
     )
 
-    assert len(result.text) == 220
+    assert len(result.text.replace("\n", "")) == 220
+    assert all(len(line) <= 20 for line in result.text.splitlines())
 
 
 def test_generate_copywriting_repairs_banned_words_before_returning() -> None:
@@ -143,7 +144,7 @@ def test_generate_copywriting_repairs_banned_words_before_returning() -> None:
     )
 
     assert "第一" not in result.text
-    assert result.text == repaired
+    assert result.text.replace("\n", "") == repaired
     assert len(chat.calls) == 2
 
 
@@ -164,5 +165,5 @@ def test_generate_copywriting_does_not_discard_draft_when_banned_word_repairs_fa
         ),
     )
 
-    assert result.text == draft
+    assert result.text.replace("\n", "") == draft
     assert len(chat.calls) == 3

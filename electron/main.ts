@@ -1305,6 +1305,18 @@ app.whenReady().then(async () => {
   protocol.handle("autocut-media", (request) => {
     const url = new URL(request.url);
     const resourceId = url.pathname.split("/").filter(Boolean).at(-1);
+    if (url.hostname === "font") {
+      const requestedPath = url.searchParams.get("path");
+      const font = requestedPath
+        ? scanSystemFonts().find(
+            (item) => item.path.toLocaleLowerCase("en-US") === requestedPath.toLocaleLowerCase("en-US")
+          )
+        : null;
+      if (!font || !existsSync(font.path)) {
+        return new Response("Not found", { status: 404 });
+      }
+      return net.fetch(pathToFileURL(font.path).toString());
+    }
     if (url.hostname === "asset" && resourceId) {
       const asset = assetRepository().getAsset(resourceId);
       if (!asset?.thumbnailPath || !existsSync(asset.thumbnailPath)) {

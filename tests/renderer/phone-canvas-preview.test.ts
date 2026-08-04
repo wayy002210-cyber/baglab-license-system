@@ -15,4 +15,22 @@ describe("PhoneCanvasPreview", () => {
     expect(wrapper.attributes("style")).toContain("subtitle-preview-background");
     expect(wrapper.find(".subtitle").text()).toContain("\n");
   });
+
+  it("converts ASS alpha-first shadow colors to visible CSS colors", () => {
+    const wrapper = mount(PhoneCanvasPreview, {
+      props: {
+        subtitleStyle: {
+          ...defaultSubtitleStyle,
+          shadowColor: "#80000000",
+          shadowX: 10,
+          shadowY: 13,
+          shadowBlur: 11
+        },
+        titleStyle: defaultTitleStyle
+      }
+    });
+
+    expect(wrapper.find(".subtitle").attributes("style")).toContain("#00000080");
+    expect(wrapper.find(".subtitle").attributes("style")).not.toContain("#80000000");
+  });
 });

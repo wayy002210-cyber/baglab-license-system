@@ -1,5 +1,7 @@
 import pytest
 
+from app.copywriting.spoken_copy import clean_spoken_copy
+
 from app.copywriting.service import (
     CopywritingService,
     RewriteRequest,
@@ -66,3 +68,18 @@ def test_rewrite_repairs_invalid_json_at_most_twice() -> None:
 
     assert len(chat.prompts) == 3
     assert "上一次输出无法通过校验" in chat.prompts[1]
+
+
+def test_spoken_copy_is_formatted_as_short_newline_separated_lines() -> None:
+    source = (
+        "你知道一个袋子为什么能带来多少品牌曝光吗？"
+        "别小看这个小小的帆布袋，它可是品牌传播的流动广告位。"
+        "每一个细节都关系到客户愿不愿意长期使用。"
+    )
+
+    result = clean_spoken_copy(source)
+    lines = result.splitlines()
+
+    assert len(lines) >= 4
+    assert all(line.strip() for line in lines)
+    assert all(len(line.rstrip("，。！？；：")) <= 20 for line in lines)

@@ -23,8 +23,10 @@ const subtitleStyle=computed<TextStyle>({get:()=>draft.draft.value.subtitleStyle
 const titleStyle=computed<TextStyle>({get:()=>draft.draft.value.titleStyle??defaultTitleStyle,set:v=>draft.draft.value.titleStyle=v});
 
 async function load(){
-  const [loadedProjects,loadedCategories]=await Promise.all([window.autocut.listCopywritingProjects(["library","shots_ready","archived"]),window.autocut.listAssetCategories(),draft.load()]);
-  projects.value=loadedProjects;categories.value=loadedCategories;
+  const loadedProjects=await window.autocut.listCopywritingProjects(["library","shots_ready","archived"]);
+  projects.value=loadedProjects;
+  try{categories.value=await window.autocut.listAssetCategories()}catch(e){ElMessage.warning(`素材分类读取失败：${e instanceof Error?e.message:"未知错误"}`)}
+  try{await draft.load()}catch(e){ElMessage.warning(`媒体设置读取失败，文案库仍可使用：${e instanceof Error?e.message:"未知错误"}`)}
   const first=loadedProjects.find(p=>p.status==="library")??loadedProjects[0];
   if(first)await selectProject(first);
 }

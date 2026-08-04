@@ -23,16 +23,19 @@ const previewSubtitle = computed(() => wrapSubtitlePreview(
 ).join("\n"));
 
 function css(style: TextStyle) {
+  const cssColor = (value: string) => /^#[0-9a-f]{8}$/i.test(value)
+    ? `#${value.slice(3)}${value.slice(1, 3)}`
+    : value;
   const outline = Math.max(0, style.outlineWidth / 3);
   const edges = outline > 0
     ? [[-1,0],[1,0],[0,-1],[0,1],[-.7,-.7],[.7,-.7],[-.7,.7],[.7,.7]]
-      .map(([x,y]) => `${x! * outline}px ${y! * outline}px 0 ${style.outlineColor}`)
+      .map(([x,y]) => `${x! * outline}px ${y! * outline}px 0 ${cssColor(style.outlineColor)}`)
     : [];
   const shadow = style.shadowX || style.shadowY
-    ? [`${style.shadowX / 3}px ${style.shadowY / 3}px ${style.shadowBlur / 3}px ${style.shadowColor}`]
+    ? [`${style.shadowX / 3}px ${style.shadowY / 3}px ${style.shadowBlur / 3}px ${cssColor(style.shadowColor)}`]
     : [];
   return {
-    color: style.primaryColor,
+    color: cssColor(style.primaryColor),
     fontFamily: style.fontFamily,
     fontSize: `${Math.max(13, style.fontSize / 4.25)}px`,
     fontWeight: style.bold ? "800" : "400",

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseRegistryFontPaths, scanSystemFonts } from "../../electron/services/system-font-service";
+import { parseRegistryFontEntries, parseRegistryFontPaths, scanSystemFonts } from "../../electron/services/system-font-service";
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
@@ -20,6 +20,13 @@ describe("parseRegistryFontPaths", () => {
       "C:\\Windows\\Fonts\\TestFont.ttf",
       "D:\\Fonts\\External.otf",
       "C:\\Windows\\Fonts\\Legacy.fon"
+    ]);
+  });
+
+  it("keeps the installed Windows family name instead of guessing it from the file name", () => {
+    const output = "    郑庆科黄油体 Regular20170516 (TrueType)    REG_SZ    zqkhy.ttf";
+    expect(parseRegistryFontEntries(output, "C:\\Windows")).toEqual([
+      { family: "郑庆科黄油体 Regular20170516", path: "C:\\Windows\\Fonts\\zqkhy.ttf" }
     ]);
   });
 });
