@@ -22,7 +22,7 @@ from app.timeline.exporter import (
     TextStyle,
 )
 from app.tasks.worker import GenerationWorker, TaskExecutionRequest
-from app.voice.service import SynthesisRequest
+from app.voice.service import SynthesisRequest, voice_error_message
 
 
 class AudioDurationProbe:
@@ -67,7 +67,7 @@ class GenerationPipeline:
         self.exporter = exporter
         self.bailian_key = bailian_key
         self.minimax_key = minimax_key
-        self.tts_limit = tts_semaphore or asyncio.Semaphore(3)
+        self.tts_limit = tts_semaphore or asyncio.Semaphore(1)
         self.cancel_events: dict[str, threading.Event] = {}
         self.worker = GenerationWorker(
             stages={
@@ -182,7 +182,7 @@ class GenerationPipeline:
                     )
                 except Exception as error:
                     raise RuntimeError(
-                        f"第 {index + 1} 个镜头配音生成失败：{error}"
+                        f"第 {index + 1} 个镜头配音生成失败：{voice_error_message(error)}"
                     ) from error
             return Path(result.audio_path), float(result.duration_sec)
 

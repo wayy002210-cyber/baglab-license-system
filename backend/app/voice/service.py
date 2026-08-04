@@ -14,6 +14,28 @@ class MiniMaxRateLimitError(RuntimeError):
     """Raised when MiniMax asks the client to retry later."""
 
 
+def voice_error_message(error: Exception) -> str:
+    """Convert provider failures into an actionable Chinese message."""
+    status_code = getattr(error, "status_code", None)
+    message = str(error).strip()
+    normalized = message.lower()
+    if status_code == 1008 or any(
+        word in normalized for word in ("insufficient balance", "余额不足", "欠费")
+    ):
+        return "MiniMax 余额不足，请充值后重新生成"
+    if status_code in (401, 403, 1004) or any(
+        word in normalized for word in ("invalid api key", "unauthorized")
+    ):
+        return "MiniMax API Key 无效或当前音色/模型没有权限，请到系统设置检查"
+    if isinstance(error, MiniMaxRateLimitError) or "rate limit" in normalized or "rpm" in normalized:
+        return "MiniMax 每分钟请求次数已达上限，系统重试后仍未恢复；请稍后再试或提升 MiniMax RPM 配额"
+    if "timeout" in normalized or "timed out" in normalized:
+        return "连接 MiniMax 超时，请检查网络后重试"
+    if "voice" in normalized and any(word in normalized for word in ("not found", "invalid")):
+        return "MiniMax 音色不存在或已失效，请在音频设置中重新选择音色"
+    return f"MiniMax 配音生成失败：{message or '未知错误'}"
+
+
 class SynthesisRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -57,7 +79,7 @@ class VoiceService:
         *,
         cache_dir: Path,
         sleep: Callable[[float], None] = time.sleep,
-        max_attempts: int = 3,
+        max_attempts: int = 5,
         duration_probe: Callable[[Path], float] | None = None,
     ) -> None:
         self.client = client
@@ -117,7 +139,7 @@ class VoiceService:
             except MiniMaxRateLimitError:
                 if attempt + 1 >= self.max_attempts:
                     raise
-                self.sleep(float(2**attempt))
+                self.sleep(float(5 * 2**attempt))
         raise RuntimeError("MiniMax synthesis failed")
 
     @staticmethod

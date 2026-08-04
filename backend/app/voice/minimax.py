@@ -128,9 +128,13 @@ class MiniMaxTTS:
             return
         status_code = base_response.get("status_code", 0)
         if status_code not in (0, None):
+            message = str(base_response.get("status_msg") or f"MiniMax 错误 {status_code}")
+            normalized = message.lower()
+            if "rate limit" in normalized or "rpm" in normalized:
+                raise MiniMaxRateLimitError(message)
             raise MiniMaxAPIError(
                 int(status_code),
-                str(base_response.get("status_msg") or f"MiniMax 错误 {status_code}"),
+                message,
             )
 
 

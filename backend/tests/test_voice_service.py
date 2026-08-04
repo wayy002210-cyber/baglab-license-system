@@ -60,7 +60,7 @@ def test_synthesis_retries_rate_limits_with_exponential_backoff(
     )
 
     assert Path(result.audio_path).exists()
-    assert sleeps == [1.0, 2.0]
+    assert sleeps == [5.0, 10.0]
     assert len(client.calls) == 3
 
 
