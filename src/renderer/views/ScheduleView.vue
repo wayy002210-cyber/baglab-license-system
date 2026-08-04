@@ -20,9 +20,15 @@ async function load() {
 }
 function openCreate() {
   form.taskId = tasks.value.find(t => t.status === "completed")?.id ?? "";
-  form.accountId = accounts.value[0]?.id ?? ""; form.title = ""; form.topics = "";
+  form.accountId = accounts.value[0]?.id ?? "";
+  form.title = taskName(tasks.value.find(t => t.id === form.taskId) ?? tasks.value[0]);
+  form.topics = "";
   form.scheduledAt = new Date(Date.now() + 20 * 60 * 1000);
   dialogOpen.value = true;
+}
+function syncTaskTitle(taskId: string) {
+  const task = tasks.value.find(item => item.id === taskId);
+  if (task) form.title = taskName(task);
 }
 async function create() {
   await window.autocut.createPublishJob({
@@ -38,7 +44,9 @@ async function cancel(job: Job) {
     await load();
     ElMessage.success("发布任务已取消");
   } catch (error) {
-    ElMessage.error(toUserMessage(error, "发布任务取消失败"));
+    const message = toUserMessage(error, "发布任务取消失败");
+    ElMessage.error(message.includes("平台") ? message : `发布任务取消失败：${message}`);
+    await load();
   }
 }
 async function remove(job: Job) {
@@ -51,7 +59,8 @@ async function remove(job: Job) {
   }
 }
 const accountName = (id:string) => accounts.value.find(a => a.id === id)?.name ?? "已删除账号";
-const taskName = (task: Task) => String(
+const taskName = (task: Task | undefined) => String(
+  !task ? "" :
   (task.snapshot.copywriting as { mainTitle?: string } | undefined)?.mainTitle || task.id
 );
 onMounted(load);
@@ -86,7 +95,7 @@ onMounted(load);
     </section>
     <el-dialog v-model="dialogOpen" title="新建发布排期" width="520px">
       <el-form label-position="top">
-        <el-form-item label="已完成成片"><el-select v-model="form.taskId"><el-option v-for="task in tasks.filter(t=>t.status==='completed')" :key="task.id" :label="taskName(task)" :value="task.id" /></el-select></el-form-item>
+        <el-form-item label="已完成成片"><el-select v-model="form.taskId" @change="syncTaskTitle"><el-option v-for="task in tasks.filter(t=>t.status==='completed')" :key="task.id" :label="taskName(task)" :value="task.id" /></el-select></el-form-item>
         <el-form-item label="发布账号"><el-select v-model="form.accountId"><el-option v-for="account in accounts" :key="account.id" :label="account.name" :value="account.id" /></el-select></el-form-item>
         <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
         <el-form-item label="话题"><el-input v-model="form.topics" placeholder="工厂, 定制, 实拍" /></el-form-item>

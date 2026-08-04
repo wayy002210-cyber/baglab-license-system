@@ -67,4 +67,17 @@ describe("CopywritingProjectRepository", () => {
     expect(repository.require(original.id).status).toBe("archived");
     database.close();
   });
+
+  it("archives library projects and deletes projects with their shots", () => {
+    const database = databaseWithPersona();
+    const repository = new CopywritingProjectRepository(database);
+    const project = repository.create({ personaId: "p1", topicId: null, topicTitle: "待剪辑", mainTitle: "可管理文案", text: "这是一条需要管理的完整文案。", model: "deepseek-v3", status: "library" });
+    repository.replaceShots(project.id, [{ copywriting: "这是一条需要管理的完整文案。", suggestedCategoryId: null, assetCategoryId: "c1", suggestionSource: "manual", suggestionConfirmed: true, durationMode: "voice", durationSec: null, muteOriginal: true }]);
+
+    expect(repository.archive(project.id).status).toBe("archived");
+    expect(repository.delete(project.id)).toBe(true);
+    expect(repository.get(project.id)).toBeNull();
+    expect(repository.listShots(project.id)).toEqual([]);
+    database.close();
+  });
 });

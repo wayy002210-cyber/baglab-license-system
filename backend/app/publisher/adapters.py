@@ -12,6 +12,7 @@ class PublishRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     video_path: str = Field(alias="videoPath")
     title: str = Field(min_length=1)
+    description: str = ""
     topics: list[str] = Field(default_factory=list)
     cover_path: str | None = Field(default=None, alias="coverPath")
     screenshot_dir: str = Field(alias="screenshotDir")
@@ -82,6 +83,7 @@ class PublisherAdapter:
         'input[type="file"]',
     ]
     title_selectors: list[str]
+    description_selectors: list[str]
     publish_selectors: list[str]
     schedule_toggle_selectors = [
         'label:has-text("定时发布")',
@@ -117,10 +119,12 @@ class PublisherAdapter:
             control.raise_if_canceled()
             page.upload(self.upload_selectors, request.video_path)
             control.raise_if_canceled()
-            copy = request.title
+            page.fill(self.title_selectors, request.title)
+            copy = request.description.strip()
             if request.topics:
-                copy += "\n" + " ".join(f"#{topic.lstrip('#')}" for topic in request.topics)
-            page.fill(self.title_selectors, copy)
+                copy = (copy + "\n" if copy else "") + " ".join(f"#{topic.lstrip('#')}" for topic in request.topics)
+            if copy:
+                page.fill(self.description_selectors, copy)
             control.raise_if_canceled()
             if request.scheduled_at:
                 page.set_schedule(
@@ -200,10 +204,18 @@ class PublisherAdapter:
 
 class DouyinPublisher(PublisherAdapter):
     title_selectors = [
+        'input[placeholder*="作品标题"]',
         '[contenteditable="true"][data-placeholder*="作品标题"]',
         '[contenteditable="true"][data-placeholder*="标题"]',
         'textarea[placeholder*="作品标题"]',
         'textarea[placeholder*="标题"]',
+        '[contenteditable="true"][role="textbox"]',
+        '[contenteditable="true"]',
+    ]
+    description_selectors = [
+        '[contenteditable="true"][data-placeholder*="作品简介"]',
+        '[contenteditable="true"][data-placeholder*="添加作品简介"]',
+        'textarea[placeholder*="作品简介"]',
         '[contenteditable="true"][role="textbox"]',
         '[contenteditable="true"]',
     ]
@@ -216,8 +228,14 @@ class DouyinPublisher(PublisherAdapter):
 
 class WechatChannelsPublisher(PublisherAdapter):
     title_selectors = [
+        'input[placeholder*="标题"]',
         'textarea[placeholder*="描述"]',
         'textarea[placeholder*="标题"]',
+        '[contenteditable=true]',
+    ]
+    description_selectors = [
+        'textarea[placeholder*="描述"]',
+        '[contenteditable=true][data-placeholder*="描述"]',
         '[contenteditable=true]',
     ]
     publish_selectors = [

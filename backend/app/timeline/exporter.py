@@ -532,6 +532,8 @@ Format: Layer, Start, End, Style, Text
 """
     subtitle_position = _ass_position(subtitle_style)
     title_position = _ass_position(title_style)
+    subtitle_effect = _ass_effect(subtitle_style)
+    title_effect = _ass_effect(title_style)
     laid_out_subtitles = [
         laid_out
         for item in subtitles
@@ -547,12 +549,12 @@ Format: Layer, Start, End, Style, Text
     ]
     lines = [
         f"Dialogue: 0,{_ass_time(item.start_sec)},{_ass_time(item.end_sec)},"
-        f"Subtitle,{subtitle_position}{_escape_ass_text(item.text)}"
+        f"Subtitle,{subtitle_position}{subtitle_effect}{_escape_ass_text(item.text)}"
         for item in laid_out_subtitles
     ]
     lines.extend(
         f"Dialogue: 1,{_ass_time(item.start_sec)},{_ass_time(item.end_sec)},"
-        f"Title,{title_position}{_escape_ass_text(item.text)}"
+        f"Title,{title_position}{title_effect}{_escape_ass_text(item.text)}"
         for item in titles
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -563,6 +565,10 @@ def _ass_position(style: TextStyle) -> str:
     if style.position_x is None or style.position_y is None:
         return ""
     return rf"{{\pos({style.position_x},{style.position_y})}}"
+
+
+def _ass_effect(style: TextStyle) -> str:
+    return rf"{{\blur{style.shadow_blur:g}}}" if style.shadow_blur > 0 else ""
 
 
 def _ass_style(name: str, style: TextStyle) -> str:

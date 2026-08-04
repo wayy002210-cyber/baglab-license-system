@@ -12,6 +12,8 @@ class LaidOutSubtitle:
 
 
 _SEMANTIC_BOUNDARY = re.compile(r"(?<=[。！？；，、：,.!?;:])")
+_TERMINAL_PUNCTUATION = "。！？；，、：,.!?;:"
+_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+%/-]*|.")
 
 
 def estimate_line_capacity(
@@ -30,28 +32,31 @@ def estimate_line_capacity(
 
 def wrap_semantic_lines(text: str, max_chars: int) -> list[str]:
     normalized = re.sub(r"\s+", "", text or "").strip()
+    normalized = normalized.rstrip(_TERMINAL_PUNCTUATION)
     if not normalized:
         return []
-    chunks = [chunk for chunk in _SEMANTIC_BOUNDARY.split(normalized) if chunk]
+    chunks = [chunk.rstrip(_TERMINAL_PUNCTUATION) for chunk in _SEMANTIC_BOUNDARY.split(normalized) if chunk.rstrip(_TERMINAL_PUNCTUATION)]
     lines: list[str] = []
     current = ""
     for chunk in chunks:
-        while chunk:
+        tokens = _TOKEN.findall(chunk)
+        while tokens:
             remaining = max_chars - len(current)
             if remaining <= 0:
                 lines.append(current)
                 current = ""
                 remaining = max_chars
-            if len(chunk) <= remaining:
-                current += chunk
-                chunk = ""
+            token = tokens[0]
+            if len(token) <= remaining:
+                current += token
+                tokens.pop(0)
                 continue
             if current:
                 lines.append(current)
                 current = ""
                 continue
-            lines.append(chunk[:max_chars])
-            chunk = chunk[max_chars:]
+            current = token
+            tokens.pop(0)
     if current:
         lines.append(current)
     return lines

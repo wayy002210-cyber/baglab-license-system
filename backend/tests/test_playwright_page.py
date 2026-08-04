@@ -40,3 +40,17 @@ def test_playwright_page_uses_selector_fallbacks_on_local_simulator(
         assert page.locator('input[placeholder*=发布日期]').input_value() == "2026-08-04"
         assert page.locator('input[placeholder*=发布时间]').input_value() == "20:30"
         browser.close()
+
+
+def test_playwright_page_waits_for_delayed_publish_form(tmp_path: Path) -> None:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_content("<div id='root'></div>")
+        page.evaluate("setTimeout(() => document.querySelector('#root').innerHTML = '<textarea placeholder=作品简介></textarea>', 100)")
+        facade = PlaywrightPublisherPage(page, timeout_ms=2_000)
+
+        facade.fill(['textarea[placeholder*="作品简介"]'], "正文内容")
+
+        assert page.locator("textarea").input_value() == "正文内容"
+        browser.close()

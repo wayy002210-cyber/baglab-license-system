@@ -3,7 +3,7 @@ import type{TextStyle}from"../../../shared/media-style";import{subtitleStylePres
 const props=defineProps<{modelValue:TextStyle;title?:string}>();const emit=defineEmits<{"update:modelValue":[value:TextStyle]}>();
 function patch(value:Partial<TextStyle>){emit("update:modelValue",{...props.modelValue,...value})}
 function color(key:"primaryColor"|"outlineColor"|"shadowColor",value:unknown){if(typeof value==="string"&&value.startsWith("#"))patch({[key]:value})}
-function outline(on:boolean){patch({outlineWidth:on?Math.max(2,props.modelValue.outlineWidth):0,outlineColor:on?props.modelValue.outlineColor:"#00000000"})}
+function outline(on:boolean){const current=props.modelValue.outlineColor;patch({outlineWidth:on?Math.max(2,props.modelValue.outlineWidth):0,outlineColor:on?(/^#[0-9a-f]{8}$/i.test(current)&&current.endsWith("00")?"#101010":current):"#00000000"})}
 function shadow(on:boolean){patch(on?{shadowColor:"#80000000",shadowX:2,shadowY:2,shadowBlur:2}:{shadowColor:"#00000000",shadowX:0,shadowY:0,shadowBlur:0})}
 </script>
 <template><section class="style-editor"><header><strong>{{title??'字幕样式'}}</strong><span>右侧实时预览</span></header>

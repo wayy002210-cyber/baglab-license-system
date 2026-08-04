@@ -189,6 +189,8 @@ export class PublishRepository {
   }
 
   cancelJob(id: string): PublishJob {
+    const current = this.requireJob(id);
+    if (current.status === "canceled") return current;
     const now = new Date().toISOString();
     const result = this.database
       .prepare(
@@ -198,7 +200,10 @@ export class PublishRepository {
       )
       .run(now, now, id);
     if (!result.changes) {
-      throw new Error(`Publish job cannot be canceled: ${id}`);
+      if (current.status === "published") {
+        throw new Error("该内容已经发布，无法从本地取消，请前往平台内容管理处理");
+      }
+      throw new Error("该发布任务当前无法取消，请刷新列表后重试");
     }
     return this.requireJob(id);
   }

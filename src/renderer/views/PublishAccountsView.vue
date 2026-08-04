@@ -46,6 +46,8 @@ async function connect(account: Account) {
     connectionMessage.value = createdAccount.value.linkStatus === "connected"
       ? "账号连接成功，可以用于发布。"
       : "尚未检测到登录，请继续在浏览器中操作。";
+    if (createdAccount.value.linkStatus === "connected") ElMessage.success("账号登录状态正常");
+    else ElMessage.warning(connectionMessage.value);
   } catch (error) {
     connectionMessage.value = toUserMessage(error, "账号登录连接失败");
     ElMessage.error(connectionMessage.value);
@@ -58,8 +60,14 @@ async function remove(account: Account) {
   await window.autocut.deletePublishAccount(account.id); await load();
 }
 async function check(account: Account) {
-  ElMessage.info("已打开独立浏览器，请在需要时完成扫码登录");
-  try { await window.autocut.checkPublishAccount(account.id); await load(); }
+  ElMessage.info("正在检测账号登录状态…");
+  try {
+    const checked = await window.autocut.checkPublishAccount(account.id);
+    await load();
+    if (checked.linkStatus === "connected") ElMessage.success("账号登录状态正常");
+    else if (checked.linkStatus === "expired") ElMessage.warning("账号登录已失效，请重新登录");
+    else ElMessage.warning("尚未检测到有效登录，请打开登录窗口完成登录");
+  }
   catch (error) { ElMessage.error(toUserMessage(error, "检测失败")); }
 }
 onMounted(load);
@@ -80,7 +88,7 @@ onMounted(load);
         <div class="actions">
           <el-button type="primary" @click="connect(account)">打开登录窗口</el-button>
           <el-button @click="check(account)">检测状态</el-button>
-          <el-button link type="danger" @click="remove(account)">删除</el-button>
+          <el-button class="delete-account" plain type="danger" @click="remove(account)">删除</el-button>
         </div>
       </article>
     </section>
@@ -111,7 +119,7 @@ onMounted(load);
 
 <style scoped>
 .account-grid{padding:24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;min-height:360px}
-.account-card{border:1px solid #e3e9f3;border-radius:16px;padding:20px;background:#fbfcff}
-.account-card h3{margin:10px 0}.account-card p{color:#8490a5;font-size:13px}.platform{color:#4d7fe8;font-weight:700}.actions{display:flex;align-items:center;margin-top:20px}
+.account-card{min-width:0;display:flex;flex-direction:column;border:1px solid #e3e9f3;border-radius:16px;padding:20px;background:#fbfcff}
+.account-card h3{margin:10px 0}.account-card p{color:#8490a5;font-size:13px}.platform{color:#4d7fe8;font-weight:700}.actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:auto;padding-top:20px}.actions .el-button{margin-left:0}.delete-account{margin-left:auto!important;border-radius:10px}
 .connection-panel{display:grid;gap:12px;padding:18px;border-radius:16px;background:#f7f7f3}.connection-panel h3,.connection-panel p{margin:0}.connection-panel p{color:var(--text-muted);line-height:1.7}
 </style>

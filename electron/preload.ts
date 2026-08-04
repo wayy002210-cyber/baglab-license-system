@@ -564,6 +564,12 @@ contextBridge.exposeInMainWorld("autocut", {
   collectCopywritingProject: async (id: unknown) => copywritingProjectSchema.parse(
     await ipcRenderer.invoke("copywritingProjects:collect", z.string().uuid().parse(id))
   ),
+  archiveCopywritingProject: async (id: unknown) => copywritingProjectSchema.parse(
+    await ipcRenderer.invoke("copywritingProjects:archive", z.string().uuid().parse(id))
+  ),
+  deleteCopywritingProject: async (id: unknown) => z.object({ deleted: z.boolean() }).parse(
+    await ipcRenderer.invoke("copywritingProjects:delete", z.string().uuid().parse(id))
+  ),
   cloneArchivedCopywritingProject: async (id: unknown) => copywritingProjectSchema.parse(
     await ipcRenderer.invoke("copywritingProjects:cloneArchived", z.string().uuid().parse(id))
   ),

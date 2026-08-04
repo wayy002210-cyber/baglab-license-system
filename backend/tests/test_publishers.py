@@ -33,6 +33,7 @@ def request(tmp_path):
     return PublishRequest(
         videoPath=str(tmp_path / "video.mp4"),
         title="工厂实拍",
+        description="我们坚持从选料到生产都认真把关。",
         topics=["工厂", "定制"],
         screenshotDir=str(tmp_path),
         scheduledAt="2026-08-04T20:30:00+08:00",
@@ -46,7 +47,8 @@ def test_douyin_publisher_uses_semantic_fallback_selectors(tmp_path: Path) -> No
     assert result.status == "published"
     assert page.actions[0][0] == "upload"
     assert "input[type=file]" in page.actions[0][1]
-    assert any(action[0] == "fill" and "#工厂" in action[2] for action in page.actions)
+    assert any(action[0] == "fill" and action[2] == "工厂实拍" for action in page.actions)
+    assert any(action[0] == "fill" and "我们坚持" in action[2] and "#工厂" in action[2] for action in page.actions)
     assert any(action[0] == "schedule" and action[4].isoformat() == "2026-08-04T20:30:00+08:00" for action in page.actions)
 
 

@@ -151,6 +151,16 @@ async function retry(project: Project): Promise<void> {
   } finally { batchRunning.value = false; }
 }
 
+async function removeProject(project: Project): Promise<void> {
+  try {
+    await window.autocut.deleteCopywritingProject(project.id);
+    projects.value = projects.value.filter((item) => item.id !== project.id);
+    ElMessage.success("文案已删除");
+  } catch (error) {
+    ElMessage.error(toUserMessage(error, "删除文案失败"));
+  }
+}
+
 async function addCustom(): Promise<void> {
   if (!persona.value || customText.value.replace(/\s/g, "").length < 50) return void ElMessage.warning("请粘贴至少50字的完整口播文案");
   const title = deriveShortTitle(customTitle.value.trim() || customText.value);
@@ -215,13 +225,13 @@ onUnmounted(() => { if (topicTimer) clearInterval(topicTimer); });
           <template v-if="project.status==='failed'"><p class="error">{{ project.errorMessage }}</p><el-button type="primary" @click="retry(project)">重新生成</el-button></template>
           <template v-else><el-input v-model="project.text" type="textarea" :rows="9" maxlength="1000" show-word-limit />
             <div v-if="project.complianceIssues.length" class="issues">发现 {{ project.complianceIssues.length }} 处风险词，请人工修改后重新检查。</div>
-            <div class="project-actions"><el-button @click="saveProject(project)">保存修改</el-button><el-button @click="checkProject(project)">AI违禁词检查</el-button><el-button type="primary" @click="collect(project)">收进文案库</el-button></div>
+            <div class="project-actions"><el-button @click="saveProject(project)">保存修改</el-button><el-button @click="retry(project)">重新生成</el-button><el-button type="danger" plain @click="removeProject(project)">删除</el-button><el-button @click="checkProject(project)">AI违禁词检查</el-button><el-button type="primary" @click="collect(project)">收进文案库</el-button></div>
           </template>
         </article>
         <el-empty v-if="!reviewProjects.length" description="还没有待检查文案" />
       </section>
       <section class="results"><header><div><strong>归档文案</strong><span>编辑时会复制为新版本，不影响历史任务和成片</span></div><el-tag>{{ archivedProjects.length }} 条</el-tag></header>
-        <article v-for="project in archivedProjects" :key="project.id" class="project-card archived-card"><div class="project-title"><strong>{{ project.mainTitle }}</strong><span>{{ project.topicTitle }}</span><el-button @click="editArchived(project)">复制新版本编辑</el-button></div></article>
+        <article v-for="project in archivedProjects" :key="project.id" class="project-card archived-card"><div class="project-title"><strong>{{ project.mainTitle }}</strong><span>{{ project.topicTitle }}</span><el-button @click="editArchived(project)">复制新版本编辑</el-button><el-button type="danger" plain @click="removeProject(project)">删除</el-button></div></article>
         <el-empty v-if="!archivedProjects.length" description="还没有归档文案" />
       </section>
     </section>

@@ -154,6 +154,7 @@ describe("PublishRepository", () => {
     expect(canceled.status).toBe("canceled");
     expect(canceled.completedAt).not.toBeNull();
     expect(repository.claimNextDue(new Date().toISOString())).toBeNull();
+    expect(repository.cancelJob(job.id).status).toBe("canceled");
   });
 
   it("marks a claimed job canceled when backend stops before submission", () => {

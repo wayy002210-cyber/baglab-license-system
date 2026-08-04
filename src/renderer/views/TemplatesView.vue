@@ -39,6 +39,14 @@ async function updateVoiceVolume(value:number){
   voiceSettings.value=await window.autocut.saveVoiceSettings({...voiceSettings.value});
 }
 async function selectProject(project:Project){selectedId.value=project.id;shots.value=await window.autocut.listCopywritingShots(project.id)}
+async function archiveProject(project:Project){
+  try{await window.autocut.archiveCopywritingProject(project.id);await load();ElMessage.success("文案已归档")}
+  catch(e){ElMessage.error(e instanceof Error?e.message:"归档文案失败")}
+}
+async function deleteProject(project:Project){
+  try{await window.autocut.deleteCopywritingProject(project.id);projects.value=projects.value.filter(item=>item.id!==project.id);if(selectedId.value===project.id){selectedId.value=null;shots.value=[]}ElMessage.success("文案已删除")}
+  catch(e){ElMessage.error(e instanceof Error?e.message:"删除文案失败")}
+}
 function inputs(){return shots.value.map(s=>({copywriting:s.copywriting,suggestedCategoryId:s.suggestedCategoryId,assetCategoryId:s.assetCategoryId,suggestionSource:s.suggestionSource,suggestionConfirmed:s.suggestionConfirmed,durationMode:s.durationMode,durationSec:s.durationSec,muteOriginal:s.muteOriginal}))}
 async function splitProject(project:Project){
   const generated=splitAndRecommendShots(project.text,categories.value).map(s=>({
@@ -72,7 +80,7 @@ onMounted(load);
   <div class="editor-grid">
     <aside class="surface library">
       <h3>文案库</h3><div class="tabs"><button :class="{active:tab==='library'}" @click="tab='library'">待剪辑文案</button><button :class="{active:tab==='shots_ready'}" @click="tab='shots_ready'">已拆镜文案</button><button :class="{active:tab==='archived'}" @click="tab='archived'">归档文案</button></div>
-      <div class="project-list"><button v-for="project in visibleProjects" :key="project.id" class="project" :class="{selected:project.id===selectedId}" @click="selectProject(project)"><strong>{{project.mainTitle||project.topicTitle}}</strong><span>{{project.topicTitle}}</span><small>{{project.text.slice(0,56)}}{{project.text.length>56?'…':''}}</small></button><p v-if="!visibleProjects.length" class="empty">当前列表为空</p></div>
+      <div class="project-list"><div v-for="project in visibleProjects" :key="project.id" class="project-wrap"><button class="project" :class="{selected:project.id===selectedId}" @click="selectProject(project)"><strong>{{project.mainTitle||project.topicTitle}}</strong><span>{{project.topicTitle}}</span><small>{{project.text.slice(0,56)}}{{project.text.length>56?'…':''}}</small></button><div class="project-ops"><el-button v-if="project.status!=='archived'" size="small" @click="archiveProject(project)">归档</el-button><el-button size="small" type="danger" plain @click="deleteProject(project)">删除</el-button></div></div><p v-if="!visibleProjects.length" class="empty">当前列表为空</p></div>
     </aside>
     <main class="surface shot-workspace">
       <header><div><h3>镜头创作区</h3><p>每句台词对应一个镜头，素材类型是系统建议结果，可人工修改。</p></div><div><el-button data-action="split-current" :loading="splitting" @click="splitCurrent">从当前文案自动拆分镜头</el-button><el-button :loading="splitting" @click="splitAll">自动拆分所有文案镜头</el-button></div></header>
@@ -85,4 +93,5 @@ onMounted(load);
   <MediaSettingsPanel class="surface media-panel" :bgm="draft.draft.value.bgm" :voice-volume="voiceVolume" :subtitle-style="subtitleStyle" :title-style="titleStyle" :title="selected?.mainTitle??''" :sample-text="shots[0]?.copywriting??''" @update:bgm="draft.draft.value.bgm=$event;draft.scheduleSave()" @update:voice-volume="updateVoiceVolume" @update:subtitle-style="subtitleStyle=$event;draft.scheduleSave()" @update:title-style="titleStyle=$event;draft.scheduleSave()" />
 </div></template>
 <style scoped>.editing-page{display:grid;gap:18px}.task-bar{position:sticky;top:12px;z-index:5;padding:16px 20px;display:flex;align-items:center;justify-content:flex-end;gap:10px}.task-bar>div{display:grid;margin-right:auto}.task-bar small,.shot-workspace p,.project span,.project small,.workspace-empty{color:var(--text-muted)}.editor-grid{display:grid;grid-template-columns:290px minmax(0,1fr);gap:18px}.library,.shot-workspace,.media-panel{padding:20px}.library h3,.shot-workspace h3,.shot-workspace p{margin:0}.tabs{display:grid;gap:7px;margin:16px 0}.tabs button,.project{border:0;text-align:left;cursor:pointer}.tabs button{padding:10px 12px;border-radius:10px;background:#f2f2ee}.tabs button.active{background:#151512;color:#fff}.project-list{display:grid;gap:10px;max-height:620px;overflow:auto}.project{display:grid;gap:5px;padding:14px;border-radius:14px;background:#f7f7f3;border:1px solid transparent}.project.selected{border-color:var(--brand-yellow);background:#fffbe0}.shot-workspace>header{display:flex;justify-content:space-between;gap:16px}.shot-workspace>header>div:last-child{display:flex;gap:8px}.workspace-empty{min-height:300px;display:grid;place-items:center;align-content:center;gap:8px}.shot-card{display:grid;grid-template-columns:34px minmax(280px,1fr) 250px;gap:12px;padding:16px 0;border-bottom:1px solid var(--border)}.number{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:var(--brand-yellow);font-weight:800}.shot-copy,.shot-settings{display:grid;gap:8px}.shot-copy small{color:#8b6a00}.shot-settings label{display:grid;gap:5px;font-size:12px}.shot-card footer{grid-column:2/4;text-align:right}.save-row{text-align:right;padding-top:18px}.media-panel{margin-bottom:30px}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.task-bar{position:static;flex-wrap:wrap}.shot-card{grid-template-columns:34px 1fr}.shot-settings,.shot-card footer{grid-column:2}}
+.project-wrap{display:grid;gap:6px;padding:7px;border-radius:14px;background:#f7f7f3}.project-wrap .project{width:100%;background:transparent}.project-ops{display:flex;justify-content:flex-end;gap:6px}
 </style>

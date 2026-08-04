@@ -143,6 +143,8 @@ declare global {
       createCopywritingProject(input: Omit<CopywritingProject,"id"|"createdAt"|"updatedAt"|"archivedAt"|"complianceIssues"|"errorMessage"> & {complianceIssues?:ComplianceIssue[];errorMessage?:string|null}): Promise<CopywritingProject>;
       updateCopywritingProject(id:string,patch:Partial<Pick<CopywritingProject,"text"|"mainTitle"|"status"|"complianceIssues"|"errorMessage">>):Promise<CopywritingProject>;
       collectCopywritingProject(id:string):Promise<CopywritingProject>;
+      archiveCopywritingProject(id:string):Promise<CopywritingProject>;
+      deleteCopywritingProject(id:string):Promise<{deleted:boolean}>;
       cloneArchivedCopywritingProject(id:string):Promise<CopywritingProject>;
       listCopywritingShots(id:string):Promise<CopywritingShot[]>;
       replaceCopywritingShots(id:string,shots:Array<Omit<CopywritingShot,"id"|"projectId"|"index">>):Promise<CopywritingShot[]>;

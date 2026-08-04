@@ -89,6 +89,11 @@ export class CopywritingProjectRepository {
 
   collect(id: string): CopywritingProject { return this.update(id, { status: "library", errorMessage: null }); }
 
+  delete(id: string): boolean {
+    this.require(id);
+    return this.database.prepare("DELETE FROM copywriting_projects WHERE id = ?").run(id).changes > 0;
+  }
+
   cloneArchived(id: string): CopywritingProject {
     const source = this.require(id);
     if (source.status !== "archived") throw new Error("只有归档文案可以创建新版本");

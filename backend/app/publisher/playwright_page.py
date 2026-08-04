@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime
+from time import monotonic, sleep
 from typing import Iterable
 
 from playwright.sync_api import BrowserContext, Page, Playwright, sync_playwright
@@ -75,11 +76,15 @@ class PlaywrightPublisherPage:
         self.page.screenshot(path=path, full_page=True)
 
     def _first(self, selectors: Iterable[str]):
-        for selector in selectors:
-            locator = self.page.locator(selector)
-            if locator.count() and locator.first.is_visible():
-                return locator.first
-        raise RuntimeError(f"No matching visible selector: {list(selectors)}")
+        candidates = list(selectors)
+        deadline = monotonic() + self.timeout_ms / 1000
+        while monotonic() < deadline:
+            for selector in candidates:
+                locator = self.page.locator(selector)
+                if locator.count() and locator.first.is_visible():
+                    return locator.first
+            sleep(0.1)
+        raise RuntimeError(f"No matching visible selector: {candidates}")
 
     def _contains_visible_text(self, candidates: Iterable[str]) -> bool:
         for text in candidates:

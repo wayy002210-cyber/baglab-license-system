@@ -314,6 +314,9 @@ async function runNextPublishJob(): Promise<void> {
           userDataDir: account.userDataDir,
           videoPath: task.outputPath,
           title: job.title,
+          description: String(
+            (task.snapshot.copywriting as { text?: string } | undefined)?.text ?? ""
+          ),
           topics: job.topics,
           scheduledAt: job.scheduledAt,
           coverPath: job.coverPath,
@@ -729,6 +732,12 @@ ipcMain.handle("copywritingProjects:update", (_event, id: string, patch: Paramet
 ipcMain.handle("copywritingProjects:collect", (_event, id: string) =>
   copywritingProjectRepository().collect(id)
 );
+ipcMain.handle("copywritingProjects:archive", (_event, id: string) =>
+  copywritingProjectRepository().archive(id)
+);
+ipcMain.handle("copywritingProjects:delete", (_event, id: string) => ({
+  deleted: copywritingProjectRepository().delete(id)
+}));
 ipcMain.handle("copywritingProjects:cloneArchived", (_event, id: string) =>
   copywritingProjectRepository().cloneArchived(id)
 );
@@ -1076,7 +1085,10 @@ ipcMain.handle("publishJobs:cancel", async (_event, id: string) => {
     );
     if (!response.ok) {
       const result = (await response.json()) as { detail?: string };
-      throw new Error(result.detail || "发布已经提交到平台，不能再安全取消");
+      if (response.status === 409 || result.detail?.toLowerCase().includes("submitted")) {
+        throw new Error("任务已经提交到平台定时发布，无法从本地撤回，请到平台内容管理中取消");
+      }
+      throw new Error(result.detail || "发布任务取消失败，请稍后重试");
     }
   }
   return publishRepository().cancelJob(id);

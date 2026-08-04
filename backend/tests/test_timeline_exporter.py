@@ -158,6 +158,7 @@ def test_ass_writer_supports_independent_title_and_subtitle_styles(
             margin_v=120,
             position_x=540,
             position_y=180,
+            shadow_blur=7,
         ),
     )
     content = output.read_text(encoding="utf-8")
@@ -166,6 +167,7 @@ def test_ass_writer_supports_independent_title_and_subtitle_styles(
     assert r"{\pos(540,1680)}" in content
     assert r"{\pos(540,180)}" in content
     assert "Dialogue: 1,0:00:00.00,0:00:01.50,Title," in content
+    assert r"{\blur7}" in content
 
 
 def test_encoder_detector_prefers_available_hardware_in_priority_order() -> None:
