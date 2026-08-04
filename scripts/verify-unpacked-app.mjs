@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const executable = join(
   process.cwd(),
@@ -7,7 +9,8 @@ const executable = join(
   "win-unpacked",
   "袋研官矩阵混剪工作台.exe"
 );
-const child = spawn(executable, [], {
+const isolatedUserData = mkdtempSync(join(tmpdir(), "autocut-packaged-smoke-"));
+const child = spawn(executable, [`--user-data-dir=${isolatedUserData}`], {
   windowsHide: false,
   stdio: ["ignore", "pipe", "pipe"]
 });
@@ -64,5 +67,27 @@ try {
       windowsHide: true,
       stdio: "ignore"
     });
+  }
+  // Chromium may keep cache handles alive briefly after the process tree exits.
+  // Cleanup is best-effort and must not turn a successful window smoke test into
+  // a false application-startup failure on Windows.
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      rmSync(isolatedUserData, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 200
+      });
+      break;
+    } catch (error) {
+      if (attempt === 9) {
+        process.stderr.write(
+          `Warning: could not remove smoke-test profile: ${error.message}\n`
+        );
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
   }
 }
