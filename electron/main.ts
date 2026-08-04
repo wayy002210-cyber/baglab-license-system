@@ -79,6 +79,7 @@ import {
 import { GenerationQueue } from "./services/generation-queue.js";
 import { createProjectTasks } from "./services/copywriting-task-service.js";
 import { defaultSubtitleStyle,defaultTitleStyle } from "../src/shared/media-style.js";
+import { toSafeOutputStem } from "../src/shared/short-title.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -170,9 +171,12 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
     return;
   }
   const settings = settingsRepository().getMediaSettings();
+  const mainTitle = String(
+    (task.snapshot.copywriting as { mainTitle?: string } | undefined)?.mainTitle || "未命名视频"
+  );
   const outputPath = join(
     settings.outputDirectory || join(app.getPath("videos"), "袋研官混剪成片"),
-    `${task.id}.mp4`
+    `${toSafeOutputStem(mainTitle)}-${task.id.slice(0, 8)}.mp4`
   );
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

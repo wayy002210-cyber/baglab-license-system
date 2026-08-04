@@ -367,6 +367,31 @@ def test_export_commits_only_a_validated_partial_file(tmp_path: Path) -> None:
     assert not (tmp_path / "final.partial.mp4").exists()
 
 
+def test_export_keeps_intermediate_files_out_of_output_directory(tmp_path: Path) -> None:
+    output_dir = tmp_path / "outputs"
+    work_dir = tmp_path / "work" / "task-1"
+    final = output_dir / "品牌避坑指南.mp4"
+
+    def runner(command, **kwargs):
+        output = Path(command[-1])
+        output.write_bytes(b"valid mp4")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    Exporter(runner=runner, validator=lambda _path: True).export(
+        Project(
+            output_path=final,
+            work_dir=work_dir,
+            video_clips=[VideoClip(tmp_path / "a.mp4", 0, 1)],
+            subtitles=[SubtitleClip(0, 1, "字幕")],
+        ),
+        encoder="libx264",
+    )
+
+    assert final.exists()
+    assert list(output_dir.iterdir()) == [final]
+    assert not list(work_dir.glob("*.ass"))
+
+
 def test_export_removes_partial_file_when_validation_fails(tmp_path: Path) -> None:
     final = tmp_path / "final.mp4"
 

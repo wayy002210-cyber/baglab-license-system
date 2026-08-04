@@ -261,6 +261,11 @@ class GenerationPipeline:
         )
         project = Project(
             output_path=Path(request.output_path),
+            work_dir=(
+                Path(str(media_settings.get("workDirectory"))) / request.task_id
+                if media_settings.get("workDirectory")
+                else Path(request.output_path).parent / ".work" / request.task_id
+            ),
             video_clips=videos,
             voice_clips=voices,
             subtitles=subtitles,

@@ -72,6 +72,7 @@ class TextStyle:
 class Project:
     output_path: Path
     video_clips: list[VideoClip]
+    work_dir: Path | None = None
     voice_clips: list[AudioClip] = field(default_factory=list)
     subtitles: list[SubtitleClip] = field(default_factory=list)
     titles: list[TitleClip] = field(default_factory=list)
@@ -319,11 +320,10 @@ class Exporter:
         on_progress: Callable[[float], None] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         project.output_path.parent.mkdir(parents=True, exist_ok=True)
-        partial_path = project.output_path.with_name(
-            f"{project.output_path.stem}.partial{project.output_path.suffix}"
-        )
+        work_dir = project.work_dir or project.output_path.parent
+        work_dir.mkdir(parents=True, exist_ok=True)
+        partial_path = work_dir / f"{project.output_path.stem}.partial{project.output_path.suffix}"
         partial_ass_path = partial_path.with_suffix(".ass")
-        final_ass_path = project.output_path.with_suffix(".ass")
         partial_path.unlink(missing_ok=True)
         partial_ass_path.unlink(missing_ok=True)
         partial_project = Project(
@@ -375,8 +375,7 @@ class Exporter:
             partial_ass_path.unlink(missing_ok=True)
             raise RuntimeError("Output media validation failed")
         os.replace(partial_path, project.output_path)
-        if partial_ass_path.exists():
-            os.replace(partial_ass_path, final_ass_path)
+        partial_ass_path.unlink(missing_ok=True)
         return result
 
     def _validate_output(self, path: Path) -> bool:
