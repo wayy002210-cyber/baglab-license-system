@@ -3,42 +3,28 @@ import { describe, expect, it, vi } from "vitest";
 import TemplatesView from "../../src/renderer/views/TemplatesView.vue";
 
 describe("TemplatesView", () => {
-  it("renders the three-column studio and derives shots from audio segments", async () => {
-    Object.assign(window, {
-      autocut: {
-        listTemplates: vi.fn(async () => []),
-        listAssetCategories: vi.fn(async () => [
-          { id: "cat-1", name: "产品", folderPath: "D:/产品", assetCount: 3, invalidCount: 0, lastScannedAt: null }
-        ]),
-        getCreationDraft: vi.fn(async () => ({
-          version: 1, stage: "editing", personaId: "p1",
-          copywriting: { model: "deepseek-v3", temperature: 0.7, topics: [], selectedTopicId: null, text: "第一段。", complianceIssues: [] },
-          voice: { voiceId: "v1", source: "system", emotion: "calm", speed: 1, volume: 1, pitch: 0, languageBoost: "Chinese" },
-          audioSegments: [{ id: "s1", index: 0, text: "第一段。", sourceStart: 0, sourceEnd: 4, textHash: "a", parameterHash: "b", audioPath: "D:/a.mp3", durationSec: 2, status: "ready", errorMessage: null }],
-          shots: [], bgm: null, titleStyle: null, subtitleStyle: null
-        })),
-        saveCreationDraft: vi.fn(async (draft) => draft),
-        getStylePresets: vi.fn(async () => []),
-        saveStylePresets: vi.fn(async (presets) => presets)
-        ,listPersonas: vi.fn(async () => [{ id: "p1", name: "袋研官", industry: "工厂", brandFacts: ["自有工厂"], tone: "专业", cta: "欢迎咨询", bannedWords: [], isDefault: true, createdAt: "", updatedAt: "" }])
-      }
-    });
-    const wrapper = mount(TemplatesView, {
-      global: {
-        stubs: {
-          "el-button": { template: "<button><slot /></button>" },
-          "el-select": { template: "<div><slot /></div>" },
-          "el-option": true, "el-input": true, "el-input-number": true,
-          "el-checkbox": true, "el-tag": true, "el-slider": true,
-          "el-color-picker": true
-        }
-      }
-    });
+  it("lists copywriting projects and splits the selected project into editable shots", async () => {
+    const replaceCopywritingShots = vi.fn(async (_id: string, shots: Array<Record<string, unknown>>) =>
+      shots.map((shot, index) => ({ id: `s${index}`, projectId: "p1", index, ...shot }))
+    );
+    Object.assign(window,{autocut:{
+      listCopywritingProjects:vi.fn(async()=>[{id:"p1",personaId:"persona",topicId:"t1",topicTitle:"质量怎么保证",mainTitle:"品质真相",text:"我们在车间严格生产。欢迎到店了解。",model:"deepseek-v3",status:"library",complianceIssues:[],errorMessage:null,createdAt:"",updatedAt:"",archivedAt:null}]),
+      listCopywritingShots:vi.fn(async()=>[]), replaceCopywritingShots,
+      listAssetCategories:vi.fn(async()=>[{id:"production",name:"生产过程",folderPath:"D:/生产",assetCount:3,invalidCount:0,lastScannedAt:null},{id:"store",name:"门头",folderPath:"D:/门头",assetCount:2,invalidCount:0,lastScannedAt:null}]),
+      getCreationDraft:vi.fn(async()=>null),saveCreationDraft:vi.fn(async d=>d),getStylePresets:vi.fn(async()=>[]),saveStylePresets:vi.fn(async p=>p)
+    }});
+    const wrapper=mount(TemplatesView,{global:{stubs:{
+      "el-button":{template:"<button @click=\"$emit('click')\"><slot /></button>"},"el-select":true,"el-option":true,"el-input":true,
+      "el-input-number":true,"el-checkbox":true,"el-slider":true,"el-color-picker":true
+    }}});
     await flushPromises();
-    expect(wrapper.text()).toContain("模板库");
+    expect(wrapper.text()).toContain("待剪辑文案");
+    expect(wrapper.text()).toContain("质量怎么保证");
+    await wrapper.get('[data-action="split-current"]').trigger("click");
+    await flushPromises();
+    expect(replaceCopywritingShots).toHaveBeenCalledWith("p1",expect.arrayContaining([
+      expect.objectContaining({copywriting:"我们在车间严格生产。",assetCategoryId:"production"})
+    ]));
     expect(wrapper.text()).toContain("镜头创作区");
-    expect(wrapper.text()).toContain("背景音乐与字幕");
-    expect(wrapper.text()).toContain("第一段。");
-    expect(wrapper.text()).toContain("一键改写");
   });
 });

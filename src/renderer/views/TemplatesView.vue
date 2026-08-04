@@ -1,84 +1,70 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
-import TemplateLibrary from "../components/editing/TemplateLibrary.vue";
-import ShotEditor from "../components/editing/ShotEditor.vue";
 import MediaSettingsPanel from "../components/editing/MediaSettingsPanel.vue";
 import { useCreationDraft } from "../composables/useCreationDraft";
-import { defaultSubtitleStyle, defaultTitleStyle } from "../../shared/media-style";
-import type { TextStyle } from "../../shared/media-style";
-import type { CreationDraft } from "../../shared/contracts";
-import {
-  applyTemplateShots,
-  appendShot,
-  buildShotsFromDraft
-} from "../editing/shot-builder";
-type Template = Awaited<ReturnType<typeof window.autocut.listTemplates>>[number];
-type Category = Awaited<ReturnType<typeof window.autocut.listAssetCategories>>[number];
-type Persona = Awaited<ReturnType<typeof window.autocut.listPersonas>>[number];
-const state=useCreationDraft();const templates=ref<Template[]>([]);const categories=ref<Category[]>([]);const selectedId=ref<string|null>(null);
-const personas=ref<Persona[]>([]);const rewriting=ref(false);
-const router=useRouter();const taskCount=ref(1);const creating=ref(false);
-const templateName=ref("新建镜头模板");const templateDescription=ref("由当前镜头创作区保存");
-const subtitleStyle=computed<TextStyle>({get:()=>state.draft.value.subtitleStyle??defaultSubtitleStyle,set:value=>state.draft.value.subtitleStyle=value});
-const titleStyle=computed<TextStyle>({get:()=>state.draft.value.titleStyle??defaultTitleStyle,set:value=>state.draft.value.titleStyle=value});
-function deriveShots(){
- if(state.draft.value.shots.length)return;
- state.draft.value.shots=buildShotsFromDraft(state.draft.value,categories.value[0]?.id??null);
+import { defaultSubtitleStyle, defaultTitleStyle, type TextStyle } from "../../shared/media-style";
+import { splitAndRecommendShots } from "../editing/split-copywriting-shots";
+
+type Project=Awaited<ReturnType<typeof window.autocut.listCopywritingProjects>>[number];
+type Shot=Awaited<ReturnType<typeof window.autocut.listCopywritingShots>>[number];
+type Category=Awaited<ReturnType<typeof window.autocut.listAssetCategories>>[number];
+const draft=useCreationDraft();
+const projects=ref<Project[]>([]),categories=ref<Category[]>([]),shots=ref<Shot[]>([]);
+const selectedId=ref<string|null>(null),tab=ref<"library"|"shots_ready"|"archived">("library");
+const splitting=ref(false),saving=ref(false);
+const selected=computed(()=>projects.value.find(p=>p.id===selectedId.value)??null);
+const visibleProjects=computed(()=>projects.value.filter(p=>p.status===tab.value));
+const subtitleStyle=computed<TextStyle>({get:()=>draft.draft.value.subtitleStyle??defaultSubtitleStyle,set:v=>draft.draft.value.subtitleStyle=v});
+const titleStyle=computed<TextStyle>({get:()=>draft.draft.value.titleStyle??defaultTitleStyle,set:v=>draft.draft.value.titleStyle=v});
+
+async function load(){
+  const [loadedProjects,loadedCategories]=await Promise.all([window.autocut.listCopywritingProjects(["library","shots_ready","archived"]),window.autocut.listAssetCategories(),draft.load()]);
+  projects.value=loadedProjects;categories.value=loadedCategories;
+  const first=loadedProjects.find(p=>p.status==="library")??loadedProjects[0];
+  if(first)await selectProject(first);
 }
-async function load(){[templates.value,categories.value,personas.value]=await Promise.all([window.autocut.listTemplates(),window.autocut.listAssetCategories(),window.autocut.listPersonas(),state.load()]);deriveShots();}
-function applyTemplate(template:Template){selectedId.value=template.id;templateName.value=template.name;templateDescription.value=template.description;state.draft.value.shots=applyTemplateShots(state.draft.value,template.shots,categories.value[0]?.id??null);state.scheduleSave();}
-function templateInput(){return{name:templateName.value.trim()||"未命名镜头模板",description:templateDescription.value.trim(),shots:state.draft.value.shots.map(shot=>({role:"custom" as const,assetCategoryId:shot.assetCategoryId,copywriting:shot.copywriting,durationMode:shot.durationMode,durationSec:shot.durationMode==="fixed"?shot.durationSec:null,muteOriginal:shot.muteOriginal}))};}
-async function saveTemplate(){if(!state.draft.value.shots.length)return ElMessage.warning("请先创建至少一个镜头");if(selectedId.value)await window.autocut.updateTemplate(selectedId.value,templateInput());else{const created=await window.autocut.createTemplate(templateInput());selectedId.value=created.id;}templates.value=await window.autocut.listTemplates();ElMessage.success("当前镜头结构已保存为模板");}
-function newTemplate(){selectedId.value=null;templateName.value="新建镜头模板";templateDescription.value="";state.draft.value.shots=buildShotsFromDraft(state.draft.value,categories.value[0]?.id??null);}
-async function duplicateTemplate(id:string){const created=await window.autocut.duplicateTemplate(id);templates.value=await window.autocut.listTemplates();applyTemplate(created);ElMessage.success("模板副本已创建，可继续编辑");}
-function rebuildShots(){state.draft.value.shots=buildShotsFromDraft(state.draft.value,categories.value[0]?.id??null);state.scheduleSave();}
-function addShot(){state.draft.value.shots=appendShot(state.draft.value.shots,categories.value[0]?.id??null);state.scheduleSave();}
-function updateShots(shots:CreationDraft["shots"]){state.draft.value.shots=shots;state.scheduleSave();}
-async function rewriteCurrentScript(){
- const persona=personas.value.find(item=>item.id===state.draft.value.personaId);
- const copy=state.draft.value.copywriting;
- if(!persona||!copy||!state.draft.value.shots.length)return ElMessage.warning("请先准备人设、文案和镜头");
- rewriting.value=true;
- try{
-  const result=await window.autocut.rewriteCopywriting({
-   model:copy.model,sourceText:copy.text,personaName:persona.name,
-   brandFacts:persona.brandFacts,tone:persona.tone,cta:persona.cta,
-   bannedWords:persona.bannedWords,
-   shots:state.draft.value.shots.map((shot,index)=>({index,role:"custom" as const,assetCategoryId:shot.assetCategoryId??categories.value[0]?.id??"未分类"}))
-  });
-  state.draft.value.shots=state.draft.value.shots.map((shot,index)=>({...shot,copywriting:result.shots[index].copywriting}));
-  copy.text=result.shots.map(shot=>shot.copywriting).join("\n");
-  state.draft.value.audioSegments=[];
-  state.draft.value.stage="audio";
-  await state.saveImmediate();
-  ElMessage.success("文案改写完成，需要重新生成配音");
-  await router.push("/audio");
- }catch(error){ElMessage.error(error instanceof Error?error.message:"文案改写失败，请重试");}
- finally{rewriting.value=false;}
+async function selectProject(project:Project){selectedId.value=project.id;shots.value=await window.autocut.listCopywritingShots(project.id)}
+function inputs(){return shots.value.map(s=>({copywriting:s.copywriting,suggestedCategoryId:s.suggestedCategoryId,assetCategoryId:s.assetCategoryId,suggestionSource:s.suggestionSource,suggestionConfirmed:s.suggestionConfirmed,durationMode:s.durationMode,durationSec:s.durationSec,muteOriginal:s.muteOriginal}))}
+async function splitProject(project:Project){
+  const generated=splitAndRecommendShots(project.text,categories.value).map(s=>({
+    copywriting:s.copywriting,suggestedCategoryId:s.categoryId,assetCategoryId:s.categoryId,
+    suggestionSource:s.source,suggestionConfirmed:false,durationMode:"voice" as const,durationSec:null,muteOriginal:true
+  }));
+  const saved=await window.autocut.replaceCopywritingShots(project.id,generated);
+  const index=projects.value.findIndex(p=>p.id===project.id);if(index>=0)projects.value[index]={...projects.value[index],status:"shots_ready"};
+  if(project.id===selectedId.value)shots.value=saved;
 }
-async function validateAndSave(){const segments=state.draft.value.audioSegments;if(!segments.length||segments.length!==state.draft.value.shots.length||segments.some(segment=>segment.status!=="ready"||!segment.audioPath||!segment.durationSec))return ElMessage.warning("请先在音频制作中完成所有镜头的分段配音");const missing=state.draft.value.shots.findIndex(s=>!s.assetCategoryId||!s.copywriting.trim());if(missing>=0)return ElMessage.warning(`第 ${missing+1} 个镜头缺少素材类型或口播文案`);state.draft.value.stage="ready";await state.saveImmediate();ElMessage.success("当前创作已保存，可以创建混剪任务");}
-async function createTasks(){await validateAndSave();if(state.draft.value.stage!=="ready")return;creating.value=true;try{await window.autocut.createTasksFromDraft({count:taskCount.value,seed:Date.now()&0x7fffffff});ElMessage.success(`已创建 ${taskCount.value} 条混剪任务`);await router.push("/tasks");}finally{creating.value=false;}}
+async function splitCurrent(){if(!selected.value)return ElMessage.warning("请先选择一条待剪辑文案");splitting.value=true;try{await splitProject(selected.value);tab.value="shots_ready";ElMessage.success("已按台词拆分镜头并完成素材类型初选，请人工确认")}catch(e){ElMessage.error(e instanceof Error?e.message:"自动拆镜失败")}finally{splitting.value=false}}
+async function splitAll(){
+  const pending=projects.value.filter(p=>p.status==="library");if(!pending.length)return ElMessage.warning("没有待拆分文案");splitting.value=true;
+  let done=0;try{for(const project of pending){await splitProject(project);done++}tab.value="shots_ready";ElMessage.success(`已完成 ${done} 条文案拆镜`)}catch(e){ElMessage.error(`已完成 ${done} 条，随后失败：${e instanceof Error?e.message:"未知错误"}`)}finally{splitting.value=false}
+}
+function updateShot(index:number,patch:Partial<Shot>){shots.value=shots.value.map((s,i)=>i===index?{...s,...patch,suggestionSource:patch.assetCategoryId?"manual":s.suggestionSource,suggestionConfirmed:patch.assetCategoryId?true:s.suggestionConfirmed}:s)}
+function move(index:number,offset:number){const target=index+offset;if(target<0||target>=shots.value.length)return;const copy=[...shots.value];[copy[index],copy[target]]=[copy[target],copy[index]];shots.value=copy.map((s,i)=>({...s,index:i}))}
+function remove(index:number){shots.value=shots.value.filter((_,i)=>i!==index).map((s,i)=>({...s,index:i}))}
+async function saveShots(){if(!selected.value)return;saving.value=true;try{shots.value=await window.autocut.replaceCopywritingShots(selected.value.id,inputs());ElMessage.success("镜头修改已保存")}finally{saving.value=false}}
 onMounted(load);
 </script>
-<template>
- <div class="page editing-page">
-  <PageIntro title="镜头剪辑" description="按口播音频逐镜头指定素材类型，并统一设置背景音乐、标题和字幕。" action="保存当前创作" @action="validateAndSave"/>
-  <section class="create-bar surface">
-    <div><strong>创建混剪任务</strong><span>将当前文案、配音、选片规则和样式固化为不可变快照</span></div>
-    <el-button :loading="rewriting" @click="rewriteCurrentScript">一键改写文案</el-button>
-    <el-input-number v-model="taskCount" :min="1" :max="20"/>
-    <el-button type="primary" :loading="creating" @click="createTasks">创建任务并进入任务中心</el-button>
-  </section>
-  <div class="studio">
-   <TemplateLibrary class="surface" :templates="templates" :selected-id="selectedId" :name="templateName" :description="templateDescription" @update:name="templateName=$event" @update:description="templateDescription=$event" @select="applyTemplate" @save="saveTemplate" @new="newTemplate" @duplicate="duplicateTemplate"/>
-   <ShotEditor class="surface" :shots="state.draft.value.shots" :categories="categories" @update:shots="updateShots" @rebuild="rebuildShots" @add="addShot"/>
-   <MediaSettingsPanel class="surface" :bgm="state.draft.value.bgm" :voice-volume="state.draft.value.voice?.volume??1" :subtitle-style="subtitleStyle" :title-style="titleStyle" :title="state.draft.value.copywriting?.mainTitle??''" :sample-text="state.draft.value.shots[0]?.copywriting??''" @update:bgm="state.draft.value.bgm=$event;state.scheduleSave()" @update:voice-volume="state.draft.value.voice&&(state.draft.value.voice.volume=$event);state.scheduleSave()" @update:subtitle-style="subtitleStyle=$event;state.scheduleSave()" @update:title-style="titleStyle=$event;state.scheduleSave()"/>
+
+<template><div class="page editing-page">
+  <PageIntro title="镜头剪辑" description="从文案库批量拆分台词镜头，自动建议素材类型，再统一设置背景音乐、标题和字幕。" />
+  <section class="task-bar surface"><div><strong>批量混剪准备</strong><small>完成拆镜和样式后，可创建当前脚本或所有脚本任务</small></div><el-button>创建当前脚本任务</el-button><el-button type="primary">创建所有脚本任务</el-button></section>
+  <div class="editor-grid">
+    <aside class="surface library">
+      <h3>文案库</h3><div class="tabs"><button :class="{active:tab==='library'}" @click="tab='library'">待剪辑文案</button><button :class="{active:tab==='shots_ready'}" @click="tab='shots_ready'">已拆镜文案</button><button :class="{active:tab==='archived'}" @click="tab='archived'">归档文案</button></div>
+      <div class="project-list"><button v-for="project in visibleProjects" :key="project.id" class="project" :class="{selected:project.id===selectedId}" @click="selectProject(project)"><strong>{{project.mainTitle||project.topicTitle}}</strong><span>{{project.topicTitle}}</span><small>{{project.text.slice(0,56)}}{{project.text.length>56?'…':''}}</small></button><p v-if="!visibleProjects.length" class="empty">当前列表为空</p></div>
+    </aside>
+    <main class="surface shot-workspace">
+      <header><div><h3>镜头创作区</h3><p>每句台词对应一个镜头，素材类型是系统建议结果，可人工修改。</p></div><div><el-button data-action="split-current" :loading="splitting" @click="splitCurrent">从当前文案自动拆分镜头</el-button><el-button :loading="splitting" @click="splitAll">自动拆分所有文案镜头</el-button></div></header>
+      <div v-if="!selected" class="workspace-empty">请从左侧选择文案</div>
+      <div v-else-if="!shots.length" class="workspace-empty"><strong>当前文案还没有镜头</strong><span>点击右上角按钮，系统会拆分台词并推荐素材类型。</span></div>
+      <article v-for="(shot,index) in shots" :key="shot.id" class="shot-card"><span class="number">{{index+1}}</span><div class="shot-copy"><el-input :model-value="shot.copywriting" type="textarea" :rows="3" @update:model-value="updateShot(index,{copywriting:String($event)})"/><small>{{shot.suggestionSource==='manual'?'已人工确认':shot.suggestionSource==='default'?'待人工确认':'已按关键词推荐'}}</small></div><div class="shot-settings"><label>素材类型<el-select :model-value="shot.assetCategoryId" @update:model-value="updateShot(index,{assetCategoryId:String($event)})"><el-option v-for="category in categories" :key="category.id" :label="`${category.name}（${category.assetCount}）`" :value="category.id"/></el-select></label><label>时长策略<el-select :model-value="shot.durationMode" @update:model-value="updateShot(index,{durationMode:$event})"><el-option label="跟随配音" value="voice"/><el-option label="固定时长" value="fixed"/><el-option label="自动" value="auto"/></el-select></label><el-checkbox :model-value="shot.muteOriginal" @update:model-value="updateShot(index,{muteOriginal:Boolean($event)})">静音原声</el-checkbox></div><footer><el-button :disabled="index===0" @click="move(index,-1)">上移</el-button><el-button :disabled="index===shots.length-1" @click="move(index,1)">下移</el-button><el-button type="danger" @click="remove(index)">删除</el-button></footer></article>
+      <div v-if="shots.length" class="save-row"><el-button type="primary" :loading="saving" @click="saveShots">保存镜头修改</el-button></div>
+    </main>
   </div>
- </div>
-</template>
-<style scoped>
-.create-bar{display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:16px 20px;margin-bottom:18px}.create-bar div{display:grid;margin-right:auto}.create-bar span{font-size:12px;color:var(--muted);margin-top:3px}.studio{display:grid;grid-template-columns:260px minmax(560px,1fr) 420px;gap:18px;align-items:start}.studio>*{min-width:0}@media(max-width:1500px){.studio{grid-template-columns:250px minmax(520px,1fr)}.media-panel{grid-column:1/-1}}@media(max-width:900px){.studio{grid-template-columns:1fr}.media-panel{grid-column:auto}.create-bar{flex-wrap:wrap}}
+  <MediaSettingsPanel class="surface media-panel" :bgm="draft.draft.value.bgm" :voice-volume="1" :subtitle-style="subtitleStyle" :title-style="titleStyle" :title="selected?.mainTitle??''" :sample-text="shots[0]?.copywriting??''" @update:bgm="draft.draft.value.bgm=$event;draft.scheduleSave()" @update:subtitle-style="subtitleStyle=$event;draft.scheduleSave()" @update:title-style="titleStyle=$event;draft.scheduleSave()" />
+</div></template>
+<style scoped>.editing-page{display:grid;gap:18px}.task-bar{position:sticky;top:12px;z-index:5;padding:16px 20px;display:flex;align-items:center;justify-content:flex-end;gap:10px}.task-bar>div{display:grid;margin-right:auto}.task-bar small,.shot-workspace p,.project span,.project small,.workspace-empty{color:var(--text-muted)}.editor-grid{display:grid;grid-template-columns:290px minmax(0,1fr);gap:18px}.library,.shot-workspace,.media-panel{padding:20px}.library h3,.shot-workspace h3,.shot-workspace p{margin:0}.tabs{display:grid;gap:7px;margin:16px 0}.tabs button,.project{border:0;text-align:left;cursor:pointer}.tabs button{padding:10px 12px;border-radius:10px;background:#f2f2ee}.tabs button.active{background:#151512;color:#fff}.project-list{display:grid;gap:10px;max-height:620px;overflow:auto}.project{display:grid;gap:5px;padding:14px;border-radius:14px;background:#f7f7f3;border:1px solid transparent}.project.selected{border-color:var(--brand-yellow);background:#fffbe0}.shot-workspace>header{display:flex;justify-content:space-between;gap:16px}.shot-workspace>header>div:last-child{display:flex;gap:8px}.workspace-empty{min-height:300px;display:grid;place-items:center;align-content:center;gap:8px}.shot-card{display:grid;grid-template-columns:34px minmax(280px,1fr) 250px;gap:12px;padding:16px 0;border-bottom:1px solid var(--border)}.number{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:var(--brand-yellow);font-weight:800}.shot-copy,.shot-settings{display:grid;gap:8px}.shot-copy small{color:#8b6a00}.shot-settings label{display:grid;gap:5px;font-size:12px}.shot-card footer{grid-column:2/4;text-align:right}.save-row{text-align:right;padding-top:18px}.media-panel{margin-bottom:30px}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.task-bar{position:static;flex-wrap:wrap}.shot-card{grid-template-columns:34px 1fr}.shot-settings,.shot-card footer{grid-column:2}}
 </style>
