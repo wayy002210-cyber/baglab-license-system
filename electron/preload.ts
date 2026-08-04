@@ -662,6 +662,9 @@ contextBridge.exposeInMainWorld("autocut", {
   openTaskOutput: async (id: string) => z.object({ opened: z.boolean() }).parse(
     await ipcRenderer.invoke("tasks:openOutput", z.string().uuid().parse(id))
   ),
+  openOutputDirectory: async () => z.object({ opened: z.boolean() }).parse(
+    await ipcRenderer.invoke("tasks:openOutputDirectory")
+  ),
   deleteTask: async (id: string) => z.object({ deleted: z.boolean() }).parse(
     await ipcRenderer.invoke("tasks:delete", z.string().uuid().parse(id))
   ),

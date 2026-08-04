@@ -243,6 +243,7 @@ declare global {
       resumeQueue():Promise<QueueState>;
       getQueueState():Promise<QueueState>;
       openTaskOutput(id: string): Promise<{ opened: boolean }>;
+      openOutputDirectory(): Promise<{ opened: boolean }>;
       deleteTask(id: string): Promise<{ deleted: boolean }>;
       listPublishAccounts(): Promise<PublishAccount[]>;
       createPublishAccount(input: {

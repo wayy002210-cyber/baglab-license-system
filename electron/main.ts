@@ -11,7 +11,7 @@ import {
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { basename, extname, join, resolve } from "node:path";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import Database from "better-sqlite3";
@@ -999,6 +999,14 @@ ipcMain.handle("tasks:openOutput", (_event, id: string) => {
     throw new Error("成片文件不存在");
   }
   shell.showItemInFolder(task.outputPath);
+  return { opened: true };
+});
+ipcMain.handle("tasks:openOutputDirectory", async () => {
+  const settings = settingsRepository().getMediaSettings();
+  const outputDirectory = settings.outputDirectory || join(app.getPath("videos"), "袋研官混剪成片");
+  mkdirSync(outputDirectory, { recursive: true });
+  const result = await shell.openPath(outputDirectory);
+  if (result) throw new Error(`无法打开成品文件夹：${result}`);
   return { opened: true };
 });
 ipcMain.handle("tasks:delete", (_event, id: string) => ({
