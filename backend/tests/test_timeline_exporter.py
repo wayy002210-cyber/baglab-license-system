@@ -3,6 +3,7 @@ from dataclasses import replace
 import io
 import subprocess
 import threading
+from unittest.mock import Mock
 import pytest
 
 from app.timeline.exporter import (
@@ -383,6 +384,16 @@ def test_export_removes_partial_file_when_validation_fails(tmp_path: Path) -> No
 
     assert not final.exists()
     assert not (tmp_path / "final.partial.mp4").exists()
+
+
+def test_output_validation_requires_video_audio_duration_and_nonempty_file(tmp_path: Path) -> None:
+    output = tmp_path / "verified.mp4"
+    output.write_bytes(b"x" * 2048)
+    payload = '{"streams":[{"codec_type":"video","codec_name":"h264"},{"codec_type":"audio","codec_name":"aac"}],"format":{"duration":"12.5","size":"2048"}}'
+    runner = Mock(return_value=subprocess.CompletedProcess([], 0, payload, ""))
+    assert Exporter(ffmpeg="ffmpeg.exe", runner=runner)._validate_output(output)
+    runner.return_value = subprocess.CompletedProcess([], 0, '{"streams":[{"codec_type":"video","codec_name":"h264"}],"format":{"duration":"12.5"}}', "")
+    assert not Exporter(ffmpeg="ffmpeg.exe", runner=runner)._validate_output(output)
 
 
 def test_ass_color_rejects_no_optional_effect_when_width_is_zero(tmp_path: Path) -> None:

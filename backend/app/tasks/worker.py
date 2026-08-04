@@ -57,6 +57,7 @@ class GenerationWorker:
         on_cancel: Callable[[str], None] | None = None,
         on_start: Callable[[str], None] | None = None,
         on_finish: Callable[[str], None] | None = None,
+        heartbeat_interval_sec: float = 5.0,
     ) -> None:
         self.stages = stages
         self._canceled: set[str] = set()
@@ -64,6 +65,7 @@ class GenerationWorker:
         self._on_cancel = on_cancel
         self._on_start = on_start
         self._on_finish = on_finish
+        self.heartbeat_interval_sec = heartbeat_interval_sec
 
     def cancel(self, task_id: str) -> None:
         self._canceled.add(task_id)
@@ -98,7 +100,21 @@ class GenerationWorker:
                     progress=progress,
                     stage=stage_name,
                 )
-                context = await stage(request, context)
+                stage_task = asyncio.create_task(stage(request, context))
+                while not stage_task.done():
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(stage_task),
+                            timeout=self.heartbeat_interval_sec,
+                        )
+                    except asyncio.TimeoutError:
+                        self._raise_if_canceled(request.task_id)
+                        self._emit(
+                            on_event, request.task_id,
+                            status=stage_name, progress=progress,
+                            stage=stage_name, message="任务仍在处理中",
+                        )
+                context = await stage_task
 
             encoding = self.stages.get("encoding")
             if encoding is not None:

@@ -711,6 +711,12 @@ contextBridge.exposeInMainWorld("autocut", {
   saveStylePresets: async (input: unknown) => z.array(stylePresetSchema).parse(
     await ipcRenderer.invoke("settings:saveStylePresets", z.array(stylePresetSchema).parse(input))
   ),
+  getStylePresetSelection: async () => z.string().parse(
+    await ipcRenderer.invoke("settings:getStylePresetSelection")
+  ),
+  saveStylePresetSelection: async (input: unknown) => z.string().parse(
+    await ipcRenderer.invoke("settings:saveStylePresetSelection", z.string().min(1).parse(input))
+  ),
   selectBgmFile: async () => z.string().nullable().parse(
     await ipcRenderer.invoke("media:selectBgmFile")
   ),

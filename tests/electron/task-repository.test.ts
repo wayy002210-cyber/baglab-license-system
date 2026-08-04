@@ -110,6 +110,8 @@ describe("TaskRepository", () => {
     repository.transition(task.id, "composing", { progress: 60 });
 
     expect(repository.recoverInterrupted()).toBe(1);
+    repository.recoverQueueState();
+    expect(repository.getQueueState()).toMatchObject({status:"idle",activeTaskId:null});
     const recovered = repository.get(task.id);
     expect(recovered?.status).toBe("failed");
     expect(recovered?.errorCode).toBe("APP_INTERRUPTED");

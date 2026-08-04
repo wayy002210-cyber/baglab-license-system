@@ -144,6 +144,15 @@ export class SettingsRepository {
     return this.set("text-style-presets", structuredClone(presets));
   }
 
+  getStylePresetSelection(): string {
+    return this.get("text-style-preset-selection", "__random__");
+  }
+
+  saveStylePresetSelection(id: string): string {
+    if (!id.trim()) throw new Error("Style preset selection is required");
+    return this.set("text-style-preset-selection", id.trim());
+  }
+
   getVoiceSettings(): VoiceSettings {
     return this.get("voice-settings", defaultVoiceSettings);
   }

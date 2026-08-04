@@ -80,6 +80,9 @@ describe("SettingsRepository", () => {
 
     repository.saveStylePresets([preset]);
     expect(new SettingsRepository(database).getStylePresets()).toEqual([preset]);
+    expect(repository.getStylePresetSelection()).toBe("__random__");
+    expect(repository.saveStylePresetSelection(preset.id)).toBe(preset.id);
+    expect(new SettingsRepository(database).getStylePresetSelection()).toBe(preset.id);
     database.close();
   });
 

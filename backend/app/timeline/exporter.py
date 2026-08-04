@@ -5,6 +5,7 @@ import threading
 import time
 import math
 import os
+import json
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -380,14 +381,26 @@ class Exporter:
         ffprobe = str(Path(self.ffmpeg).with_name("ffprobe.exe"))
         result = self.runner(
             [
-                ffprobe, "-v", "error", "-select_streams", "v:0",
-                "-show_entries", "stream=codec_name,width,height",
-                "-show_entries", "format=duration", "-of", "json", str(path),
+                ffprobe, "-v", "error",
+                "-show_entries", "stream=codec_type,codec_name,width,height:format=duration,size",
+                "-of", "json", str(path),
             ],
             capture_output=True, text=True, check=False,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-        return result.returncode == 0 and '"codec_name"' in result.stdout
+        if result.returncode != 0 or not path.exists() or path.stat().st_size < 1024:
+            return False
+        try:
+            payload = json.loads(result.stdout)
+            streams = payload.get("streams") or []
+            duration = float((payload.get("format") or {}).get("duration") or 0)
+            return (
+                duration > 0
+                and any(item.get("codec_type") == "video" for item in streams)
+                and any(item.get("codec_type") == "audio" for item in streams)
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return False
 
     def _execute(
         self,

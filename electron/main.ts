@@ -734,7 +734,7 @@ ipcMain.handle("copywritingProjects:createTasks",(_event,input:{projectIds:strin
   if(!database)throw new Error("数据库尚未就绪");
   const draft=creationDraftRepository().get();const bgm=draft?.bgm??null;
   const bgmCandidates=bgm?.sourceType==="folder"&&existsSync(bgm.path)?readdirSync(bgm.path,{withFileTypes:true}).filter(entry=>entry.isFile()&&[".mp3",".wav",".m4a",".aac",".flac"].includes(extname(entry.name).toLowerCase())).map(entry=>join(bgm.path,entry.name)).sort():[];
-  return createProjectTasks({database,projectRepository:copywritingProjectRepository(),taskRepository:taskRepository(),projectIds:input.projectIds,seed:input.seed,personas:personaRepository().list(),assets:assetRepository().listCategories().flatMap(category=>assetRepository().listAssets(category.id)),voice:settingsRepository().getVoiceSettings(),media:settingsRepository().getMediaSettings(),bgm,bgmCandidates,stylePresets:settingsRepository().getStylePresets(),subtitleStyle:draft?.subtitleStyle??defaultSubtitleStyle,titleStyle:draft?.titleStyle??defaultTitleStyle});
+  return createProjectTasks({database,projectRepository:copywritingProjectRepository(),taskRepository:taskRepository(),projectIds:input.projectIds,seed:input.seed,personas:personaRepository().list(),assets:assetRepository().listCategories().flatMap(category=>assetRepository().listAssets(category.id)),voice:settingsRepository().getVoiceSettings(),media:settingsRepository().getMediaSettings(),bgm,bgmCandidates,stylePresets:settingsRepository().getStylePresets(),stylePresetSelection:settingsRepository().getStylePresetSelection(),subtitleStyle:draft?.subtitleStyle??defaultSubtitleStyle,titleStyle:draft?.titleStyle??defaultTitleStyle});
 });
 ipcMain.handle("templates:create", (_event, input: TemplateInput) =>
   templateRepository().create(input)
@@ -869,6 +869,12 @@ ipcMain.handle("settings:getStylePresets", () =>
 );
 ipcMain.handle("settings:saveStylePresets", (_event, input) =>
   settingsRepository().saveStylePresets(input)
+);
+ipcMain.handle("settings:getStylePresetSelection", () =>
+  settingsRepository().getStylePresetSelection()
+);
+ipcMain.handle("settings:saveStylePresetSelection", (_event, input) =>
+  settingsRepository().saveStylePresetSelection(String(input))
 );
 ipcMain.handle("media:selectBgmFile", async () => {
   if (!window) throw new Error("应用窗口尚未就绪");
@@ -1280,6 +1286,7 @@ app.whenReady().then(async () => {
   applyMigrations(database);
   ensureBuiltInTemplate(templateRepository());
   taskRepository().recoverInterrupted();
+  taskRepository().recoverQueueState();
   protocol.handle("autocut-media", (request) => {
     const url = new URL(request.url);
     const resourceId = url.pathname.split("/").filter(Boolean).at(-1);

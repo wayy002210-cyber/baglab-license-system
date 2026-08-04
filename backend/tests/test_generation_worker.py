@@ -150,7 +150,6 @@ def test_worker_allows_only_one_encoding_stage_at_a_time() -> None:
         )
 
     asyncio.run(run_both())
-
     assert maximum_active == 1
 
 
@@ -188,11 +187,25 @@ def test_worker_does_not_report_encoding_until_it_owns_the_lock() -> None:
         await asyncio.gather(first, second)
 
     asyncio.run(run_both())
-
     assert [event.status for event in second_events] == [
         "waiting_encoding", "encoding", "completed"
     ]
 
+
+def test_worker_emits_heartbeat_while_a_stage_is_still_running() -> None:
+    async def slow(request, context):
+        await asyncio.sleep(0.035)
+        return context
+
+    events: list[TaskEvent] = []
+    worker = GenerationWorker(
+        stages={"generating_voice": slow}, heartbeat_interval_sec=0.01
+    )
+    asyncio.run(worker.run(TaskExecutionRequest(
+        taskId="heartbeat", seed=1, snapshot={}, outputPath="out.mp4"
+    ), on_event=events.append))
+    voice_events = [event for event in events if event.status == "generating_voice"]
+    assert len(voice_events) >= 3
 
 def test_encoding_stage_can_emit_real_progress_between_75_and_99() -> None:
     async def encode(request, context):

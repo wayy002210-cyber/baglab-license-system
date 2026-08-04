@@ -286,6 +286,8 @@ declare global {
         subtitleStyle: import("../shared/media-style").TextStyle;
         titleStyle: import("../shared/media-style").TextStyle;
       }>>;
+      getStylePresetSelection(): Promise<string>;
+      saveStylePresetSelection(input: string): Promise<string>;
       selectBgmFile(): Promise<string | null>;
       selectBgmFolder(): Promise<string | null>;
       scanAudioLibrary(input: {
