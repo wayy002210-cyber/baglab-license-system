@@ -50,6 +50,9 @@ async function remove(job: Job) {
   }
 }
 const accountName = (id:string) => accounts.value.find(a => a.id === id)?.name ?? "已删除账号";
+const taskName = (task: Task) => String(
+  (task.snapshot.copywriting as { mainTitle?: string } | undefined)?.mainTitle || task.id
+);
 onMounted(load);
 </script>
 <template>
@@ -82,11 +85,11 @@ onMounted(load);
     </section>
     <el-dialog v-model="dialogOpen" title="新建发布排期" width="520px">
       <el-form label-position="top">
-        <el-form-item label="已完成成片"><el-select v-model="form.taskId"><el-option v-for="task in tasks.filter(t=>t.status==='completed')" :key="task.id" :label="task.outputPath || task.id" :value="task.id" /></el-select></el-form-item>
+        <el-form-item label="已完成成片"><el-select v-model="form.taskId"><el-option v-for="task in tasks.filter(t=>t.status==='completed')" :key="task.id" :label="taskName(task)" :value="task.id" /></el-select></el-form-item>
         <el-form-item label="发布账号"><el-select v-model="form.accountId"><el-option v-for="account in accounts" :key="account.id" :label="account.name" :value="account.id" /></el-select></el-form-item>
         <el-form-item label="标题"><el-input v-model="form.title" /></el-form-item>
         <el-form-item label="话题"><el-input v-model="form.topics" placeholder="工厂, 定制, 实拍" /></el-form-item>
-        <el-form-item label="发布时间"><el-date-picker v-model="form.scheduledAt" type="datetime" placeholder="留空为立即发布" /></el-form-item>
+        <el-form-item label="发布时间"><el-date-picker v-model="form.scheduledAt" type="datetime" format="YYYY年MM月DD日 HH:mm" placeholder="留空为立即发布" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogOpen=false">取消</el-button><el-button type="primary" :disabled="!form.taskId || !form.accountId || !form.title.trim()" @click="create">创建</el-button></template>
     </el-dialog>

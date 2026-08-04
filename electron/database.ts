@@ -184,6 +184,7 @@ CREATE TABLE IF NOT EXISTS copywriting_projects (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   archived_at TEXT
+  ,source_project_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS copywriting_projects_status_idx
@@ -234,6 +235,13 @@ export function applyMigrations(database: Database.Database): void {
          VALUES (1, ?)`
       )
       .run(new Date().toISOString());
+    const projectColumns = database.prepare("PRAGMA table_info(copywriting_projects)").all() as Array<{ name: string }>;
+    if (!projectColumns.some((column) => column.name === "source_project_id")) {
+      database.exec("ALTER TABLE copywriting_projects ADD COLUMN source_project_id TEXT");
+    }
+    database.prepare(
+      `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, ?)`
+    ).run(new Date().toISOString());
     database
       .prepare(
         `INSERT OR IGNORE INTO schema_migrations(version, applied_at)

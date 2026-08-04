@@ -12,6 +12,7 @@ export type CopywritingProject = {
   mainTitle: string; text: string; model: string; status: CopywritingStatus;
   complianceIssues: unknown[]; errorMessage: string | null; createdAt: string;
   updatedAt: string; archivedAt: string | null;
+  sourceProjectId: string | null;
 };
 
 export type CopywritingShot = {
@@ -25,6 +26,7 @@ export type CopywritingShot = {
 export type CreateCopywritingProjectInput = Pick<CopywritingProject,
   "personaId" | "topicId" | "topicTitle" | "mainTitle" | "text" | "model" | "status"
 > & { complianceIssues?: unknown[]; errorMessage?: string | null };
+export type CreateProjectWithSource = CreateCopywritingProjectInput & { sourceProjectId?: string | null };
 
 export type ReplaceShotInput = Omit<CopywritingShot, "id" | "projectId" | "index">;
 
@@ -33,21 +35,22 @@ type ProjectRow = {
   main_title: string; content: string; model: string; status: CopywritingStatus;
   compliance_issues_json: string; error_message: string | null; created_at: string;
   updated_at: string; archived_at: string | null;
+  source_project_id: string | null;
 };
 
 export class CopywritingProjectRepository {
   constructor(private readonly database: Database.Database) {}
 
-  create(input: CreateCopywritingProjectInput): CopywritingProject {
+  create(input: CreateProjectWithSource): CopywritingProject {
     const id = randomUUID();
     const now = new Date().toISOString();
     this.database.prepare(`INSERT INTO copywriting_projects(
       id, persona_id, topic_id, topic_title, main_title, content, model, status,
-      compliance_issues_json, error_message, created_at, updated_at, archived_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`).run(
+      compliance_issues_json, error_message, created_at, updated_at, archived_at, source_project_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`).run(
       id, input.personaId, input.topicId, input.topicTitle, input.mainTitle,
       input.text, input.model, input.status, JSON.stringify(input.complianceIssues ?? []),
-      input.errorMessage ?? null, now, now
+      input.errorMessage ?? null, now, now, input.sourceProjectId ?? null
     );
     return this.require(id);
   }
@@ -99,6 +102,7 @@ export class CopywritingProjectRepository {
       status: "library",
       complianceIssues: source.complianceIssues,
       errorMessage: null
+      ,sourceProjectId: source.id
     });
   }
 
@@ -153,5 +157,6 @@ function mapProject(row: ProjectRow): CopywritingProject {
   return { id: row.id, personaId: row.persona_id, topicId: row.topic_id,
     topicTitle: row.topic_title, mainTitle: row.main_title, text: row.content,
     model: row.model, status: row.status, complianceIssues: JSON.parse(row.compliance_issues_json) as unknown[],
-    errorMessage: row.error_message, createdAt: row.created_at, updatedAt: row.updated_at, archivedAt: row.archived_at };
+    errorMessage: row.error_message, createdAt: row.created_at, updatedAt: row.updated_at,
+    archivedAt: row.archived_at, sourceProjectId: row.source_project_id };
 }
