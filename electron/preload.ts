@@ -281,6 +281,11 @@ const copyModelSettingsSchema = z.object({
   temperature: z.number().min(0).max(2),
   candidateModels: z.array(z.string().trim().min(1)).min(1)
 });
+const voiceSettingsSchema = z.object({
+  voiceId: z.string().min(1), source: z.enum(["system", "custom", "clone"]), model: z.string().min(1),
+  emotion: z.string().nullable(), speed: z.number().min(0.5).max(2), volume: z.number().min(0).max(3),
+  pitch: z.number().int().min(-12).max(12), languageBoost: z.string().nullable()
+});
 const referenceScriptStructureSchema = z.object({
   hook: z.string(),
   narrative: z.string(),
@@ -572,6 +577,10 @@ contextBridge.exposeInMainWorld("autocut", {
       ),
   listVoices: async () =>
     z.array(voiceSchema).parse(await ipcRenderer.invoke("voices:list")),
+  getVoiceSettings: async () => voiceSettingsSchema.parse(await ipcRenderer.invoke("settings:getVoice")),
+  saveVoiceSettings: async (input: unknown) => voiceSettingsSchema.parse(
+    await ipcRenderer.invoke("settings:saveVoice", voiceSettingsSchema.parse(input))
+  ),
   getVoiceCapabilities: async () =>
     voiceCapabilitiesSchema.parse(
       await ipcRenderer.invoke("voices:capabilities")

@@ -4,7 +4,8 @@ import { applyMigrations } from "../../electron/database";
 import {
   SettingsRepository,
   defaultCopyModelSettings,
-  defaultMediaSettings
+  defaultMediaSettings,
+  defaultVoiceSettings
 } from "../../electron/repositories/settings-repository";
 import {
   defaultSubtitleStyle,
@@ -79,6 +80,22 @@ describe("SettingsRepository", () => {
 
     repository.saveStylePresets([preset]);
     expect(new SettingsRepository(database).getStylePresets()).toEqual([preset]);
+    database.close();
+  });
+
+  it("persists global voice settings without generated audio", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const repository = new SettingsRepository(database);
+    expect(repository.getVoiceSettings()).toEqual(defaultVoiceSettings);
+
+    const saved = repository.saveVoiceSettings({
+      voiceId: "baglab-clone", source: "clone", model: "speech-2.8-hd",
+      emotion: "calm", speed: 1.2, volume: 1.4, pitch: 2, languageBoost: "Chinese"
+    });
+
+    expect(new SettingsRepository(database).getVoiceSettings()).toEqual(saved);
+    expect(Object.keys(saved)).not.toContain("audioPath");
     database.close();
   });
 });

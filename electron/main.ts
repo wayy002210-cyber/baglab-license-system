@@ -702,6 +702,8 @@ ipcMain.handle("assets:selectAndScan", async () => {
   });
 });
 ipcMain.handle("templates:list", () => templateRepository().list());
+ipcMain.handle("settings:getVoice", () => settingsRepository().getVoiceSettings());
+ipcMain.handle("settings:saveVoice", (_event, input) => settingsRepository().saveVoiceSettings(input));
 ipcMain.handle("copywritingProjects:list", (_event, statuses?: CopywritingStatus[]) =>
   copywritingProjectRepository().list(statuses)
 );

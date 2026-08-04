@@ -23,6 +23,16 @@ export type StylePreset = {
   subtitleStyle: TextStyle;
   titleStyle: TextStyle;
 };
+export type VoiceSettings = {
+  voiceId: string;
+  source: "system" | "custom" | "clone";
+  model: string;
+  emotion: string | null;
+  speed: number;
+  volume: number;
+  pitch: number;
+  languageBoost: string | null;
+};
 
 export const defaultMediaSettings: MediaSettings = {
   outputDirectory: "",
@@ -38,6 +48,16 @@ export const defaultCopyModelSettings: CopyModelSettings = {
   defaultModel: "deepseek-v3",
   temperature: 0.7,
   candidateModels: ["deepseek-v3", "qwen-plus"]
+};
+export const defaultVoiceSettings: VoiceSettings = {
+  voiceId: "male-qn-qingse",
+  source: "system",
+  model: "speech-2.8-hd",
+  emotion: "calm",
+  speed: 1,
+  volume: 1,
+  pitch: 0,
+  languageBoost: "Chinese"
 };
 
 export class SettingsRepository {
@@ -122,5 +142,17 @@ export class SettingsRepository {
 
   saveStylePresets(presets: StylePreset[]): StylePreset[] {
     return this.set("text-style-presets", structuredClone(presets));
+  }
+
+  getVoiceSettings(): VoiceSettings {
+    return this.get("voice-settings", defaultVoiceSettings);
+  }
+
+  saveVoiceSettings(settings: VoiceSettings): VoiceSettings {
+    if (!settings.voiceId.trim()) throw new Error("必须选择配音音色");
+    if (settings.speed < 0.5 || settings.speed > 2) throw new RangeError("语速必须在 0.5 至 2.0 之间");
+    if (settings.volume < 0 || settings.volume > 3) throw new RangeError("人声音量必须在 0 至 3 之间");
+    if (!Number.isInteger(settings.pitch) || settings.pitch < -12 || settings.pitch > 12) throw new RangeError("音调必须在 -12 至 12 之间");
+    return this.set("voice-settings", structuredClone(settings));
   }
 }

@@ -155,6 +155,8 @@ declare global {
       listVoices(): Promise<
         Array<{ voiceId: string; name: string; kind: string }>
       >;
+      getVoiceSettings(): Promise<{voiceId:string;source:"system"|"custom"|"clone";model:string;emotion:string|null;speed:number;volume:number;pitch:number;languageBoost:string|null}>;
+      saveVoiceSettings(input:{voiceId:string;source:"system"|"custom"|"clone";model:string;emotion:string|null;speed:number;volume:number;pitch:number;languageBoost:string|null}):Promise<{voiceId:string;source:"system"|"custom"|"clone";model:string;emotion:string|null;speed:number;volume:number;pitch:number;languageBoost:string|null}>;
       getVoiceCapabilities(): Promise<{
         models: string[];
         emotions: string[];
