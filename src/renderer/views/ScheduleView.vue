@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
 import { toUserMessage } from "../lib/user-error";
@@ -8,9 +8,11 @@ import { createPublishAssetPatch, createPublishJobsInput } from "../lib/publish-
 type Asset = Awaited<ReturnType<typeof window.autocut.listPublishAssets>>[number];
 type Account = Awaited<ReturnType<typeof window.autocut.listPublishAccounts>>[number];
 type TopicTemplate = Awaited<ReturnType<typeof window.autocut.listPublishTopicTemplates>>[number];
+type PublishJob = Awaited<ReturnType<typeof window.autocut.listPublishJobs>>[number];
 const assets = ref<Asset[]>([]);
 const accounts = ref<Account[]>([]);
 const templates = ref<TopicTemplate[]>([]);
+const jobs = ref<PublishJob[]>([]);
 const activeTab = ref("unscheduled");
 const preview = ref<Asset | null>(null);
 const busy = ref("");
@@ -26,9 +28,12 @@ const missing = computed(() => assets.value.filter((asset) => !asset.publishTitl
 
 function accountLabel(id: string) { const account = accounts.value.find((value) => value.id === id); const platform = account?.platform === "douyin" ? "抖音" : account?.platform === "wechat_channels" ? "视频号" : "快手"; return account ? `${account.name} / ${platform}` : id; }
 async function load() {
-  [assets.value, accounts.value, templates.value] = await Promise.all([window.autocut.listPublishAssets(), window.autocut.listPublishAccounts(), window.autocut.listPublishTopicTemplates()]);
+  [assets.value, accounts.value, templates.value, jobs.value] = await Promise.all([window.autocut.listPublishAssets(), window.autocut.listPublishAccounts(), window.autocut.listPublishTopicTemplates(), window.autocut.listPublishJobs()]);
   for (const asset of assets.value) { selectedAccounts.value[asset.id] ??= []; scheduleTimes.value[asset.id] ??= new Date(Date.now() + 20 * 60 * 1000); }
 }
+function jobsFor(asset: Asset) { return jobs.value.filter((job) => job.publishAssetId === asset.id); }
+function activeJob(asset: Asset) { return jobsFor(asset).find((job) => ["publishing", "needs_user"].includes(job.status)) ?? null; }
+const workflowLabel: Record<string, string> = { opening_profile:"正在打开浏览器", checking_login:"检查登录状态", waiting_for_human:"等待人工接管", uploading_video:"正在上传视频", waiting_upload:"等待上传完成", filling_metadata:"正在填写标题与话题", uploading_cover:"正在上传封面", configuring_publish_time:"正在设置发布时间", submitting:"正在提交发布", verifying:"正在验证发布", published:"发布成功", failed:"发布失败", canceled:"已取消" };
 async function save(asset: Asset, showError = true): Promise<boolean> {
   try {
     Object.assign(asset, await window.autocut.updatePublishAsset(asset.id, createPublishAssetPatch(asset)));
@@ -63,9 +68,21 @@ async function publish(asset: Asset, scheduled: boolean) {
   } catch (error) { ElMessage.error(toUserMessage(error, "发布任务创建失败")); }
   finally { busy.value = ""; }
 }
+async function resume(job: PublishJob) {
+  busy.value = job.publishAssetId ?? job.id;
+  try { await window.autocut.resumePublishJob(job.id); ElMessage.success("已继续发布，请在浏览器中等待平台处理"); await load(); }
+  catch (error) { ElMessage.error(toUserMessage(error, "继续发布失败")); }
+  finally { busy.value = ""; }
+}
+async function cancelJob(job: PublishJob) {
+  try { await window.autocut.cancelPublishJob(job.id); ElMessage.success("发布任务已取消"); await load(); }
+  catch (error) { ElMessage.error(toUserMessage(error, "发布任务取消失败")); }
+}
 async function discard(asset: Asset) { await ElMessageBox.confirm(`删除待发布视频“${asset.shortTitle}”？成片文件不会删除。`, "删除发布记录"); await window.autocut.discardPublishAsset(asset.id); if (preview.value?.id === asset.id) preview.value = null; await load(); }
 async function saveTemplate() { const topics = templateTopics.value.split(/[,，\s#]+/).map((value) => value.trim()).filter(Boolean); if (!templateName.value.trim() || !topics.length) return ElMessage.warning("请填写模板名称和话题"); await window.autocut.savePublishTopicTemplate({ name: templateName.value, topics }); templateDialog.value = false; templateName.value = ""; templateTopics.value = ""; await load(); ElMessage.success("话题模板已保存"); }
-onMounted(load);
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+onMounted(async () => { await load(); refreshTimer = setInterval(() => void load(), 5_000); });
+onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); });
 </script>
 
 <template>
@@ -77,7 +94,7 @@ onMounted(load);
       <h3>排期列表</h3><div class="asset-list">
         <article v-for="asset in visible" :key="asset.id" class="asset-card"><div class="timeline" /><header><el-tag>{{ statusLabel[asset.status] }}</el-tag><strong>{{ new Date(asset.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) }} · {{ asset.shortTitle }}</strong><el-tag type="success" effect="plain">{{ asset.publishTitle && asset.topics.length ? '标题 / 话题已填' : '待补资料' }}</el-tag><span>{{ (selectedAccounts[asset.id] ?? []).length ? `已选 ${(selectedAccounts[asset.id] ?? []).length} 个账号` : '未选择发布账号' }}</span><el-button class="preview-btn" @click="preview = asset">预览视频</el-button></header>
           <div class="form-grid"><label>发布标题<el-input v-model="asset.publishTitle" type="textarea" :rows="2" maxlength="30" show-word-limit @blur="save(asset)" /></label><label>发布话题<div class="topic-row"><el-select :model-value="asset.topicTemplateId ?? ''" placeholder="选择话题模板" @change="chooseTemplate(asset, String($event))"><el-option label="随机话题模板" value="" /><el-option v-for="template in templates" :key="template.id" :label="template.name" :value="template.id" /></el-select><el-input :model-value="asset.topics.map((value) => '#'+value.replace(/^#/,'')).join(' ')" placeholder="#工厂 #定制" @change="asset.topics=String($event).split(/[,，\s#]+/).filter(Boolean); save(asset)" /></div></label><label>发布账号<el-select v-model="selectedAccounts[asset.id]" multiple collapse-tags placeholder="选择一个或多个已登录账号"><el-option v-for="account in accounts.filter((value) => value.linkStatus === 'connected')" :key="account.id" :label="accountLabel(account.id)" :value="account.id" /></el-select></label><label>本地封面<el-button class="cover" @click="cover(asset)">{{ asset.coverPath ? '已选择：'+asset.coverPath.split(/[\\/]/).pop() : '点击选择本地封面' }}</el-button></label></div>
-          <footer><template v-if="(selectedAccounts[asset.id] ?? []).length"><el-date-picker v-model="scheduleTimes[asset.id]" type="datetime" format="YYYY年MM月DD日 HH:mm" placeholder="默认20分钟后" /><el-button :loading="busy === asset.id" @click="publish(asset,true)">设定排期</el-button><el-button type="primary" :loading="busy === asset.id" @click="publish(asset,false)">立即发布</el-button></template><span v-else>请选择发布账号后操作</span><el-button class="delete" type="danger" plain @click="discard(asset)">删除</el-button></footer>
+          <footer><template v-if="activeJob(asset)"><span class="agent-state">{{ workflowLabel[activeJob(asset)?.workflowState ?? ''] ?? activeJob(asset)?.workflowState }}</span><el-button v-if="activeJob(asset)?.status === 'needs_user'" type="primary" :loading="busy === asset.id" @click="resume(activeJob(asset)!)">继续发布</el-button><el-button v-if="['publishing','needs_user'].includes(activeJob(asset)?.status ?? '')" plain @click="cancelJob(activeJob(asset)!)">取消发布</el-button></template><template v-else-if="(selectedAccounts[asset.id] ?? []).length"><el-date-picker v-model="scheduleTimes[asset.id]" type="datetime" format="YYYY年MM月DD日 HH:mm" placeholder="默认20分钟后" /><el-button :loading="busy === asset.id" @click="publish(asset,true)">设定排期</el-button><el-button type="primary" :loading="busy === asset.id" @click="publish(asset,false)">立即发布</el-button></template><span v-else>请选择发布账号后操作</span><el-button class="delete" type="danger" plain @click="discard(asset)">删除</el-button></footer>
         </article><el-empty v-if="!visible.length" description="当前分类暂无视频" />
       </div></div>
       <aside><h3>通用预览</h3><video v-if="preview" :key="preview.id" controls preload="metadata" :src="`autocut-media://task/${preview.taskId}`" /><div v-else class="empty-preview">点击卡片上的“预览视频”<br>在此播放成片</div><span v-if="preview">{{ preview.shortTitle }}</span><el-button v-if="preview" text @click="preview = null">清空预览</el-button></aside>
@@ -87,5 +104,6 @@ onMounted(load);
 </template>
 
 <style scoped>
+.agent-state{padding:8px 12px;border:1px solid #f0d84f;border-radius:10px;background:#fff8cf;color:#765d00!important}
 .publish-shell{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:22px;padding:26px}.notice{padding:16px 18px;border-radius:14px;background:#fff9cf;color:#5b521b;line-height:1.7;border:1px solid #f5e86a}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:18px 0}.stats div{display:grid;gap:5px;padding:18px;border:1px solid #e9e9e2;border-radius:16px}.stats strong{font-size:26px;color:#171714}.stats div:first-child strong,.stats div:nth-child(3) strong{color:#b69000}.stats span,.asset-card header>span{font-size:12px;color:var(--text-muted)}.switches{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.switches>span{font-weight:700;margin-left:10px}.switches :deep(.el-segmented){--el-segmented-item-selected-bg-color:var(--brand-yellow);--el-segmented-item-selected-color:#111;--el-segmented-bg-color:#f1f1ed;min-height:44px;padding:4px;border-radius:14px}.switches :deep(.el-segmented__item){padding:0 18px;border-radius:10px;font-weight:700}.switches>.el-button{height:44px;padding:0 20px;border-radius:13px}.asset-list{display:grid;gap:16px}.asset-card{position:relative;padding:18px 18px 16px 32px;border:1px solid #e7e7df;border-radius:18px;background:#fff}.timeline{position:absolute;left:18px;top:23px;bottom:20px;width:3px;background:var(--brand-yellow);border-radius:3px}.asset-card header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.preview-btn{margin-left:auto}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:16px 0}.form-grid label{display:grid;gap:7px;font-size:13px;font-weight:700}.topic-row{display:grid;grid-template-columns:180px 1fr;gap:8px}.cover{width:100%;overflow:hidden}.asset-card footer{display:flex;align-items:center;gap:9px}.asset-card footer>span{color:var(--text-muted)}.asset-card footer .el-button{min-height:40px;padding:0 18px;border-radius:12px}.delete{margin-left:auto;border-radius:12px}.publish-shell aside{position:sticky;top:20px;align-self:start;display:grid;gap:12px;padding:16px;border:1px solid #e6e6df;border-radius:18px}.publish-shell aside h3{margin:0}.publish-shell aside video,.empty-preview{width:100%;aspect-ratio:9/16;max-height:66vh;border-radius:15px;background:#171714;color:#aaa}.empty-preview{display:grid;place-items:center;text-align:center;line-height:1.8}.publish-shell aside span{font-size:12px;color:var(--text-muted)}@media(max-width:1150px){.publish-shell{grid-template-columns:1fr}.publish-shell aside{position:static}.stats{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}}
 </style>
