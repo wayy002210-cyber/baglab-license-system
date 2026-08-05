@@ -20,6 +20,7 @@ describe("database migrations", () => {
       "personas",
       "publish_accounts",
       "publish_assets",
+      "publish_job_events",
       "publish_jobs",
       "publish_topic_templates",
       "queue_state",
@@ -40,6 +41,6 @@ describe("database migrations", () => {
     const row = database
       .prepare("SELECT COUNT(*) AS count FROM schema_migrations")
       .get() as { count: number };
-    expect(row.count).toBe(4);
+    expect(row.count).toBe(5);
   });
 });
