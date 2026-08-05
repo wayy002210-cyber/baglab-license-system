@@ -58,7 +58,7 @@ from app.tasks.secure_runtime import SecurePipelineRuntime
 from app.publisher.adapters import PublishRequest, PublishResult
 from app.publisher.service import Platform, PublishingService
 
-BACKEND_BUILD_ID = "0.5.7"
+BACKEND_BUILD_ID = "0.5.8"
 
 
 class CreateTaskRequest(BaseModel):

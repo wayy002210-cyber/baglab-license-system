@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import PageIntro from "../components/PageIntro.vue";
 import { toUserMessage } from "../lib/user-error";
+import { createPublishAssetPatch, createPublishJobsInput } from "../lib/publish-payload";
 
 type Asset = Awaited<ReturnType<typeof window.autocut.listPublishAssets>>[number];
 type Account = Awaited<ReturnType<typeof window.autocut.listPublishAccounts>>[number];
@@ -28,9 +29,14 @@ async function load() {
   [assets.value, accounts.value, templates.value] = await Promise.all([window.autocut.listPublishAssets(), window.autocut.listPublishAccounts(), window.autocut.listPublishTopicTemplates()]);
   for (const asset of assets.value) { selectedAccounts.value[asset.id] ??= []; scheduleTimes.value[asset.id] ??= new Date(Date.now() + 20 * 60 * 1000); }
 }
-async function save(asset: Asset) {
-  try { Object.assign(asset, await window.autocut.updatePublishAsset(asset.id, { publishTitle: asset.publishTitle, topics: asset.topics, topicTemplateId: asset.topicTemplateId, coverPath: asset.coverPath })); }
-  catch (error) { ElMessage.error(toUserMessage(error, "发布资料保存失败")); }
+async function save(asset: Asset, showError = true): Promise<boolean> {
+  try {
+    Object.assign(asset, await window.autocut.updatePublishAsset(asset.id, createPublishAssetPatch(asset)));
+    return true;
+  } catch (error) {
+    if (showError) ElMessage.error(toUserMessage(error, "发布资料保存失败"));
+    return false;
+  }
 }
 async function chooseTemplate(asset: Asset, id: string) { asset.topicTemplateId = id || null; const template = templates.value.find((value) => value.id === id); if (template) asset.topics = [...template.topics]; await save(asset); }
 async function ensureTopics(asset: Asset) {
@@ -50,8 +56,8 @@ async function publish(asset: Asset, scheduled: boolean) {
   if (!accountIds.length) return ElMessage.warning("请至少选择一个已登录发布账号");
   busy.value = asset.id;
   try {
-    await save(asset);
-    await window.autocut.createPublishJobsForAsset({ assetId: asset.id, accountIds, scheduledAt: scheduled ? (scheduleTimes.value[asset.id] ?? new Date(Date.now() + 20 * 60 * 1000)).toISOString() : null });
+    if (!await save(asset, false)) throw new Error("发布资料保存失败，请检查标题、话题和封面后重试");
+    await window.autocut.createPublishJobsForAsset(createPublishJobsInput(asset.id, accountIds, scheduled ? (scheduleTimes.value[asset.id] ?? new Date(Date.now() + 20 * 60 * 1000)).toISOString() : null));
     await load();
     ElMessage.success(scheduled ? "已创建平台定时发布任务" : "已进入立即发布队列");
   } catch (error) { ElMessage.error(toUserMessage(error, "发布任务创建失败")); }
@@ -81,5 +87,5 @@ onMounted(load);
 </template>
 
 <style scoped>
-.publish-shell{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:22px;padding:26px}.notice{padding:16px 18px;border-radius:12px;background:#eef5ff;color:#51647d;line-height:1.7}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:18px 0}.stats div{display:grid;gap:5px;padding:18px;border:1px solid #e9e9e2;border-radius:16px}.stats strong{font-size:26px;color:#3978e8}.stats span,.asset-card header>span{font-size:12px;color:var(--text-muted)}.switches{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.switches>span{font-weight:700;margin-left:10px}.asset-list{display:grid;gap:16px}.asset-card{position:relative;padding:18px 18px 16px 32px;border:1px solid #e7e7df;border-radius:18px;background:#fff}.timeline{position:absolute;left:18px;top:23px;bottom:20px;width:3px;background:#6b9cff;border-radius:3px}.asset-card header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.preview-btn{margin-left:auto}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:16px 0}.form-grid label{display:grid;gap:7px;font-size:13px;font-weight:700}.topic-row{display:grid;grid-template-columns:180px 1fr;gap:8px}.cover{width:100%;overflow:hidden}.asset-card footer{display:flex;align-items:center;gap:9px}.asset-card footer>span{color:var(--text-muted)}.delete{margin-left:auto;border-radius:10px}.publish-shell aside{position:sticky;top:20px;align-self:start;display:grid;gap:12px;padding:16px;border:1px solid #e6e6df;border-radius:18px}.publish-shell aside h3{margin:0}.publish-shell aside video,.empty-preview{width:100%;aspect-ratio:9/16;max-height:66vh;border-radius:15px;background:#101a31;color:#8b94a7}.empty-preview{display:grid;place-items:center;text-align:center;line-height:1.8}.publish-shell aside span{font-size:12px;color:var(--text-muted)}@media(max-width:1150px){.publish-shell{grid-template-columns:1fr}.publish-shell aside{position:static}.stats{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}}
+.publish-shell{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:22px;padding:26px}.notice{padding:16px 18px;border-radius:14px;background:#fff9cf;color:#5b521b;line-height:1.7;border:1px solid #f5e86a}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:18px 0}.stats div{display:grid;gap:5px;padding:18px;border:1px solid #e9e9e2;border-radius:16px}.stats strong{font-size:26px;color:#171714}.stats div:first-child strong,.stats div:nth-child(3) strong{color:#b69000}.stats span,.asset-card header>span{font-size:12px;color:var(--text-muted)}.switches{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.switches>span{font-weight:700;margin-left:10px}.switches :deep(.el-segmented){--el-segmented-item-selected-bg-color:var(--brand-yellow);--el-segmented-item-selected-color:#111;--el-segmented-bg-color:#f1f1ed;min-height:44px;padding:4px;border-radius:14px}.switches :deep(.el-segmented__item){padding:0 18px;border-radius:10px;font-weight:700}.switches>.el-button{height:44px;padding:0 20px;border-radius:13px}.asset-list{display:grid;gap:16px}.asset-card{position:relative;padding:18px 18px 16px 32px;border:1px solid #e7e7df;border-radius:18px;background:#fff}.timeline{position:absolute;left:18px;top:23px;bottom:20px;width:3px;background:var(--brand-yellow);border-radius:3px}.asset-card header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.preview-btn{margin-left:auto}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:16px 0}.form-grid label{display:grid;gap:7px;font-size:13px;font-weight:700}.topic-row{display:grid;grid-template-columns:180px 1fr;gap:8px}.cover{width:100%;overflow:hidden}.asset-card footer{display:flex;align-items:center;gap:9px}.asset-card footer>span{color:var(--text-muted)}.asset-card footer .el-button{min-height:40px;padding:0 18px;border-radius:12px}.delete{margin-left:auto;border-radius:12px}.publish-shell aside{position:sticky;top:20px;align-self:start;display:grid;gap:12px;padding:16px;border:1px solid #e6e6df;border-radius:18px}.publish-shell aside h3{margin:0}.publish-shell aside video,.empty-preview{width:100%;aspect-ratio:9/16;max-height:66vh;border-radius:15px;background:#171714;color:#aaa}.empty-preview{display:grid;place-items:center;text-align:center;line-height:1.8}.publish-shell aside span{font-size:12px;color:var(--text-muted)}@media(max-width:1150px){.publish-shell{grid-template-columns:1fr}.publish-shell aside{position:static}.stats{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}}
 </style>

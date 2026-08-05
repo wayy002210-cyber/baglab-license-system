@@ -24,6 +24,8 @@ describe("VoiceLibrary", () => {
     expect(cards).toHaveLength(2);
     expect(cards[0].classes()).toContain("playing");
     expect(cards[0].text()).toContain("停止试听");
+    expect(cards[0].find(".wave").attributes("aria-label")).toBe("音色");
+    expect(cards[0].find(".wave").text()).not.toContain("▥");
 
     await cards[1].find("button").trigger("click");
     expect(wrapper.emitted("audition")?.[0]).toEqual(["voice-2"]);
