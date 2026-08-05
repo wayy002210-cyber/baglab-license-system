@@ -1,291 +1,68 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 
-export type PublishPlatform = "douyin" | "wechat_channels";
-export type AccountLinkStatus =
-  | "unknown"
-  | "connected"
-  | "expired"
-  | "needs_user";
-export type PublishStatus =
-  | "pending"
-  | "scheduled"
-  | "publishing"
-  | "published"
-  | "failed"
-  | "needs_user"
-  | "canceled";
-
-export type PublishAccount = {
-  id: string;
-  name: string;
-  platform: PublishPlatform;
-  userDataDir: string;
-  linkStatus: AccountLinkStatus;
-  lastCheckedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type PublishJob = {
-  id: string;
-  taskId: string;
-  accountId: string;
-  title: string;
-  topics: string[];
-  coverPath: string | null;
-  status: PublishStatus;
-  scheduledAt: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  errorMessage: string | null;
-  screenshotPath: string | null;
-  attemptCount: number;
-  idempotencyKey: string;
-  createdAt: string;
-  updatedAt: string;
-};
+export type PublishPlatform = "douyin" | "wechat_channels" | "kuaishou";
+export type AccountLinkStatus = "unknown" | "checking" | "connected" | "expired" | "needs_user";
+export type PublishStatus = "pending" | "scheduled" | "publishing" | "published" | "failed" | "needs_user" | "canceled";
+export type PublishAssetStatus = "unscheduled" | "scheduled" | "publishing" | "published" | "failed" | "discarded";
+export type PublishAccount = { id:string; name:string; platform:PublishPlatform; positioning:string; userDataDir:string; linkStatus:AccountLinkStatus; lastCheckedAt:string|null; createdAt:string; updatedAt:string };
+export type PublishAsset = { id:string; taskId:string; shortTitle:string; topic:string; publishTitle:string; topics:string[]; topicTemplateId:string|null; coverPath:string|null; status:PublishAssetStatus; createdAt:string; updatedAt:string };
+export type TopicTemplate = { id:string; name:string; topics:string[]; createdAt:string; updatedAt:string };
+export type PublishJob = { id:string; taskId:string; publishAssetId:string|null; accountId:string; title:string; topics:string[]; coverPath:string|null; status:PublishStatus; scheduledAt:string|null; startedAt:string|null; completedAt:string|null; errorMessage:string|null; screenshotPath:string|null; resultUrl:string|null; attemptCount:number; idempotencyKey:string; createdAt:string; updatedAt:string };
 
 export class PublishRepository {
   constructor(private readonly database: Database.Database) {}
 
-  createAccount(input: {
-    name: string;
-    platform: PublishPlatform;
-    userDataDir: string;
-  }): PublishAccount {
-    const id = randomUUID();
-    const now = new Date().toISOString();
-    this.database
-      .prepare(
-        `INSERT INTO publish_accounts(
-          id, name, platform, user_data_dir, link_status,
-          last_checked_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'unknown', NULL, ?, ?)`
-      )
-      .run(id, input.name.trim(), input.platform, input.userDataDir, now, now);
+  createAccount(input:{name:string;platform:PublishPlatform;positioning?:string;userDataDir:string}):PublishAccount {
+    const id=randomUUID(), now=new Date().toISOString();
+    this.database.prepare("INSERT INTO publish_accounts(id,name,platform,positioning,user_data_dir,link_status,last_checked_at,created_at,updated_at) VALUES(?,?,?,?,?,'unknown',NULL,?,?)").run(id,input.name.trim(),input.platform,input.positioning?.trim()??"",input.userDataDir,now,now);
     return this.requireAccount(id);
   }
+  listAccounts():PublishAccount[]{return (this.database.prepare("SELECT * FROM publish_accounts WHERE platform IN ('douyin','wechat_channels','kuaishou') ORDER BY created_at DESC").all() as AccountRow[]).map(mapAccount)}
+  getAccount(id:string):PublishAccount|null{const row=this.database.prepare("SELECT * FROM publish_accounts WHERE id=?").get(id) as AccountRow|undefined;return row?mapAccount(row):null}
+  updateAccountStatus(id:string,status:AccountLinkStatus):PublishAccount{const now=new Date().toISOString();if(!this.database.prepare("UPDATE publish_accounts SET link_status=?,last_checked_at=?,updated_at=? WHERE id=?").run(status,now,now,id).changes)throw new Error("发布账号不存在");return this.requireAccount(id)}
+  deleteAccount(id:string):boolean{return this.database.prepare("DELETE FROM publish_accounts WHERE id=?").run(id).changes>0}
 
-  listAccounts(): PublishAccount[] {
-    return (
-      this.database
-        .prepare(
-          "SELECT * FROM publish_accounts WHERE platform IN ('douyin', 'wechat_channels') ORDER BY created_at DESC"
-        )
-        .all() as AccountRow[]
-    ).map(mapAccount);
+  syncCompletedTasks():PublishAsset[]{
+    const rows=this.database.prepare("SELECT id,snapshot_json,created_at FROM generation_tasks WHERE status='completed' AND output_path IS NOT NULL AND NOT EXISTS(SELECT 1 FROM publish_assets a WHERE a.task_id=generation_tasks.id) ORDER BY created_at").all() as Array<{id:string;snapshot_json:string;created_at:string}>;
+    const insert=this.database.prepare("INSERT INTO publish_assets(id,task_id,short_title,topic,publish_title,topics_json,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'unscheduled',?,?)");
+    this.database.transaction(()=>{for(const row of rows){const snapshot=safeJson<Record<string,unknown>>(row.snapshot_json,{});const copy=(snapshot.copywriting??{}) as Record<string,unknown>;const title=String(copy.mainTitle??"待发布视频").trim()||"待发布视频";const topic=String(copy.topicTitle??copy.text??"").trim();insert.run(randomUUID(),row.id,title,topic,title,"[]",row.created_at,row.created_at)}})();
+    return this.listAssets();
   }
-  getAccount(id: string): PublishAccount | null {
-    const row = this.database.prepare(
-      "SELECT * FROM publish_accounts WHERE id = ?"
-    ).get(id) as AccountRow | undefined;
-    return row ? mapAccount(row) : null;
-  }
+  listAssets():PublishAsset[]{return (this.database.prepare("SELECT * FROM publish_assets WHERE status<>'discarded' ORDER BY created_at DESC").all() as AssetRow[]).map(mapAsset)}
+  getAsset(id:string):PublishAsset|null{const row=this.database.prepare("SELECT * FROM publish_assets WHERE id=?").get(id) as AssetRow|undefined;return row?mapAsset(row):null}
+  updateAsset(id:string,patch:{publishTitle?:string;topics?:string[];topicTemplateId?:string|null;coverPath?:string|null}):PublishAsset{const current=this.requireAsset(id),now=new Date().toISOString();this.database.prepare("UPDATE publish_assets SET publish_title=?,topics_json=?,topic_template_id=?,cover_path=?,updated_at=? WHERE id=?").run(patch.publishTitle?.trim()??current.publishTitle,JSON.stringify(patch.topics??current.topics),patch.topicTemplateId===undefined?current.topicTemplateId:patch.topicTemplateId,patch.coverPath===undefined?current.coverPath:patch.coverPath,now,id);return this.requireAsset(id)}
+  discardAsset(id:string):PublishAsset{if(!this.database.prepare("UPDATE publish_assets SET status='discarded',updated_at=? WHERE id=?").run(new Date().toISOString(),id).changes)throw new Error("待发布成片不存在");return this.requireAsset(id)}
 
-  updateAccountStatus(
-    id: string,
-    status: AccountLinkStatus
-  ): PublishAccount {
-    const now = new Date().toISOString();
-    const result = this.database
-      .prepare(
-        `UPDATE publish_accounts
-         SET link_status = ?, last_checked_at = ?, updated_at = ? WHERE id = ?`
-      )
-      .run(status, now, now, id);
-    if (!result.changes) throw new Error(`Publish account not found: ${id}`);
-    return this.requireAccount(id);
-  }
+  listTopicTemplates():TopicTemplate[]{return (this.database.prepare("SELECT * FROM publish_topic_templates ORDER BY created_at DESC").all() as TopicRow[]).map(mapTopic)}
+  saveTopicTemplate(input:{id?:string;name:string;topics:string[]}):TopicTemplate{const id=input.id??randomUUID(),now=new Date().toISOString();this.database.prepare("INSERT INTO publish_topic_templates(id,name,topics_json,created_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,topics_json=excluded.topics_json,updated_at=excluded.updated_at").run(id,input.name.trim(),JSON.stringify(input.topics),now,now);return mapTopic(this.database.prepare("SELECT * FROM publish_topic_templates WHERE id=?").get(id) as TopicRow)}
+  deleteTopicTemplate(id:string):boolean{return this.database.prepare("DELETE FROM publish_topic_templates WHERE id=?").run(id).changes>0}
 
-  deleteAccount(id: string): boolean {
-    return (
-      this.database.prepare("DELETE FROM publish_accounts WHERE id = ?").run(id)
-        .changes > 0
-    );
+  createJobsForAsset(input:{assetId:string;accountIds:string[];scheduledAt:string|null}):PublishJob[]{
+    const asset=this.requireAsset(input.assetId);if(!input.accountIds.length)throw new Error("请至少选择一个发布账号");const jobs:PublishJob[]=[];
+    this.database.transaction(()=>{for(const accountId of [...new Set(input.accountIds)]){const account=this.requireAccount(accountId);if(account.linkStatus!=="connected")throw new Error(`账号“${account.name}”尚未登录或登录已失效`);jobs.push(this.createJob({taskId:asset.taskId,publishAssetId:asset.id,accountId,title:asset.publishTitle||asset.shortTitle,topics:asset.topics,coverPath:asset.coverPath,scheduledAt:input.scheduledAt,idempotencyKey:`${asset.id}:${accountId}:${input.scheduledAt??"now"}`}))}this.refreshAssetStatus(asset.id)})();return jobs;
   }
+  createJob(input:{taskId:string;publishAssetId?:string|null;accountId:string;title:string;topics:string[];scheduledAt:string|null;idempotencyKey:string;coverPath?:string|null}):PublishJob{const id=randomUUID(),now=new Date().toISOString();this.database.prepare("INSERT INTO publish_jobs(id,task_id,publish_asset_id,account_id,title,topics_json,cover_path,status,scheduled_at,started_at,completed_at,error_message,screenshot_path,result_url,attempt_count,idempotency_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?, ?,?,NULL,NULL,NULL,NULL,NULL,0,?,?,?)").run(id,input.taskId,input.publishAssetId??null,input.accountId,input.title.trim(),JSON.stringify(input.topics),input.coverPath??null,input.scheduledAt?"scheduled":"pending",input.scheduledAt,input.idempotencyKey,now,now);return this.requireJob(id)}
+  listJobs():PublishJob[]{return (this.database.prepare("SELECT * FROM publish_jobs ORDER BY created_at DESC").all() as JobRow[]).map(mapJob)}
+  getJob(id:string):PublishJob|null{const row=this.database.prepare("SELECT * FROM publish_jobs WHERE id=?").get(id) as JobRow|undefined;return row?mapJob(row):null}
+  claimNextDue(_now:string):PublishJob|null{const tx=this.database.transaction(()=>{const row=this.database.prepare("SELECT job.id FROM publish_jobs job WHERE job.status IN('pending','scheduled') AND NOT EXISTS(SELECT 1 FROM publish_jobs active WHERE active.account_id=job.account_id AND active.status='publishing') ORDER BY COALESCE(job.scheduled_at,job.created_at),job.created_at LIMIT 1").get() as {id:string}|undefined;return row?this.claim(row.id):null});return tx()}
+  claim(id:string):PublishJob{const now=new Date().toISOString();if(!this.database.prepare("UPDATE publish_jobs SET status='publishing',started_at=?,updated_at=?,attempt_count=attempt_count+1 WHERE id=? AND status IN('pending','scheduled')").run(now,now,id).changes)throw new Error("发布任务当前无法执行，请刷新后重试");const job=this.requireJob(id);if(job.publishAssetId)this.refreshAssetStatus(job.publishAssetId);return job}
+  cancelJob(id:string):PublishJob{const current=this.requireJob(id);if(current.status==="canceled")return current;if(current.status==="published")throw new Error("该内容已经发布，无法从本地取消，请前往平台内容管理处理");const now=new Date().toISOString();if(!this.database.prepare("UPDATE publish_jobs SET status='canceled',completed_at=?,updated_at=? WHERE id=? AND status IN('pending','scheduled','publishing','needs_user')").run(now,now,id).changes)throw new Error("该发布任务当前无法取消，请刷新列表后重试");const job=this.requireJob(id);if(job.publishAssetId)this.refreshAssetStatus(job.publishAssetId);return job}
+  finishJob(id:string,status:"published"|"failed"|"needs_user",details:{errorMessage?:string;screenshotPath?:string;resultUrl?:string}={}):PublishJob{const now=new Date().toISOString();if(!this.database.prepare("UPDATE publish_jobs SET status=?,completed_at=?,error_message=?,screenshot_path=?,result_url=?,updated_at=? WHERE id=? AND status='publishing'").run(status,now,details.errorMessage??null,details.screenshotPath??null,details.resultUrl??null,now,id).changes)throw new Error("发布任务已经结束或被取消");const job=this.requireJob(id);if(job.publishAssetId)this.refreshAssetStatus(job.publishAssetId);return job}
+  deleteJob(id:string):boolean{const job=this.requireJob(id);if(!["canceled","failed","published","needs_user"].includes(job.status))throw new Error("请先取消正在等待或执行的发布任务");const deleted=this.database.prepare("DELETE FROM publish_jobs WHERE id=?").run(id).changes>0;if(job.publishAssetId)this.refreshAssetStatus(job.publishAssetId);return deleted}
 
-  createJob(input: {
-    taskId: string;
-    accountId: string;
-    title: string;
-    topics: string[];
-    scheduledAt: string | null;
-    idempotencyKey: string;
-    coverPath?: string | null;
-  }): PublishJob {
-    const id = randomUUID();
-    const now = new Date().toISOString();
-    this.database
-      .prepare(
-        `INSERT INTO publish_jobs(
-          id, task_id, account_id, title, topics_json, cover_path, status,
-          scheduled_at, started_at, completed_at, error_message,
-          screenshot_path, attempt_count, idempotency_key, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 0, ?, ?, ?)`
-      )
-      .run(
-        id,
-        input.taskId,
-        input.accountId,
-        input.title.trim(),
-        JSON.stringify(input.topics),
-        input.coverPath ?? null,
-        input.scheduledAt ? "scheduled" : "pending",
-        input.scheduledAt,
-        input.idempotencyKey,
-        now,
-        now
-      );
-    return this.requireJob(id);
-  }
-
-  listJobs(): PublishJob[] {
-    return (
-      this.database
-        .prepare("SELECT * FROM publish_jobs ORDER BY created_at DESC")
-        .all() as JobRow[]
-    ).map(mapJob);
-  }
-  getJob(id: string): PublishJob | null {
-    const row = this.database.prepare(
-      "SELECT * FROM publish_jobs WHERE id = ?"
-    ).get(id) as JobRow | undefined;
-    return row ? mapJob(row) : null;
-  }
-
-  claimNextDue(_now: string): PublishJob | null {
-    const claim = this.database.transaction(() => {
-      const row = this.database
-        .prepare(
-          `SELECT job.id FROM publish_jobs job
-           WHERE job.status IN ('pending', 'scheduled')
-             AND NOT EXISTS (
-               SELECT 1 FROM publish_jobs active
-               WHERE active.account_id = job.account_id
-                 AND active.status = 'publishing'
-             )
-           ORDER BY COALESCE(job.scheduled_at, job.created_at), job.created_at
-           LIMIT 1`
-        )
-        .get() as { id: string } | undefined;
-      return row ? this.claim(row.id) : null;
-    });
-    return claim();
-  }
-
-  claim(id: string): PublishJob {
-    const now = new Date().toISOString();
-    const result = this.database
-      .prepare(
-        `UPDATE publish_jobs
-         SET status = 'publishing', started_at = ?, updated_at = ?,
-             attempt_count = attempt_count + 1
-         WHERE id = ? AND status IN ('pending', 'scheduled')`
-      )
-      .run(now, now, id);
-    if (!result.changes) throw new Error(`Publish job cannot be claimed: ${id}`);
-    return this.requireJob(id);
-  }
-
-  cancelJob(id: string): PublishJob {
-    const current = this.requireJob(id);
-    if (current.status === "canceled") return current;
-    const now = new Date().toISOString();
-    const result = this.database
-      .prepare(
-        `UPDATE publish_jobs
-         SET status = 'canceled', completed_at = ?, updated_at = ?
-         WHERE id = ? AND status IN ('pending', 'scheduled', 'publishing')`
-      )
-      .run(now, now, id);
-    if (!result.changes) {
-      if (current.status === "published") {
-        throw new Error("该内容已经发布，无法从本地取消，请前往平台内容管理处理");
-      }
-      throw new Error("该发布任务当前无法取消，请刷新列表后重试");
-    }
-    return this.requireJob(id);
-  }
-
-  finishJob(
-    id: string,
-    status: "published" | "failed" | "needs_user",
-    details: { errorMessage?: string; screenshotPath?: string } = {}
-  ): PublishJob {
-    const now = new Date().toISOString();
-    const result = this.database
-      .prepare(
-        `UPDATE publish_jobs
-         SET status = ?, completed_at = ?, error_message = ?,
-             screenshot_path = ?, updated_at = ?
-         WHERE id = ? AND status = 'publishing'`
-      )
-      .run(
-        status,
-        now,
-        details.errorMessage ?? null,
-        details.screenshotPath ?? null,
-        now,
-        id
-      );
-    if (!result.changes) throw new Error(`Publish job is not running: ${id}`);
-    return this.requireJob(id);
-  }
-
-  deleteJob(id: string): boolean {
-    const job = this.requireJob(id);
-    if (!["canceled", "failed", "published", "needs_user"].includes(job.status)) {
-      throw new Error("Only terminal publish jobs can be deleted");
-    }
-    return this.database
-      .prepare("DELETE FROM publish_jobs WHERE id = ?")
-      .run(id).changes > 0;
-  }
-
-  private requireAccount(id: string): PublishAccount {
-    const row = this.database
-      .prepare("SELECT * FROM publish_accounts WHERE id = ?")
-      .get(id) as AccountRow | undefined;
-    if (!row) throw new Error(`Publish account not found: ${id}`);
-    return mapAccount(row);
-  }
-
-  private requireJob(id: string): PublishJob {
-    const row = this.database
-      .prepare("SELECT * FROM publish_jobs WHERE id = ?")
-      .get(id) as JobRow | undefined;
-    if (!row) throw new Error(`Publish job not found: ${id}`);
-    return mapJob(row);
-  }
+  private refreshAssetStatus(id:string):void{const rows=this.database.prepare("SELECT status FROM publish_jobs WHERE publish_asset_id=?").all(id) as Array<{status:PublishStatus}>;let status:PublishAssetStatus="unscheduled";if(rows.some((row)=>row.status==="publishing"))status="publishing";else if(rows.length&&rows.every((row)=>row.status==="published"))status="published";else if(rows.some((row)=>["pending","scheduled","needs_user"].includes(row.status)))status="scheduled";else if(rows.some((row)=>row.status==="failed"))status="failed";this.database.prepare("UPDATE publish_assets SET status=?,updated_at=? WHERE id=?").run(status,new Date().toISOString(),id)}
+  private requireAccount(id:string):PublishAccount{const value=this.getAccount(id);if(!value)throw new Error("发布账号不存在");return value}
+  private requireAsset(id:string):PublishAsset{const value=this.getAsset(id);if(!value)throw new Error("待发布成片不存在");return value}
+  private requireJob(id:string):PublishJob{const value=this.getJob(id);if(!value)throw new Error("发布任务不存在");return value}
 }
 
-type AccountRow = {
-  id: string; name: string; platform: PublishPlatform; user_data_dir: string;
-  link_status: AccountLinkStatus; last_checked_at: string | null;
-  created_at: string; updated_at: string;
-};
-type JobRow = {
-  id: string; task_id: string; account_id: string; title: string;
-  topics_json: string; cover_path: string | null; status: PublishStatus;
-  scheduled_at: string | null; started_at: string | null;
-  completed_at: string | null; error_message: string | null;
-  screenshot_path: string | null; attempt_count: number;
-  idempotency_key: string; created_at: string; updated_at: string;
-};
-
-const mapAccount = (row: AccountRow): PublishAccount => ({
-  id: row.id, name: row.name, platform: row.platform,
-  userDataDir: row.user_data_dir, linkStatus: row.link_status,
-  lastCheckedAt: row.last_checked_at, createdAt: row.created_at,
-  updatedAt: row.updated_at
-});
-const mapJob = (row: JobRow): PublishJob => ({
-  id: row.id, taskId: row.task_id, accountId: row.account_id,
-  title: row.title, topics: JSON.parse(row.topics_json) as string[],
-  coverPath: row.cover_path, status: row.status, scheduledAt: row.scheduled_at,
-  startedAt: row.started_at, completedAt: row.completed_at,
-  errorMessage: row.error_message, screenshotPath: row.screenshot_path,
-  attemptCount: row.attempt_count, idempotencyKey: row.idempotency_key,
-  createdAt: row.created_at, updatedAt: row.updated_at
-});
+type AccountRow={id:string;name:string;platform:PublishPlatform;positioning:string;user_data_dir:string;link_status:AccountLinkStatus;last_checked_at:string|null;created_at:string;updated_at:string};
+type AssetRow={id:string;task_id:string;short_title:string;topic:string;publish_title:string;topics_json:string;topic_template_id:string|null;cover_path:string|null;status:PublishAssetStatus;created_at:string;updated_at:string};
+type TopicRow={id:string;name:string;topics_json:string;created_at:string;updated_at:string};
+type JobRow={id:string;task_id:string;publish_asset_id:string|null;account_id:string;title:string;topics_json:string;cover_path:string|null;status:PublishStatus;scheduled_at:string|null;started_at:string|null;completed_at:string|null;error_message:string|null;screenshot_path:string|null;result_url:string|null;attempt_count:number;idempotency_key:string;created_at:string;updated_at:string};
+const safeJson=<T>(value:string,fallback:T):T=>{try{return JSON.parse(value) as T}catch{return fallback}};
+const mapAccount=(row:AccountRow):PublishAccount=>({id:row.id,name:row.name,platform:row.platform,positioning:row.positioning??"",userDataDir:row.user_data_dir,linkStatus:row.link_status,lastCheckedAt:row.last_checked_at,createdAt:row.created_at,updatedAt:row.updated_at});
+const mapAsset=(row:AssetRow):PublishAsset=>({id:row.id,taskId:row.task_id,shortTitle:row.short_title,topic:row.topic,publishTitle:row.publish_title,topics:safeJson(row.topics_json,[]),topicTemplateId:row.topic_template_id,coverPath:row.cover_path,status:row.status,createdAt:row.created_at,updatedAt:row.updated_at});
+const mapTopic=(row:TopicRow):TopicTemplate=>({id:row.id,name:row.name,topics:safeJson(row.topics_json,[]),createdAt:row.created_at,updatedAt:row.updated_at});
+const mapJob=(row:JobRow):PublishJob=>({id:row.id,taskId:row.task_id,publishAssetId:row.publish_asset_id,accountId:row.account_id,title:row.title,topics:safeJson(row.topics_json,[]),coverPath:row.cover_path,status:row.status,scheduledAt:row.scheduled_at,startedAt:row.started_at,completedAt:row.completed_at,errorMessage:row.error_message,screenshotPath:row.screenshot_path,resultUrl:row.result_url,attemptCount:row.attempt_count,idempotencyKey:row.idempotency_key,createdAt:row.created_at,updatedAt:row.updated_at});

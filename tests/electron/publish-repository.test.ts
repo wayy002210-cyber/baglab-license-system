@@ -195,9 +195,42 @@ describe("PublishRepository", () => {
       idempotencyKey: "delete-job"
     });
 
-    expect(() => repository.deleteJob(job.id)).toThrow(/terminal/i);
+    expect(() => repository.deleteJob(job.id)).toThrow(/取消正在等待或执行/);
     repository.cancelJob(job.id);
     expect(repository.deleteJob(job.id)).toBe(true);
     expect(repository.getJob(job.id)).toBeNull();
+  });
+
+  it("syncs completed videos into the publishing asset pool once", () => {
+    seedTask("task-asset");
+    database.prepare("UPDATE generation_tasks SET output_path=?, snapshot_json=? WHERE id=?")
+      .run("D:/outputs/video.mp4", JSON.stringify({ copywriting: { mainTitle: "工厂十年坚守", topicTitle: "为什么坚持质量优先" } }), "task-asset");
+    const first = repository.syncCompletedTasks();
+    const second = repository.syncCompletedTasks();
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(first[0]).toMatchObject({ shortTitle: "工厂十年坚守", topic: "为什么坚持质量优先", status: "unscheduled" });
+  });
+
+  it("creates one scheduled job per selected connected account", () => {
+    seedTask("task-batch");
+    database.prepare("UPDATE generation_tasks SET output_path=?, snapshot_json=? WHERE id=?")
+      .run("D:/outputs/batch.mp4", JSON.stringify({ copywriting: { mainTitle: "批量发布" } }), "task-batch");
+    const asset = repository.syncCompletedTasks()[0];
+    const first = repository.createAccount({ name: "抖音一号", platform: "douyin", positioning: "工厂实拍", userDataDir: "D:/profiles/one" });
+    const second = repository.createAccount({ name: "视频号一号", platform: "wechat_channels", userDataDir: "D:/profiles/two" });
+    repository.updateAccountStatus(first.id, "connected");
+    repository.updateAccountStatus(second.id, "connected");
+    repository.updateAsset(asset.id, { topics: ["工厂", "定制"] });
+    const jobs = repository.createJobsForAsset({ assetId: asset.id, accountIds: [first.id, second.id], scheduledAt: "2026-08-06T10:00:00.000Z" });
+    expect(jobs).toHaveLength(2);
+    expect(jobs.every((job) => job.status === "scheduled")).toBe(true);
+    expect(repository.getAsset(asset.id)?.status).toBe("scheduled");
+  });
+
+  it("stores reusable topic templates", () => {
+    const template = repository.saveTopicTemplate({ name: "工厂通用", topics: ["源头工厂", "定制"] });
+    expect(repository.listTopicTemplates()[0]).toMatchObject({ id: template.id, topics: ["源头工厂", "定制"] });
+    expect(repository.deleteTopicTemplate(template.id)).toBe(true);
   });
 });

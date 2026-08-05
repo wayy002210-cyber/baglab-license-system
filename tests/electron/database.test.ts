@@ -19,7 +19,9 @@ describe("database migrations", () => {
       "generation_tasks",
       "personas",
       "publish_accounts",
+      "publish_assets",
       "publish_jobs",
+      "publish_topic_templates",
       "queue_state",
       "reference_scripts",
       "schema_migrations",
@@ -38,6 +40,6 @@ describe("database migrations", () => {
     const row = database
       .prepare("SELECT COUNT(*) AS count FROM schema_migrations")
       .get() as { count: number };
-    expect(row.count).toBe(3);
+    expect(row.count).toBe(4);
   });
 });

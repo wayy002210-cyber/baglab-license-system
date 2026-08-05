@@ -119,6 +119,31 @@ CREATE TABLE IF NOT EXISTS publish_accounts (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS publish_assets (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL UNIQUE REFERENCES generation_tasks(id) ON DELETE CASCADE,
+  short_title TEXT NOT NULL,
+  topic TEXT NOT NULL DEFAULT '',
+  publish_title TEXT NOT NULL DEFAULT '',
+  topics_json TEXT NOT NULL DEFAULT '[]',
+  topic_template_id TEXT,
+  cover_path TEXT,
+  status TEXT NOT NULL DEFAULT 'unscheduled',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS publish_assets_status_idx
+  ON publish_assets(status, created_at);
+
+CREATE TABLE IF NOT EXISTS publish_topic_templates (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  topics_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS publish_jobs (
   id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL REFERENCES generation_tasks(id),
@@ -239,6 +264,20 @@ export function applyMigrations(database: Database.Database): void {
     if (!projectColumns.some((column) => column.name === "source_project_id")) {
       database.exec("ALTER TABLE copywriting_projects ADD COLUMN source_project_id TEXT");
     }
+    const accountColumns = database.prepare("PRAGMA table_info(publish_accounts)").all() as Array<{ name: string }>;
+    if (!accountColumns.some((column) => column.name === "positioning")) {
+      database.exec("ALTER TABLE publish_accounts ADD COLUMN positioning TEXT NOT NULL DEFAULT ''");
+    }
+    const jobColumns = database.prepare("PRAGMA table_info(publish_jobs)").all() as Array<{ name: string }>;
+    if (!jobColumns.some((column) => column.name === "publish_asset_id")) {
+      database.exec("ALTER TABLE publish_jobs ADD COLUMN publish_asset_id TEXT REFERENCES publish_assets(id)");
+    }
+    if (!jobColumns.some((column) => column.name === "result_url")) {
+      database.exec("ALTER TABLE publish_jobs ADD COLUMN result_url TEXT");
+    }
+    database.prepare(
+      `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (4, ?)`
+    ).run(new Date().toISOString());
     database.prepare(
       `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, ?)`
     ).run(new Date().toISOString());

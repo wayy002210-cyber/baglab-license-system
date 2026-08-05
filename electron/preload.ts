@@ -216,24 +216,27 @@ const createTaskBatchSchema = z.object({
   seed: z.number().int(),
   snapshot: z.record(z.string(), z.unknown())
 });
-const publishPlatformSchema = z.enum(["douyin", "wechat_channels"]);
+const publishPlatformSchema = z.enum(["douyin", "wechat_channels", "kuaishou"]);
 const accountLinkStatusSchema = z.enum([
-  "unknown", "connected", "expired", "needs_user"
+  "unknown", "checking", "connected", "expired", "needs_user"
 ]);
 const publishAccountSchema = z.object({
   id: z.string().uuid(), name: z.string(), platform: publishPlatformSchema,
+  positioning: z.string(),
   userDataDir: z.string(), linkStatus: accountLinkStatusSchema,
   lastCheckedAt: z.string().nullable(), createdAt: z.string(), updatedAt: z.string()
 });
 const publishJobSchema = z.object({
-  id: z.string().uuid(), taskId: z.string(), accountId: z.string().uuid(),
+  id: z.string().uuid(), taskId: z.string(), publishAssetId: z.string().uuid().nullable(), accountId: z.string().uuid(),
   title: z.string(), topics: z.array(z.string()), coverPath: z.string().nullable(),
   status: z.enum(["pending", "scheduled", "publishing", "published", "failed", "needs_user", "canceled"]),
   scheduledAt: z.string().nullable(), startedAt: z.string().nullable(),
   completedAt: z.string().nullable(), errorMessage: z.string().nullable(),
-  screenshotPath: z.string().nullable(), attemptCount: z.number().int().nonnegative(),
+  screenshotPath: z.string().nullable(), resultUrl: z.string().nullable(), attemptCount: z.number().int().nonnegative(),
   idempotencyKey: z.string(), createdAt: z.string(), updatedAt: z.string()
 });
+const publishAssetSchema = z.object({id:z.string().uuid(),taskId:z.string(),shortTitle:z.string(),topic:z.string(),publishTitle:z.string(),topics:z.array(z.string()),topicTemplateId:z.string().nullable(),coverPath:z.string().nullable(),status:z.enum(["unscheduled","scheduled","publishing","published","failed","discarded"]),createdAt:z.string(),updatedAt:z.string()});
+const topicTemplateSchema = z.object({id:z.string().uuid(),name:z.string(),topics:z.array(z.string()),createdAt:z.string(),updatedAt:z.string()});
 const createPublishJobSchema = z.object({
   taskId: z.string().min(1), accountId: z.string().uuid(), title: z.string().trim().min(1),
   topics: z.array(z.string()), scheduledAt: z.string().nullable(),
@@ -679,7 +682,7 @@ contextBridge.exposeInMainWorld("autocut", {
   ),
   createPublishAccount: async (input: unknown) => publishAccountSchema.parse(
     await ipcRenderer.invoke("publishAccounts:create", z.object({
-      name: z.string().trim().min(1), platform: publishPlatformSchema
+      name: z.string().trim().min(1), positioning:z.string().default(""), platform: publishPlatformSchema
     }).parse(input))
   ),
   setPublishAccountStatus: async (id: string, status: unknown) =>
@@ -696,6 +699,14 @@ contextBridge.exposeInMainWorld("autocut", {
   deletePublishAccount: async (id: string) => z.object({ deleted: z.boolean() }).parse(
     await ipcRenderer.invoke("publishAccounts:delete", z.string().uuid().parse(id))
   ),
+  listPublishAssets: async () => z.array(publishAssetSchema).parse(await ipcRenderer.invoke("publishAssets:list")),
+  updatePublishAsset: async (id:string,input:unknown) => publishAssetSchema.parse(await ipcRenderer.invoke("publishAssets:update",z.string().uuid().parse(id),z.object({publishTitle:z.string().optional(),topics:z.array(z.string()).optional(),topicTemplateId:z.string().nullable().optional(),coverPath:z.string().nullable().optional()}).parse(input))),
+  discardPublishAsset: async (id:string) => publishAssetSchema.parse(await ipcRenderer.invoke("publishAssets:discard",z.string().uuid().parse(id))),
+  selectPublishCover: async () => z.string().nullable().parse(await ipcRenderer.invoke("publishAssets:selectCover")),
+  listPublishTopicTemplates: async () => z.array(topicTemplateSchema).parse(await ipcRenderer.invoke("publishTopics:list")),
+  savePublishTopicTemplate: async (input:unknown) => topicTemplateSchema.parse(await ipcRenderer.invoke("publishTopics:save",z.object({id:z.string().uuid().optional(),name:z.string().trim().min(1),topics:z.array(z.string()).min(1)}).parse(input))),
+  deletePublishTopicTemplate: async (id:string) => z.object({deleted:z.boolean()}).parse(await ipcRenderer.invoke("publishTopics:delete",z.string().uuid().parse(id))),
+  createPublishJobsForAsset: async (input:unknown) => z.array(publishJobSchema).parse(await ipcRenderer.invoke("publishAssets:createJobs",z.object({assetId:z.string().uuid(),accountIds:z.array(z.string().uuid()).min(1),scheduledAt:z.string().nullable()}).parse(input))),
   listPublishJobs: async () => z.array(publishJobSchema).parse(
     await ipcRenderer.invoke("publishJobs:list")
   ),

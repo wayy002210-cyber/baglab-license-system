@@ -328,6 +328,7 @@ async function runNextPublishJob(): Promise<void> {
       status?: "published" | "failed" | "needs_user" | "canceled";
       errorMessage?: string | null;
       screenshotPath?: string | null;
+      currentUrl?: string | null;
       detail?: string;
     };
     if (!response.ok || !result.status) {
@@ -341,7 +342,8 @@ async function runNextPublishJob(): Promise<void> {
     }
     publishRepository().finishJob(job.id, result.status, {
       errorMessage: result.errorMessage ?? undefined,
-      screenshotPath: result.screenshotPath ?? undefined
+      screenshotPath: result.screenshotPath ?? undefined,
+      resultUrl: result.currentUrl ?? undefined
     });
     logger?.write(
       result.status === "published" ? "info" : "warn",
@@ -1027,7 +1029,7 @@ ipcMain.handle("publishAccounts:list", () =>
 );
 ipcMain.handle(
   "publishAccounts:create",
-  (_event, input: { name: string; platform: PublishPlatform }) =>
+  (_event, input: { name: string; positioning: string; platform: PublishPlatform }) =>
     publishRepository().createAccount({
       ...input,
       userDataDir: join(
@@ -1046,6 +1048,18 @@ ipcMain.handle(
 ipcMain.handle("publishAccounts:delete", (_event, id: string) => ({
   deleted: publishRepository().deleteAccount(id)
 }));
+ipcMain.handle("publishAssets:list", () => publishRepository().syncCompletedTasks());
+ipcMain.handle("publishAssets:update", (_event, id: string, input: Parameters<PublishRepository["updateAsset"]>[1]) => publishRepository().updateAsset(id, input));
+ipcMain.handle("publishAssets:discard", (_event, id: string) => publishRepository().discardAsset(id));
+ipcMain.handle("publishAssets:selectCover", async () => {
+  if (!window) return null;
+  const selection=await dialog.showOpenDialog(window,{title:"选择发布封面",properties:["openFile"],filters:[{name:"图片",extensions:["jpg","jpeg","png","webp"]}]});
+  return selection.canceled?null:selection.filePaths[0]??null;
+});
+ipcMain.handle("publishTopics:list", () => publishRepository().listTopicTemplates());
+ipcMain.handle("publishTopics:save", (_event, input: Parameters<PublishRepository["saveTopicTemplate"]>[0]) => publishRepository().saveTopicTemplate(input));
+ipcMain.handle("publishTopics:delete", (_event, id:string) => ({deleted:publishRepository().deleteTopicTemplate(id)}));
+ipcMain.handle("publishAssets:createJobs", (_event, input: Parameters<PublishRepository["createJobsForAsset"]>[0]) => publishRepository().createJobsForAsset(input));
 ipcMain.handle("publishJobs:list", () => publishRepository().listJobs());
 ipcMain.handle(
   "publishJobs:create",
@@ -1070,6 +1084,26 @@ ipcMain.handle(
     })
 );
 ipcMain.handle("publishJobs:cancel", async (_event, id: string) => {
+  const currentJob = publishRepository().getJob(id);
+  if (!currentJob) throw new Error(`未找到发布任务：${id}`);
+  if (currentJob.status === "publishing") {
+    if (backendState.status !== "ready") {
+      throw new Error("本地发布服务尚未就绪，无法安全取消执行中的任务");
+    }
+    const cancelResponse = await fetch(`${backendState.baseUrl}/publish/jobs/${id}/cancel`, {
+      method: "POST",
+      headers: { "X-Autocut-Token": backendState.token }
+    });
+    if (!cancelResponse.ok) {
+      const cancelResult = (await cancelResponse.json()) as { detail?: string };
+      if (cancelResponse.status === 409 || cancelResult.detail?.toLowerCase().includes("submitted")) {
+        throw new Error("任务已经提交到平台，无法从本地撤回，请到平台内容管理中取消");
+      }
+      throw new Error(cancelResult.detail || "发布任务取消失败，请稍后重试");
+    }
+  }
+  return publishRepository().cancelJob(id);
+  /* Legacy cancellation flow retained temporarily for migration compatibility.
   const job = publishRepository().getJob(id);
   if (!job) throw new Error(`Publish job not found: ${id}`);
   if (job.status === "publishing") {
@@ -1091,7 +1125,7 @@ ipcMain.handle("publishJobs:cancel", async (_event, id: string) => {
       throw new Error(result.detail || "发布任务取消失败，请稍后重试");
     }
   }
-  return publishRepository().cancelJob(id);
+  return publishRepository().cancelJob(id); */
 });
 ipcMain.handle("publishJobs:delete", (_event, id: string) => ({
   deleted: publishRepository().deleteJob(id)

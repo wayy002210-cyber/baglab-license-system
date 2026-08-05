@@ -250,7 +250,8 @@ declare global {
       listPublishAccounts(): Promise<PublishAccount[]>;
       createPublishAccount(input: {
         name: string;
-        platform: "douyin" | "wechat_channels";
+        positioning?: string;
+        platform: "douyin" | "wechat_channels" | "kuaishou";
       }): Promise<PublishAccount>;
       setPublishAccountStatus(
         id: string,
@@ -259,6 +260,14 @@ declare global {
       checkPublishAccount(id: string): Promise<PublishAccount>;
       connectPublishAccount(id: string): Promise<PublishAccount>;
       deletePublishAccount(id: string): Promise<{ deleted: boolean }>;
+      listPublishAssets():Promise<PublishAsset[]>;
+      updatePublishAsset(id:string,input:Partial<Pick<PublishAsset,"publishTitle"|"topics"|"topicTemplateId"|"coverPath">>):Promise<PublishAsset>;
+      discardPublishAsset(id:string):Promise<PublishAsset>;
+      selectPublishCover():Promise<string|null>;
+      listPublishTopicTemplates():Promise<PublishTopicTemplate[]>;
+      savePublishTopicTemplate(input:{id?:string;name:string;topics:string[]}):Promise<PublishTopicTemplate>;
+      deletePublishTopicTemplate(id:string):Promise<{deleted:boolean}>;
+      createPublishJobsForAsset(input:{assetId:string;accountIds:string[];scheduledAt:string|null}):Promise<PublishJob[]>;
       listPublishJobs(): Promise<PublishJob[]>;
       createPublishJob(input: {
         taskId: string;
@@ -383,21 +392,24 @@ type GenerationTask = {
 type PublishAccount = {
   id: string;
   name: string;
-  platform: "douyin" | "wechat_channels";
+  platform: "douyin" | "wechat_channels" | "kuaishou";
+  positioning: string;
   userDataDir: string;
-  linkStatus: "unknown" | "connected" | "expired" | "needs_user";
+  linkStatus: "unknown" | "checking" | "connected" | "expired" | "needs_user";
   lastCheckedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
 type PublishJob = {
-  id: string; taskId: string; accountId: string; title: string; topics: string[];
+  id: string; taskId: string; publishAssetId:string|null; accountId: string; title: string; topics: string[];
   coverPath: string | null;
   status: "pending" | "scheduled" | "publishing" | "published" | "failed" | "needs_user" | "canceled";
   scheduledAt: string | null; startedAt: string | null; completedAt: string | null;
-  errorMessage: string | null; screenshotPath: string | null; attemptCount: number;
+  errorMessage: string | null; screenshotPath: string | null; resultUrl:string|null; attemptCount: number;
   idempotencyKey: string; createdAt: string; updatedAt: string;
 };
+type PublishAsset={id:string;taskId:string;shortTitle:string;topic:string;publishTitle:string;topics:string[];topicTemplateId:string|null;coverPath:string|null;status:"unscheduled"|"scheduled"|"publishing"|"published"|"failed"|"discarded";createdAt:string;updatedAt:string};
+type PublishTopicTemplate={id:string;name:string;topics:string[];createdAt:string;updatedAt:string};
 type MediaSettings = {
   outputDirectory: string;
   workDirectory: string;

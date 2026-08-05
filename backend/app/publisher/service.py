@@ -10,6 +10,7 @@ from typing import Callable, ContextManager, Literal
 
 from app.publisher.adapters import (
     DouyinPublisher,
+    KuaishouPublisher,
     PublishCancellation,
     PublishCancelled,
     PublishRequest,
@@ -19,19 +20,18 @@ from app.publisher.adapters import (
 from app.publisher.playwright_page import PersistentBrowserSession
 
 
-Platform = Literal["douyin", "wechat_channels"]
+Platform = Literal["douyin", "wechat_channels", "kuaishou"]
 UPLOAD_URLS: dict[Platform, str] = {
     "douyin": "https://creator.douyin.com/creator-micro/content/upload",
     "wechat_channels": "https://channels.weixin.qq.com/platform/post/create",
+    "kuaishou": "https://cp.kuaishou.com/article/publish/video",
 }
 
 
 class PublishingService:
     def __init__(
         self,
-        session_factory: Callable[
-            [str], ContextManager
-        ] = PersistentBrowserSession,
+        session_factory: Callable[[str], ContextManager] = PersistentBrowserSession,
         media_validator: Callable[[str], bool] | None = None,
     ) -> None:
         self.session_factory = session_factory
@@ -39,9 +39,7 @@ class PublishingService:
         self._lock = Lock()
         self._cancellations: dict[str, PublishCancellation] = {}
 
-    def check_account(
-        self, *, platform: Platform, user_data_dir: str
-    ) -> str:
+    def check_account(self, *, platform: Platform, user_data_dir: str) -> str:
         with self.session_factory(user_data_dir) as page:
             page.page.goto(UPLOAD_URLS[platform], wait_until="domcontentloaded")
             page.page.wait_for_timeout(2_000)
@@ -57,7 +55,6 @@ class PublishingService:
         max_wait_ms: int = 180_000,
         poll_interval_ms: int = 1_500,
     ) -> str:
-        """Keep the visible login window alive while the user scans or signs in."""
         with self.session_factory(user_data_dir) as page:
             page.page.goto(UPLOAD_URLS[platform], wait_until="domcontentloaded")
             deadline = monotonic() + max_wait_ms / 1000
@@ -78,44 +75,42 @@ class PublishingService:
         request: PublishRequest,
     ) -> PublishResult:
         with self._lock:
-            cancellation = self._cancellations.setdefault(
-                job_id, PublishCancellation()
-            )
+            cancellation = self._cancellations.setdefault(job_id, PublishCancellation())
         try:
             cancellation.raise_if_canceled()
-        except PublishCancelled as error:
-            with self._lock:
-                self._cancellations.pop(job_id, None)
-            return PublishResult(
-                status="canceled",
-                errorCode="PUBLISH_CANCELED",
-                errorMessage=str(error),
-            )
-        if not self.media_validator(request.video_path):
-            with self._lock:
-                self._cancellations.pop(job_id, None)
-            return PublishResult(
-                status="failed",
-                errorCode="INVALID_VIDEO",
-                errorMessage="成片文件无法播放或尚未完整写入，请重新生成后再发布。",
-            )
-        adapter = (
-            DouyinPublisher()
-            if platform == "douyin"
-            else WechatChannelsPublisher()
-        )
-        try:
+            if not self.media_validator(request.video_path):
+                return PublishResult(
+                    status="failed",
+                    errorCode="INVALID_VIDEO",
+                    errorMessage="成片文件无法播放或尚未完整写入，请重新生成后再发布。",
+                )
+            adapter = {
+                "douyin": DouyinPublisher(),
+                "wechat_channels": WechatChannelsPublisher(),
+                "kuaishou": KuaishouPublisher(),
+            }[platform]
             with self.session_factory(user_data_dir) as page:
                 cancellation.raise_if_canceled()
                 page.page.goto(UPLOAD_URLS[platform], wait_until="domcontentloaded")
                 page.page.wait_for_timeout(2_000)
-                result = adapter.publish(
-                    page,
-                    request,
-                    cancellation=cancellation,
-                )
-                if result.status == "needs_user":
-                    page.page.wait_for_timeout(180_000)
+                login_result = self._wait_for_user_login(page, cancellation)
+                if login_result is not None:
+                    return login_result
+                result = adapter.publish(page, request, cancellation=cancellation)
+                if result.status != "needs_user":
+                    return result
+                deadline = monotonic() + 300
+                while monotonic() < deadline and (
+                    page.has_human_challenge() or page.is_login_required()
+                ):
+                    cancellation.raise_if_canceled()
+                    page.page.wait_for_timeout(1_500)
+                if (
+                    not page.has_human_challenge()
+                    and not page.is_login_required()
+                    and page.wait_for_publish_success()
+                ):
+                    return PublishResult(status="published", currentUrl=page.url)
                 return result
         except PublishCancelled as error:
             return PublishResult(
@@ -127,11 +122,28 @@ class PublishingService:
             with self._lock:
                 self._cancellations.pop(job_id, None)
 
+    @staticmethod
+    def _wait_for_user_login(page, cancellation: PublishCancellation) -> PublishResult | None:
+        if not page.is_login_required() and not page.has_human_challenge():
+            return None
+        deadline = monotonic() + 300
+        while monotonic() < deadline and (
+            page.is_login_required() or page.has_human_challenge()
+        ):
+            cancellation.raise_if_canceled()
+            page.page.wait_for_timeout(1_500)
+        if not page.is_login_required() and not page.has_human_challenge():
+            return None
+        return PublishResult(
+            status="needs_user",
+            errorCode="LOGIN_OR_VERIFICATION_REQUIRED",
+            errorMessage="登录或验证码验证尚未完成，请重新执行发布任务。",
+            currentUrl=page.url,
+        )
+
     def cancel(self, job_id: str) -> bool:
         with self._lock:
-            cancellation = self._cancellations.setdefault(
-                job_id, PublishCancellation()
-            )
+            cancellation = self._cancellations.setdefault(job_id, PublishCancellation())
             return cancellation.cancel()
 
     @staticmethod
@@ -143,9 +155,18 @@ class PublishingService:
         try:
             result = subprocess.run(
                 [
-                    ffprobe, "-v", "error", "-select_streams", "v:0",
-                    "-show_entries", "stream=codec_name",
-                    "-show_entries", "format=duration", "-of", "json", path,
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=codec_name",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "json",
+                    path,
                 ],
                 capture_output=True,
                 text=True,
