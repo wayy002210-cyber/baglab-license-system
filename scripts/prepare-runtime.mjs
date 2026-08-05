@@ -24,7 +24,7 @@ for (const executable of ["ffmpeg.exe", "ffprobe.exe"]) {
 }
 
 const pyinstaller = spawnSync(
-  "python",
+  process.env.PYTHON ?? "python",
   [
     "-m",
     "PyInstaller",

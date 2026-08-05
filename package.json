@@ -14,7 +14,7 @@
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:python": "python -m pytest backend/tests -q",
+    "test:python": "node scripts/run-python-tests.mjs",
     "lint": "eslint .",
     "check": "npm run typecheck && npm test && npm run test:python && npm run build",
     "brand:assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-brand-assets.ps1",

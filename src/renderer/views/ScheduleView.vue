@@ -17,6 +17,9 @@ const activeTab = ref("unscheduled");
 const preview = ref<Asset | null>(null);
 const busy = ref("");
 const templateDialog = ref(false);
+const eventDialog = ref(false);
+const eventJob = ref<PublishJob | null>(null);
+const agentEvents = ref<Awaited<ReturnType<typeof window.autocut.listPublishJobEvents>>>([]);
 const templateName = ref("");
 const templateTopics = ref("");
 const selectedAccounts = ref<Record<string, string[]>>({});
@@ -74,6 +77,12 @@ async function resume(job: PublishJob) {
   catch (error) { ElMessage.error(toUserMessage(error, "继续发布失败")); }
   finally { busy.value = ""; }
 }
+async function showEvents(job: PublishJob) {
+  eventJob.value = job;
+  eventDialog.value = true;
+  try { agentEvents.value = await window.autocut.listPublishJobEvents(job.id); }
+  catch (error) { ElMessage.error(toUserMessage(error, "读取发布日志失败")); }
+}
 async function cancelJob(job: PublishJob) {
   try { await window.autocut.cancelPublishJob(job.id); ElMessage.success("发布任务已取消"); await load(); }
   catch (error) { ElMessage.error(toUserMessage(error, "发布任务取消失败")); }
@@ -94,12 +103,15 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); });
       <h3>排期列表</h3><div class="asset-list">
         <article v-for="asset in visible" :key="asset.id" class="asset-card"><div class="timeline" /><header><el-tag>{{ statusLabel[asset.status] }}</el-tag><strong>{{ new Date(asset.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) }} · {{ asset.shortTitle }}</strong><el-tag type="success" effect="plain">{{ asset.publishTitle && asset.topics.length ? '标题 / 话题已填' : '待补资料' }}</el-tag><span>{{ (selectedAccounts[asset.id] ?? []).length ? `已选 ${(selectedAccounts[asset.id] ?? []).length} 个账号` : '未选择发布账号' }}</span><el-button class="preview-btn" @click="preview = asset">预览视频</el-button></header>
           <div class="form-grid"><label>发布标题<el-input v-model="asset.publishTitle" type="textarea" :rows="2" maxlength="30" show-word-limit @blur="save(asset)" /></label><label>发布话题<div class="topic-row"><el-select :model-value="asset.topicTemplateId ?? ''" placeholder="选择话题模板" @change="chooseTemplate(asset, String($event))"><el-option label="随机话题模板" value="" /><el-option v-for="template in templates" :key="template.id" :label="template.name" :value="template.id" /></el-select><el-input :model-value="asset.topics.map((value) => '#'+value.replace(/^#/,'')).join(' ')" placeholder="#工厂 #定制" @change="asset.topics=String($event).split(/[,，\s#]+/).filter(Boolean); save(asset)" /></div></label><label>发布账号<el-select v-model="selectedAccounts[asset.id]" multiple collapse-tags placeholder="选择一个或多个已登录账号"><el-option v-for="account in accounts.filter((value) => value.linkStatus === 'connected')" :key="account.id" :label="accountLabel(account.id)" :value="account.id" /></el-select></label><label>本地封面<el-button class="cover" @click="cover(asset)">{{ asset.coverPath ? '已选择：'+asset.coverPath.split(/[\\/]/).pop() : '点击选择本地封面' }}</el-button></label></div>
-          <footer><template v-if="activeJob(asset)"><span class="agent-state">{{ workflowLabel[activeJob(asset)?.workflowState ?? ''] ?? activeJob(asset)?.workflowState }}</span><el-button v-if="activeJob(asset)?.status === 'needs_user'" type="primary" :loading="busy === asset.id" @click="resume(activeJob(asset)!)">继续发布</el-button><el-button v-if="['publishing','needs_user'].includes(activeJob(asset)?.status ?? '')" plain @click="cancelJob(activeJob(asset)!)">取消发布</el-button></template><template v-else-if="(selectedAccounts[asset.id] ?? []).length"><el-date-picker v-model="scheduleTimes[asset.id]" type="datetime" format="YYYY年MM月DD日 HH:mm" placeholder="默认20分钟后" /><el-button :loading="busy === asset.id" @click="publish(asset,true)">设定排期</el-button><el-button type="primary" :loading="busy === asset.id" @click="publish(asset,false)">立即发布</el-button></template><span v-else>请选择发布账号后操作</span><el-button class="delete" type="danger" plain @click="discard(asset)">删除</el-button></footer>
+          <footer><template v-if="activeJob(asset)"><span class="agent-state">{{ workflowLabel[activeJob(asset)?.workflowState ?? ''] ?? activeJob(asset)?.workflowState }}</span><el-button plain @click="showEvents(activeJob(asset)!)">查看发布日志</el-button><el-button v-if="activeJob(asset)?.status === 'needs_user'" type="primary" :loading="busy === asset.id" @click="resume(activeJob(asset)!)">继续发布</el-button><el-button v-if="['publishing','needs_user'].includes(activeJob(asset)?.status ?? '')" plain @click="cancelJob(activeJob(asset)!)">取消发布</el-button></template><template v-else-if="(selectedAccounts[asset.id] ?? []).length"><el-date-picker v-model="scheduleTimes[asset.id]" type="datetime" format="YYYY年MM月DD日 HH:mm" placeholder="默认20分钟后" /><el-button :loading="busy === asset.id" @click="publish(asset,true)">设定排期</el-button><el-button type="primary" :loading="busy === asset.id" @click="publish(asset,false)">立即发布</el-button></template><span v-else>请选择发布账号后操作</span><el-button class="delete" type="danger" plain @click="discard(asset)">删除</el-button></footer>
         </article><el-empty v-if="!visible.length" description="当前分类暂无视频" />
       </div></div>
       <aside><h3>通用预览</h3><video v-if="preview" :key="preview.id" controls preload="metadata" :src="`autocut-media://task/${preview.taskId}`" /><div v-else class="empty-preview">点击卡片上的“预览视频”<br>在此播放成片</div><span v-if="preview">{{ preview.shortTitle }}</span><el-button v-if="preview" text @click="preview = null">清空预览</el-button></aside>
     </section>
     <el-dialog v-model="templateDialog" title="新增话题模板" width="520px"><el-form label-position="top"><el-form-item label="模板名称"><el-input v-model="templateName" /></el-form-item><el-form-item label="话题（空格或逗号分隔）"><el-input v-model="templateTopics" type="textarea" placeholder="工厂 定制 实拍 创业干货" /></el-form-item></el-form><template #footer><el-button @click="templateDialog = false">取消</el-button><el-button type="primary" @click="saveTemplate">保存模板</el-button></template></el-dialog>
+    <el-dialog v-model="eventDialog" :title="`发布日志：${eventJob?.publishAssetId ? eventJob?.id.slice(0, 8) : ''}`" width="620px">
+      <el-timeline v-if="agentEvents.length"><el-timeline-item v-for="event in agentEvents" :key="event.id" :type="event.level === 'error' ? 'danger' : event.level === 'warning' ? 'warning' : 'primary'" :timestamp="new Date(event.createdAt).toLocaleString('zh-CN')">{{ event.message }}</el-timeline-item></el-timeline><el-empty v-else description="暂未记录发布步骤" />
+    </el-dialog>
   </div>
 </template>
 
