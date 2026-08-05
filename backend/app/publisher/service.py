@@ -18,6 +18,7 @@ from app.publisher.adapters import (
     WechatChannelsPublisher,
 )
 from app.publisher.playwright_page import PersistentBrowserSession
+from app.publisher.agent import BrowserAgentManager
 
 
 Platform = Literal["douyin", "wechat_channels", "kuaishou"]
@@ -38,6 +39,23 @@ class PublishingService:
         self.media_validator = media_validator or self._validate_media
         self._lock = Lock()
         self._cancellations: dict[str, PublishCancellation] = {}
+        self.agent = BrowserAgentManager(self.media_validator)
+
+    def start_agent(
+        self, *, job_id: str, platform: Platform, user_data_dir: str, request: PublishRequest
+    ) -> dict:
+        return self.agent.start(
+            job_id=job_id,
+            platform=platform,
+            user_data_dir=user_data_dir,
+            request=request,
+        )
+
+    def resume_agent(self, job_id: str) -> dict:
+        return self.agent.resume(job_id)
+
+    def get_agent(self, job_id: str) -> dict | None:
+        return self.agent.get(job_id)
 
     def check_account(self, *, platform: Platform, user_data_dir: str) -> str:
         with self.session_factory(user_data_dir) as page:
@@ -142,6 +160,7 @@ class PublishingService:
         )
 
     def cancel(self, job_id: str) -> bool:
+        self.agent.cancel(job_id)
         with self._lock:
             cancellation = self._cancellations.setdefault(job_id, PublishCancellation())
             return cancellation.cancel()

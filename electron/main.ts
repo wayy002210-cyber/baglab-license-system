@@ -303,7 +303,7 @@ async function runNextPublishJob(): Promise<void> {
   }
   try {
     const response = await fetch(
-      `${backendState.baseUrl}/publish/jobs/${job.id}/run`,
+      `${backendState.baseUrl}/publish/tasks/${job.id}/start`,
       {
         method: "POST",
         headers: {
@@ -326,45 +326,63 @@ async function runNextPublishJob(): Promise<void> {
       }
     );
     const result = (await response.json()) as {
-      status?: "published" | "failed" | "needs_user" | "canceled";
-      errorMessage?: string | null;
+      state?: "queued"|"opening_profile"|"checking_login"|"waiting_for_human"|"uploading_video"|"waiting_upload"|"filling_metadata"|"uploading_cover"|"configuring_publish_time"|"submitting"|"verifying"|"published"|"failed"|"canceled";
+      message?: string | null;
       screenshotPath?: string | null;
+      sessionId?: string | null;
       currentUrl?: string | null;
+      resultUrl?: string | null;
       detail?: string;
     };
-    if (!response.ok || !result.status) {
+    if (!response.ok || !result.state) {
       throw new Error(result.detail || `发布服务失败 (${response.status})`);
     }
-    const current = publishRepository().getJob(job.id);
-    if (current?.status === "canceled") return;
-    if (result.status === "canceled") {
-      publishRepository().cancelJob(job.id);
-      return;
-    }
-    publishRepository().finishJob(job.id, result.status, {
-      errorMessage: result.errorMessage ?? undefined,
-      screenshotPath: result.screenshotPath ?? undefined,
-      resultUrl: result.currentUrl ?? undefined
-    });
-    logger?.write(
-      result.status === "published" ? "info" : "warn",
-      "publish.finished",
-      {
-        jobId: job.id,
-        status: result.status,
-        errorMessage: result.errorMessage,
-        screenshotPath: result.screenshotPath
-      }
-    );
-    if (result.status === "needs_user") {
-      publishRepository().updateAccountStatus(account.id, "needs_user");
-    }
+    publishRepository().setAgentSession(job.id, result.sessionId ?? null);
+    await monitorPublishAgent(job.id, account.id);
   } catch (error) {
     if (publishRepository().getJob(job.id)?.status === "canceled") return;
     publishRepository().finishJob(job.id, "failed", {
       errorMessage: error instanceof Error ? error.message : "发布失败"
     });
     logger?.write("error", "publish.failed", { jobId: job.id, error });
+  }
+}
+
+async function monitorPublishAgent(jobId: string, accountId: string): Promise<void> {
+  while (backendState.status === "ready") {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 5_000));
+    const response = await fetch(`${backendState.baseUrl}/publish/tasks/${jobId}`, {
+      headers: { "X-Autocut-Token": backendState.token }
+    });
+    if (!response.ok) throw new Error(`发布代理状态查询失败 (${response.status})`);
+    const snapshot = (await response.json()) as {
+      state: "queued"|"opening_profile"|"checking_login"|"waiting_for_human"|"uploading_video"|"waiting_upload"|"filling_metadata"|"uploading_cover"|"configuring_publish_time"|"submitting"|"verifying"|"published"|"failed"|"canceled";
+      message: string; screenshotPath?: string | null; currentUrl?: string | null; resultUrl?: string | null;
+      events?: Array<{id:string;state:"queued"|"opening_profile"|"checking_login"|"waiting_for_human"|"uploading_video"|"waiting_upload"|"filling_metadata"|"uploading_cover"|"configuring_publish_time"|"submitting"|"verifying"|"published"|"failed"|"canceled";level:"info"|"warning"|"error";message:string;details:Record<string,unknown>;createdAt:string}>;
+    };
+    for (const event of snapshot.events ?? []) {
+      publishRepository().recordAgentEvent({ ...event, jobId });
+    }
+    const current = publishRepository().getJob(jobId);
+    if (!current || current.status === "canceled") return;
+    if (snapshot.state === "waiting_for_human") {
+      publishRepository().finishJob(jobId, "needs_user", { errorMessage: snapshot.message, screenshotPath: snapshot.screenshotPath ?? undefined, resultUrl: snapshot.currentUrl ?? undefined });
+      publishRepository().updateAccountStatus(accountId, "needs_user");
+      return;
+    }
+    if (snapshot.state === "published") {
+      publishRepository().finishJob(jobId, "published", { screenshotPath: snapshot.screenshotPath ?? undefined, resultUrl: snapshot.resultUrl ?? snapshot.currentUrl ?? undefined });
+      return;
+    }
+    if (snapshot.state === "failed") {
+      publishRepository().finishJob(jobId, "failed", { errorMessage: snapshot.message, screenshotPath: snapshot.screenshotPath ?? undefined, resultUrl: snapshot.currentUrl ?? undefined });
+      return;
+    }
+    if (snapshot.state === "canceled") {
+      publishRepository().cancelJob(jobId);
+      return;
+    }
+    publishRepository().updateWorkflow(jobId, snapshot.state, snapshot.message);
   }
 }
 let backendState:
@@ -1092,7 +1110,7 @@ ipcMain.handle(
 ipcMain.handle("publishJobs:cancel", async (_event, id: string) => {
   const currentJob = publishRepository().getJob(id);
   if (!currentJob) throw new Error(`未找到发布任务：${id}`);
-  if (currentJob.status === "publishing") {
+  if (currentJob.status === "publishing" || currentJob.status === "needs_user") {
     if (backendState.status !== "ready") {
       throw new Error("本地发布服务尚未就绪，无法安全取消执行中的任务");
     }
@@ -1136,6 +1154,32 @@ ipcMain.handle("publishJobs:cancel", async (_event, id: string) => {
 ipcMain.handle("publishJobs:delete", (_event, id: string) => ({
   deleted: publishRepository().deleteJob(id)
 }));
+ipcMain.handle("publishJobs:events", (_event, id: string) => publishRepository().listEvents(id));
+ipcMain.handle("publishJobs:resume", async (_event, id: string) => {
+  assertPublishServiceReady(backendState);
+  if (backendState.status !== "ready") throw new Error("本地发布服务尚未就绪");
+  const service = backendState;
+  const previous = publishRepository().getJob(id);
+  if (!previous) throw new Error("未找到发布任务");
+  const account = publishRepository().getAccount(previous.accountId);
+  if (!account) throw new Error("发布账号不存在");
+  const job = publishRepository().claim(id);
+  try {
+    const response = await fetch(`${service.baseUrl}/publish/tasks/${id}/resume`, {
+      method: "POST",
+      headers: { "X-Autocut-Token": service.token }
+    });
+    const result = (await response.json()) as { detail?: string };
+    if (!response.ok) throw new Error(result.detail || "浏览器会话已结束，请重新开始发布");
+    void monitorPublishAgent(job.id, account.id);
+    return job;
+  } catch (error) {
+    publishRepository().finishJob(id, "failed", {
+      errorMessage: error instanceof Error ? error.message : "继续发布失败"
+    });
+    throw error;
+  }
+});
 ipcMain.handle("diagnostics:export", async () => {
   if (!window || !database) throw new Error("应用尚未就绪");
   const selection = await dialog.showSaveDialog(window, {
@@ -1394,7 +1438,8 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(task.outputPath).toString());
   });
   await startBackend();
-  publishScheduler = setInterval(() => void runNextPublishJob(), 15_000);
+  // Keep the browser-agent heartbeat and queue wake-up cadence aligned with the UI.
+  publishScheduler = setInterval(() => void runNextPublishJob(), 5_000);
   void runNextPublishJob();
   createWindow();
 }).catch((error: unknown) => {

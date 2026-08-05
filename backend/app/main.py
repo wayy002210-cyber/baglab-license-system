@@ -666,6 +666,41 @@ def create_app(
         )
 
     @app.post(
+        "/publish/tasks/{job_id}/start",
+        dependencies=[Depends(authorize)],
+    )
+    def start_publish_agent(job_id: str, payload: RunPublishRequest) -> dict:
+        request = PublishRequest.model_validate(
+            payload.model_dump(mode="json", by_alias=True)
+        )
+        return publisher.start_agent(
+            job_id=job_id,
+            platform=payload.platform,
+            user_data_dir=payload.user_data_dir,
+            request=request,
+        )
+
+    @app.get(
+        "/publish/tasks/{job_id}",
+        dependencies=[Depends(authorize)],
+    )
+    def get_publish_agent(job_id: str) -> dict:
+        snapshot = publisher.get_agent(job_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Browser agent session not found")
+        return snapshot
+
+    @app.post(
+        "/publish/tasks/{job_id}/resume",
+        dependencies=[Depends(authorize)],
+    )
+    def resume_publish_agent(job_id: str) -> dict:
+        try:
+            return publisher.resume_agent(job_id)
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @app.post(
         "/publish/jobs/{job_id}/cancel",
         status_code=202,
         dependencies=[Depends(authorize)],

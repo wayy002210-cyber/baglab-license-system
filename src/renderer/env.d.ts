@@ -269,6 +269,8 @@ declare global {
       deletePublishTopicTemplate(id:string):Promise<{deleted:boolean}>;
       createPublishJobsForAsset(input:{assetId:string;accountIds:string[];scheduledAt:string|null}):Promise<PublishJob[]>;
       listPublishJobs(): Promise<PublishJob[]>;
+      listPublishJobEvents(id:string):Promise<Array<{id:string;jobId:string;state:string;level:"info"|"warning"|"error";message:string;details:Record<string,unknown>;createdAt:string}>>;
+      resumePublishJob(id:string):Promise<PublishJob>;
       createPublishJob(input: {
         taskId: string;
         accountId: string;
@@ -404,6 +406,7 @@ type PublishJob = {
   id: string; taskId: string; publishAssetId:string|null; accountId: string; title: string; topics: string[];
   coverPath: string | null;
   status: "pending" | "scheduled" | "publishing" | "published" | "failed" | "needs_user" | "canceled";
+  workflowState: string; lastStepError:string|null; lastHeartbeatAt:string|null; agentSessionId:string|null;
   scheduledAt: string | null; startedAt: string | null; completedAt: string | null;
   errorMessage: string | null; screenshotPath: string | null; resultUrl:string|null; attemptCount: number;
   idempotencyKey: string; createdAt: string; updatedAt: string;

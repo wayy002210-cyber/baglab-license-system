@@ -230,8 +230,10 @@ const publishJobSchema = z.object({
   id: z.string().uuid(), taskId: z.string(), publishAssetId: z.string().uuid().nullable(), accountId: z.string().uuid(),
   title: z.string(), topics: z.array(z.string()), coverPath: z.string().nullable(),
   status: z.enum(["pending", "scheduled", "publishing", "published", "failed", "needs_user", "canceled"]),
+  workflowState: z.enum(["queued", "opening_profile", "checking_login", "waiting_for_human", "uploading_video", "waiting_upload", "filling_metadata", "uploading_cover", "configuring_publish_time", "submitting", "verifying", "published", "failed", "canceled"]),
   scheduledAt: z.string().nullable(), startedAt: z.string().nullable(),
   completedAt: z.string().nullable(), errorMessage: z.string().nullable(),
+  lastStepError: z.string().nullable(), lastHeartbeatAt: z.string().nullable(), agentSessionId: z.string().nullable(),
   screenshotPath: z.string().nullable(), resultUrl: z.string().nullable(), attemptCount: z.number().int().nonnegative(),
   idempotencyKey: z.string(), createdAt: z.string(), updatedAt: z.string()
 });
@@ -709,6 +711,10 @@ contextBridge.exposeInMainWorld("autocut", {
   createPublishJobsForAsset: async (input:unknown) => z.array(publishJobSchema).parse(await ipcRenderer.invoke("publishAssets:createJobs",z.object({assetId:z.string().uuid(),accountIds:z.array(z.string().uuid()).min(1),scheduledAt:z.string().nullable()}).parse(input))),
   listPublishJobs: async () => z.array(publishJobSchema).parse(
     await ipcRenderer.invoke("publishJobs:list")
+  ),
+  listPublishJobEvents: async (id:string) => z.array(z.object({id:z.string().uuid(),jobId:z.string().uuid(),state:z.string(),level:z.enum(["info","warning","error"]),message:z.string(),details:z.record(z.string(),z.unknown()),createdAt:z.string()})).parse(await ipcRenderer.invoke("publishJobs:events", z.string().uuid().parse(id))),
+  resumePublishJob: async (id: string) => publishJobSchema.parse(
+    await ipcRenderer.invoke("publishJobs:resume", z.string().uuid().parse(id))
   ),
   createPublishJob: async (input: unknown) => publishJobSchema.parse(
     await ipcRenderer.invoke("publishJobs:create", createPublishJobSchema.parse(input))

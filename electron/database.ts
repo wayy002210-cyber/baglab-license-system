@@ -163,6 +163,21 @@ CREATE TABLE IF NOT EXISTS publish_jobs (
   updated_at TEXT NOT NULL
 );
 
+-- Durable browser-agent audit trail.  The Electron process owns these records so
+-- a backend restart can never make a publish action disappear from the UI.
+CREATE TABLE IF NOT EXISTS publish_job_events (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL REFERENCES publish_jobs(id) ON DELETE CASCADE,
+  state TEXT NOT NULL,
+  level TEXT NOT NULL,
+  message TEXT NOT NULL,
+  details_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS publish_job_events_job_idx
+  ON publish_job_events(job_id, created_at);
+
 CREATE INDEX IF NOT EXISTS publish_jobs_due_idx
   ON publish_jobs(status, scheduled_at);
 
@@ -275,6 +290,18 @@ export function applyMigrations(database: Database.Database): void {
     if (!jobColumns.some((column) => column.name === "result_url")) {
       database.exec("ALTER TABLE publish_jobs ADD COLUMN result_url TEXT");
     }
+    if (!jobColumns.some((column) => column.name === "workflow_state")) {
+      database.exec("ALTER TABLE publish_jobs ADD COLUMN workflow_state TEXT NOT NULL DEFAULT 'queued'");
+    }
+    if (!jobColumns.some((column) => column.name === "last_heartbeat_at")) {
+      database.exec("ALTER TABLE publish_jobs ADD COLUMN last_heartbeat_at TEXT");
+    }
+    if (!jobColumns.some((column) => column.name === "last_step_error")) {
+      database.exec("ALTER TABLE publish_jobs ADD COLUMN last_step_error TEXT");
+    }
+    if (!jobColumns.some((column) => column.name === "agent_session_id")) {
+      database.exec("ALTER TABLE publish_jobs ADD COLUMN agent_session_id TEXT");
+    }
     database.prepare(
       `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (4, ?)`
     ).run(new Date().toISOString());
@@ -287,6 +314,9 @@ export function applyMigrations(database: Database.Database): void {
          VALUES (2, ?)`
       )
       .run(new Date().toISOString());
+    database.prepare(
+      `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (5, ?)`
+    ).run(new Date().toISOString());
     database.prepare(
       `INSERT OR IGNORE INTO queue_state(id, status, active_task_id, updated_at)
        VALUES ('generation', 'idle', NULL, ?)`

@@ -41,27 +41,20 @@ class PlaywrightPublisherPage:
 
     def fill(self, selectors: list[str], value: str) -> None:
         locator = self._first(selectors)
-        try:
-            locator.fill(value, timeout=self.timeout_ms)
-        except Exception:
-            locator.click()
-            locator.press("Control+A")
-            locator.press_sequentially(value, delay=8)
+        # Use visible keyboard interactions only. Do not mutate the platform DOM
+        # through JavaScript: browser automation should behave like a real user.
+        locator.click(timeout=self.timeout_ms)
+        locator.press("Control+A")
+        locator.press("Backspace")
+        locator.press_sequentially(value, delay=12)
 
     def click(self, selectors: list[str]) -> None:
         self._first(selectors).click(timeout=self.timeout_ms)
 
     def set_schedule(self, toggle_selectors: list[str], date_selectors: list[str], time_selectors: list[str], value: datetime) -> None:
         self.click(toggle_selectors)
-        self._force_fill(date_selectors, value.strftime("%Y-%m-%d"))
-        self._force_fill(time_selectors, value.strftime("%H:%M"))
-
-    def _force_fill(self, selectors: list[str], value: str) -> None:
-        locator = self._first(selectors)
-        locator.evaluate("element => element.removeAttribute('readonly')")
-        locator.fill(value, timeout=self.timeout_ms)
-        locator.dispatch_event("input")
-        locator.dispatch_event("change")
+        self.fill(date_selectors, value.strftime("%Y-%m-%d"))
+        self.fill(time_selectors, value.strftime("%H:%M"))
 
     def wait_for_publish_success(self) -> bool:
         success = self.page.get_by_text("发布成功", exact=False).or_(self.page.get_by_text("已发布", exact=False)).or_(self.page.get_by_text("发布完成", exact=False))
@@ -101,20 +94,30 @@ class PersistentBrowserSession:
         self.playwright: Playwright | None = None
         self.context: BrowserContext | None = None
 
-    def __enter__(self) -> PlaywrightPublisherPage:
+    def start(self) -> PlaywrightPublisherPage:
+        if self.context:
+            page = self.context.pages[0] if self.context.pages else self.context.new_page()
+            return PlaywrightPublisherPage(page)
         self.playwright = sync_playwright().start()
         self.context = self.playwright.chromium.launch_persistent_context(
             self.user_data_dir,
             headless=self.headless,
             viewport={"width": 1440, "height": 900},
             locale="zh-CN",
-            args=["--disable-blink-features=AutomationControlled"],
         )
         page = self.context.pages[0] if self.context.pages else self.context.new_page()
         return PlaywrightPublisherPage(page)
 
-    def __exit__(self, exc_type, exc, traceback) -> None:
+    def close(self) -> None:
         if self.context:
             self.context.close()
+            self.context = None
         if self.playwright:
             self.playwright.stop()
+            self.playwright = None
+
+    def __enter__(self) -> PlaywrightPublisherPage:
+        return self.start()
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self.close()

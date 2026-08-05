@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
-from typing import Literal, Protocol
+from typing import Callable, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -79,7 +79,14 @@ class PublisherAdapter:
     schedule_date_selectors = ['input[placeholder*="发布日期"]', 'input[placeholder*="选择日期"]', 'input[placeholder*="日期"]']
     schedule_time_selectors = ['input[placeholder*="发布时间"]', 'input[placeholder*="选择时间"]', 'input[placeholder*="时间"]']
 
-    def publish(self, page: PublisherPage, request: PublishRequest, *, cancellation: PublishCancellation | None = None) -> PublishResult:
+    def publish(
+        self,
+        page: PublisherPage,
+        request: PublishRequest,
+        *,
+        cancellation: PublishCancellation | None = None,
+        on_step: Callable[[str], None] | None = None,
+    ) -> PublishResult:
         control = cancellation or PublishCancellation()
         if page.is_login_required():
             return self._needs_user(page, request, "LOGIN_REQUIRED", "账号登录已失效，请在浏览器窗口重新登录")
@@ -87,11 +94,14 @@ class PublisherAdapter:
             return self._needs_user(page, request, "HUMAN_CHALLENGE", "平台要求验证码或人工确认，请在浏览器窗口完成验证")
         try:
             control.raise_if_canceled()
+            if on_step: on_step("uploading_video")
             page.upload(self.upload_selectors, request.video_path)
+            if on_step: on_step("waiting_upload")
             wait_upload = getattr(page, "wait_for_upload_ready", None)
             if callable(wait_upload) and not wait_upload():
                 return self._failure(page, request, "视频上传超时，请检查网络后重试")
             control.raise_if_canceled()
+            if on_step: on_step("filling_metadata")
             page.fill(self.title_selectors, request.title)
             copy = request.description.strip()
             tags = " ".join(f"#{value.lstrip('#')}" for value in request.topics)
@@ -99,14 +109,18 @@ class PublisherAdapter:
             if copy:
                 page.fill(self.description_selectors, copy)
             if request.scheduled_at:
+                if on_step: on_step("configuring_publish_time")
                 page.set_schedule(self.schedule_toggle_selectors, self.schedule_date_selectors, self.schedule_time_selectors, request.scheduled_at)
             if request.cover_path:
+                if on_step: on_step("uploading_cover")
                 page.upload(['input[type=file][accept*="image"]'], request.cover_path)
             control.raise_if_canceled()
             control.mark_submitted()
+            if on_step: on_step("submitting")
             page.click(self.publish_selectors)
             if page.has_human_challenge():
                 return self._needs_user(page, request, "HUMAN_CHALLENGE", "发布时触发平台验证，请在浏览器窗口完成验证")
+            if on_step: on_step("verifying")
             if not page.wait_for_publish_success():
                 return self._failure(page, request, "平台未返回发布成功确认，请检查平台内容管理")
             return PublishResult(status="published", currentUrl=page.url)
