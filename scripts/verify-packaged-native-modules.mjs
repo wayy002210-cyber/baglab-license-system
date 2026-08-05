@@ -10,11 +10,12 @@ import { dirname, join } from "node:path";
 import { extractAll } from "@electron/asar";
 
 const root = process.cwd();
-const resources = join(root, "release", "win-unpacked", "resources");
+const outputDirectory = process.env.PACKAGED_OUTPUT ?? "release";
+const resources = join(root, outputDirectory, "win-unpacked", "resources");
 const extracted = mkdtempSync(join(tmpdir(), "autocut-native-check-"));
 const executable = join(
   root,
-  "release",
+  outputDirectory,
   "win-unpacked",
   "袋研官矩阵混剪工作台.exe"
 );

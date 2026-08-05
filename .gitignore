@@ -14,5 +14,7 @@ work/
 output/
 build-resources/
 release/
+release-agent*/
 backend/build/
 backend/*.spec
+vendor/ffmpeg/*.exe

@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -6,11 +6,15 @@ const root = process.cwd();
 const resources = join(root, "build-resources");
 const backendOutput = join(resources, "backend");
 const binOutput = join(resources, "bin");
+const bundledFfmpegDir =
+  process.env.AUTOCUT_FFMPEG_DIR ?? join(root, "vendor", "ffmpeg");
 rmSync(resources, { recursive: true, force: true });
 mkdirSync(backendOutput, { recursive: true });
 mkdirSync(binOutput, { recursive: true });
 
 function locate(command) {
+  const bundledPath = join(bundledFfmpegDir, command);
+  if (existsSync(bundledPath)) return bundledPath;
   const result = spawnSync("where.exe", [command], {
     encoding: "utf8",
     windowsHide: true
@@ -20,7 +24,9 @@ function locate(command) {
 }
 
 for (const executable of ["ffmpeg.exe", "ffprobe.exe"]) {
-  cpSync(locate(executable), join(binOutput, executable));
+  const source = locate(executable);
+  cpSync(source, join(binOutput, executable));
+  console.log(`Bundled ${executable} from ${source}`);
 }
 
 const pyinstaller = spawnSync(
