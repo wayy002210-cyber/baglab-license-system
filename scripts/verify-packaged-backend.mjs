@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
 
 const token = "packaged-backend-verification-token";
 const port = 43199;
@@ -11,6 +12,9 @@ const executable =
     "backend",
     "autocut-backend.exe"
   );
+const expectedBuildId = JSON.parse(
+  readFileSync(join(process.cwd(), "package.json"), "utf8")
+).version;
 const child = spawn(executable, [], {
   env: {
     ...process.env,
@@ -34,11 +38,26 @@ try {
         headers: { "X-Autocut-Token": token }
       });
       const body = await response.json();
-      if (response.ok && body.status === "ok") {
+      if (
+        response.ok &&
+        body.status === "ok" &&
+        body.buildId === expectedBuildId
+      ) {
         verified = true;
         break;
       }
-    } catch {
+      if (response.ok && body.status === "ok") {
+        throw new Error(
+          `Packaged backend version mismatch: desktop ${expectedBuildId}, backend ${body.buildId ?? "unknown"}`
+        );
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith("Packaged backend version mismatch:")
+      ) {
+        throw error;
+      }
       // One-file PyInstaller startup can take several seconds.
     }
   }

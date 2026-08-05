@@ -10,6 +10,7 @@ import {
 } from "electron";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
+import { assertPublishServiceReady } from "./publish-readiness.js";
 import { basename, extname, join, resolve } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -1059,7 +1060,12 @@ ipcMain.handle("publishAssets:selectCover", async () => {
 ipcMain.handle("publishTopics:list", () => publishRepository().listTopicTemplates());
 ipcMain.handle("publishTopics:save", (_event, input: Parameters<PublishRepository["saveTopicTemplate"]>[0]) => publishRepository().saveTopicTemplate(input));
 ipcMain.handle("publishTopics:delete", (_event, id:string) => ({deleted:publishRepository().deleteTopicTemplate(id)}));
-ipcMain.handle("publishAssets:createJobs", (_event, input: Parameters<PublishRepository["createJobsForAsset"]>[0]) => publishRepository().createJobsForAsset(input));
+ipcMain.handle("publishAssets:createJobs", (_event, input: Parameters<PublishRepository["createJobsForAsset"]>[0]) => {
+  assertPublishServiceReady(backendState);
+  const jobs = publishRepository().createJobsForAsset(input);
+  void runNextPublishJob();
+  return jobs;
+});
 ipcMain.handle("publishJobs:list", () => publishRepository().listJobs());
 ipcMain.handle(
   "publishJobs:create",
