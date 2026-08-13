@@ -1,4 +1,7 @@
 node_modules/
+.venv/
+.tmp/
+.pytest_cache/
 .pnpm-store/
 .python-test-deps/
 dist/

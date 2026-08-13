@@ -37,6 +37,8 @@ export type BackendLaunchInput = {
   buildId?: string;
   installRoot?: string;
   lockFilePath?: string;
+  licenseProofSecret?: string;
+  licenseDeviceFingerprint?: string;
 };
 
 export type BackendLaunchConfig = {
@@ -61,6 +63,8 @@ export function createBackendLaunchConfig(
       ...(input.buildId ? { AUTOCUT_BUILD_ID: input.buildId } : {}),
       ...(input.installRoot ? { AUTOCUT_INSTALL_ROOT: input.installRoot } : {}),
       ...(input.lockFilePath ? { AUTOCUT_BACKEND_LOCK_FILE: input.lockFilePath } : {}),
+      ...(input.licenseProofSecret ? { AUTOCUT_LICENSE_PROOF_SECRET: input.licenseProofSecret } : {}),
+      ...(input.licenseDeviceFingerprint ? { AUTOCUT_LICENSE_DEVICE: input.licenseDeviceFingerprint } : {}),
       ...(input.resourceDirectory
         ? {
             AUTOCUT_FFMPEG: `${input.resourceDirectory}/bin/ffmpeg.exe`,

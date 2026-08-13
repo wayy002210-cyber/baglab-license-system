@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import AsyncIterator, Protocol
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from app.media.asset_scanner import (
     AssetScanner,
@@ -58,6 +58,7 @@ from app.tasks.secure_runtime import SecurePipelineRuntime
 from app.publisher.adapters import PublishRequest, PublishResult
 from app.publisher.service import AccountBrowserError, Platform, PublishingService
 from app.single_instance import exit_if_backend_lock_is_taken
+from app.license_proof import verify_license_proof
 
 BACKEND_BUILD_ID = os.environ.get("AUTOCUT_BUILD_ID", "0.6.8-batchfix.20260812.220000")
 BACKEND_LOCK_PATH: str | None = None
@@ -187,12 +188,48 @@ def create_app(
     task_runtime: GenerationTaskRuntime | None = None,
     publishing_service: Publisher | None = None,
     bailian_chat: BailianChat | None = None,
+    license_proof_secret: str | None = None,
+    license_device_fingerprint: str | None = None,
 ) -> FastAPI:
     token = session_token or os.environ.get("AUTOCUT_SESSION_TOKEN")
     if not token:
         raise RuntimeError("AUTOCUT_SESSION_TOKEN is required")
 
     app = FastAPI(title="AutoCut Local Service", version="0.1.0")
+    proof_secret = license_proof_secret or os.environ.get("AUTOCUT_LICENSE_PROOF_SECRET")
+    proof_device = license_device_fingerprint or os.environ.get("AUTOCUT_LICENSE_DEVICE")
+    if bool(proof_secret) != bool(proof_device):
+        raise RuntimeError("Both license proof secret and device fingerprint are required")
+
+    def is_license_protected(method: str, path: str) -> bool:
+        if method != "POST":
+            return False
+        if path == "/assets/scan" or path.startswith("/copywriting/"):
+            return True
+        if path in {"/voices/clones", "/voices/synthesize"}:
+            return True
+        if path.startswith("/tasks/") and path.endswith(("/run", "/retry")):
+            return True
+        if path.startswith("/publish/") and path.endswith(("/start", "/resume")):
+            return True
+        return False
+
+    @app.middleware("http")
+    async def require_license_proof(request, call_next):
+        if (
+            proof_secret
+            and is_license_protected(request.method, request.url.path)
+        ):
+            try:
+                verify_license_proof(
+                    request.headers.get("X-Autocut-License"),
+                    secret=proof_secret,
+                    expected_build_id=BACKEND_BUILD_ID,
+                    expected_device_fingerprint=proof_device or "",
+                )
+            except HTTPException as error:
+                return JSONResponse(status_code=error.status_code, content={"detail": error.detail})
+        return await call_next(request)
     ffmpeg_path = os.environ.get("AUTOCUT_FFMPEG", "ffmpeg")
     ffprobe_path = os.environ.get("AUTOCUT_FFPROBE", "ffprobe")
     scanner = asset_scanner or AssetScanner(

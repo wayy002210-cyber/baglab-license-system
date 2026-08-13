@@ -87,6 +87,8 @@ import { LicenseApiClient } from "./license/api-client.js";
 import { LicenseCoordinator } from "./license/coordinator.js";
 import { verifySignedCredential } from "./license/credential.js";
 import { collectWindowsDevice } from "./license/windows-device.js";
+import { createLicensedHandler } from "./license/ipc-guard.js";
+import { issueLocalLicenseProof } from "./license/local-proof.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -115,6 +117,29 @@ protocol.registerSchemesAsPrivileged([
 ]);
 const credentials = new CredentialStore(keytar);
 let licenseCoordinator: LicenseCoordinator | null = null;
+const localLicenseProofSecret = randomBytes(32).toString("hex");
+let localLicenseDeviceFingerprint = "";
+
+function backendLicenseHeaders(): Record<string, string> {
+  if (!licenseCoordinator || !localLicenseDeviceFingerprint) throw new Error("LICENSE_INITIALIZING");
+  licenseCoordinator.assertAllowed();
+  return {
+    "X-Autocut-License": issueLocalLicenseProof({
+      secret: localLicenseProofSecret,
+      buildId: app.getVersion(),
+      deviceFingerprint: localLicenseDeviceFingerprint
+    })
+  };
+}
+
+function licensedHandle(channel: string, handler: (event: unknown, ...args: any[]) => unknown): void {
+  ipcMain.handle(channel, createLicensedHandler({
+    assertAllowed: () => {
+      if (!licenseCoordinator) throw new Error("LICENSE_INITIALIZING");
+      licenseCoordinator.assertAllowed();
+    }
+  }, handler));
+}
 
 function personaRepository(): PersonaRepository {
   if (!database) throw new Error("Database is not ready");
@@ -190,7 +215,8 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
   );
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Autocut-Token": backendState.token
+    "X-Autocut-Token": backendState.token,
+    ...backendLicenseHeaders()
   };
   if (bailianKey) headers["X-Bailian-Key"] = bailianKey;
   if (minimaxKey) headers["X-MiniMax-Key"] = minimaxKey;
@@ -317,7 +343,8 @@ async function runNextPublishJob(jobId?: string): Promise<boolean> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Autocut-Token": backendState.token
+          "X-Autocut-Token": backendState.token,
+          ...backendLicenseHeaders()
         },
         body: JSON.stringify({
           platform: account.platform,
@@ -477,6 +504,8 @@ async function startBackendInternal(): Promise<void> {
       buildId: app.getVersion(),
       installRoot: app.isPackaged ? process.resourcesPath : process.cwd(),
       lockFilePath: join(app.getPath("userData"), "runtime", "autocut-backend.lock")
+      ,licenseProofSecret: localLicenseProofSecret
+      ,licenseDeviceFingerprint: localLicenseDeviceFingerprint
     });
     if (app.isPackaged && !existsSync(packagedExecutable)) {
       lastError = new Error(
@@ -781,7 +810,7 @@ ipcMain.handle("assets:listCategories", () =>
 ipcMain.handle("assets:list", (_event, categoryId: string) =>
   assetRepository().listAssets(categoryId)
 );
-ipcMain.handle("assets:selectAndScan", async () => {
+licensedHandle("assets:selectAndScan", async () => {
   if (!window) throw new Error("Application window is not ready");
   const selection = await dialog.showOpenDialog(window, {
     title: "选择一个素材分类文件夹",
@@ -796,7 +825,8 @@ ipcMain.handle("assets:selectAndScan", async () => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Autocut-Token": backendState.token
+      "X-Autocut-Token": backendState.token,
+      ...backendLicenseHeaders()
     },
     body: JSON.stringify({ folderPath })
   });
@@ -925,7 +955,7 @@ ipcMain.handle("templates:import", async () => {
   return templateRepository().create(input);
 });
 ipcMain.handle("tasks:list", () => taskRepository().list());
-ipcMain.handle("tasks:createBatch", (_event, input: CreateTaskBatchInput) => {
+licensedHandle("tasks:createBatch", (_event, input: CreateTaskBatchInput) => {
   const media = settingsRepository().getMediaSettings();
   const tasks = taskRepository().createBatch({
     ...input,
@@ -1119,11 +1149,11 @@ ipcMain.handle("tasks:cancel", async (_event, id: string) => {
   }
   return taskRepository().cancel(id);
 });
-ipcMain.handle("tasks:retry", (_event, id: string) => {
+licensedHandle("tasks:retry", (_event, id: string) => {
   return taskRepository().retry(id);
 });
-ipcMain.handle("tasks:start", (_event,id:string)=>queue().startTask(id));
-ipcMain.handle("tasks:startAll", ()=>queue().startAllPending());
+licensedHandle("tasks:start", (_event,id:string)=>queue().startTask(id));
+licensedHandle("tasks:startAll", ()=>queue().startAllPending());
 ipcMain.handle("tasks:pause", ()=>queue().requestPause());
 ipcMain.handle("tasks:resume", ()=>queue().resume());
 ipcMain.handle("tasks:queueState", ()=>queue().getState());
@@ -1181,18 +1211,18 @@ ipcMain.handle("publishAssets:selectCover", async () => {
 ipcMain.handle("publishTopics:list", () => publishRepository().listTopicTemplates());
 ipcMain.handle("publishTopics:save", (_event, input: Parameters<PublishRepository["saveTopicTemplate"]>[0]) => publishRepository().saveTopicTemplate(input));
 ipcMain.handle("publishTopics:delete", (_event, id:string) => ({deleted:publishRepository().deleteTopicTemplate(id)}));
-ipcMain.handle("publishAssets:createJobs", (_event, input: Parameters<PublishRepository["createJobsForAsset"]>[0]) => {
+licensedHandle("publishAssets:createJobs", (_event, input: Parameters<PublishRepository["createJobsForAsset"]>[0]) => {
   assertPublishServiceReady(backendState);
   const jobs = publishRepository().createJobsForAsset(input);
   if ((input as typeof input & { startImmediately?: boolean }).startImmediately) void wakePublishRunner(jobs.map((job) => job.id));
   return jobs;
 });
-ipcMain.handle("publishJobs:startQueue", () => {
+licensedHandle("publishJobs:startQueue", () => {
   assertPublishServiceReady(backendState);
   void wakePublishRunner();
   return { started: true };
 });
-ipcMain.handle("publishJobs:retry", (_event, id: string) => {
+licensedHandle("publishJobs:retry", (_event, id: string) => {
   assertPublishServiceReady(backendState);
   const job = publishRepository().getJob(id);
   if (!job || job.status !== "failed") throw new Error("该任务当前不可重试");
@@ -1273,7 +1303,7 @@ ipcMain.handle("publishJobs:delete", (_event, id: string) => ({
   deleted: publishRepository().deleteJob(id)
 }));
 ipcMain.handle("publishJobs:events", (_event, id: string) => publishRepository().listEvents(id));
-ipcMain.handle("publishJobs:resume", async (_event, id: string) => {
+licensedHandle("publishJobs:resume", async (_event, id: string) => {
   assertPublishServiceReady(backendState);
   if (backendState.status !== "ready") throw new Error("本地发布服务尚未就绪");
   const service = backendState;
@@ -1315,7 +1345,7 @@ ipcMain.handle("diagnostics:export", async () => {
   });
   return selection.filePath;
 });
-ipcMain.handle("copywriting:rewrite", async (_event, payload: unknown) => {
+licensedHandle("copywriting:rewrite", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");
   }
@@ -1326,7 +1356,8 @@ ipcMain.handle("copywriting:rewrite", async (_event, payload: unknown) => {
     headers: {
       "Content-Type": "application/json",
       "X-Autocut-Token": backendState.token,
-      "X-Bailian-Key": apiKey
+      "X-Bailian-Key": apiKey,
+      ...backendLicenseHeaders()
     },
     body: JSON.stringify(payload)
   });
@@ -1353,7 +1384,8 @@ async function postCopywriting(
     headers: {
       "Content-Type": "application/json",
       "X-Autocut-Token": backendState.token,
-      ...(apiKey ? { "X-Bailian-Key": apiKey } : {})
+      ...(apiKey ? { "X-Bailian-Key": apiKey } : {}),
+      ...backendLicenseHeaders()
     },
     body: JSON.stringify(payload)
   });
@@ -1361,10 +1393,10 @@ async function postCopywriting(
     detail?: string | { code?: string; message?: string };
   }>(response, "文案服务请求失败");
 }
-ipcMain.handle("copywriting:topics", (_event, payload: unknown) =>
+licensedHandle("copywriting:topics", (_event, payload: unknown) =>
   postCopywriting("topics", payload, true)
 );
-ipcMain.handle("copywriting:generate", (_event, payload: unknown) =>
+licensedHandle("copywriting:generate", (_event, payload: unknown) =>
   postCopywriting("generate", payload, true)
 );
 ipcMain.handle("copywriting:compliance", (_event, payload: unknown) =>
@@ -1424,7 +1456,8 @@ ipcMain.handle(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Autocut-Token": backendState.token
+          "X-Autocut-Token": backendState.token,
+          ...backendLicenseHeaders()
         },
         body: JSON.stringify({ samplePath })
       }
@@ -1436,7 +1469,7 @@ ipcMain.handle(
     return result;
   }
 );
-ipcMain.handle("voices:clone", async (_event, payload: unknown) => {
+licensedHandle("voices:clone", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");
   }
@@ -1447,7 +1480,8 @@ ipcMain.handle("voices:clone", async (_event, payload: unknown) => {
     headers: {
       "Content-Type": "application/json",
       "X-Autocut-Token": backendState.token,
-      "X-MiniMax-Key": apiKey
+      "X-MiniMax-Key": apiKey,
+      ...backendLicenseHeaders()
     },
     body: JSON.stringify(payload)
   });
@@ -1457,7 +1491,7 @@ ipcMain.handle("voices:clone", async (_event, payload: unknown) => {
   }
   return result;
 });
-ipcMain.handle("voices:synthesize", async (_event, payload: unknown) => {
+licensedHandle("voices:synthesize", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");
   }
@@ -1468,7 +1502,8 @@ ipcMain.handle("voices:synthesize", async (_event, payload: unknown) => {
     headers: {
       "Content-Type": "application/json",
       "X-Autocut-Token": backendState.token,
-      "X-MiniMax-Key": apiKey
+      "X-MiniMax-Key": apiKey,
+      ...backendLicenseHeaders()
     },
     body: JSON.stringify(payload)
   });
@@ -1478,7 +1513,7 @@ ipcMain.handle("voices:synthesize", async (_event, payload: unknown) => {
   }
   return result;
 });
-ipcMain.handle("voices:preview", async (_event, payload: unknown) => {
+licensedHandle("voices:preview", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") throw new Error("本地 AI 服务尚未就绪");
   const apiKey = await credentials.get("minimax");
   if (!apiKey) throw new Error("请先在系统设置中配置 MiniMax API Key");
@@ -1487,7 +1522,8 @@ ipcMain.handle("voices:preview", async (_event, payload: unknown) => {
     headers: {
       "Content-Type": "application/json",
       "X-Autocut-Token": backendState.token,
-      "X-MiniMax-Key": apiKey
+      "X-MiniMax-Key": apiKey,
+      ...backendLicenseHeaders()
     },
     body: JSON.stringify(payload)
   });
@@ -1513,6 +1549,7 @@ app.whenReady().then(async () => {
   logger = new JsonLogger(logPath);
   logger.write("info", "application.start", { version: app.getVersion() });
   const device = await collectWindowsDevice(credentials);
+  localLicenseDeviceFingerprint = device.fingerprint;
   const serviceOrigin = process.env.AUTOCUT_LICENSE_SERVICE_ORIGIN;
   const publicJwkRaw = process.env.AUTOCUT_LICENSE_PUBLIC_KEY_JWK;
   if (serviceOrigin && publicJwkRaw) {
