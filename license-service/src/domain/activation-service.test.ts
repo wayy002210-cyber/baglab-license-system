@@ -48,4 +48,18 @@ describe("activation service", () => {
     await expect(sut.validate(active.credential.licenseId, "d1", "0.7.0")).rejects.toBeInstanceOf(ActivationError);
     expect(store.events.map((event) => event.type)).toEqual(expect.arrayContaining(["generated", "activated", "disabled", "restored", "extended", "unbound"]));
   });
+
+  it("rebinds an unbound unexpired license without restarting its validity period", async () => {
+    const store = new InMemoryLicenseStore();
+    const sut = service(store);
+    await sut.generateCodes("day3", 1, ["BAGL-AAAA-BBBB-GGGG"]);
+    const first = await sut.activate({ code: "BAGL-AAAA-BBBB-GGGG", deviceFingerprint: "old", installationIdHash: "i1", buildId: "0.7.0" });
+    await sut.unbind(first.credential.licenseId, "admin");
+
+    const rebound = await sut.activate({ code: "BAGL-AAAA-BBBB-GGGG", deviceFingerprint: "new", installationIdHash: "i2", buildId: "0.7.0" });
+
+    expect(rebound.credential.licenseId).toBe(first.credential.licenseId);
+    expect(rebound.credential.expiresAt).toBe(first.credential.expiresAt);
+    await expect(sut.activate({ code: "BAGL-AAAA-BBBB-GGGG", deviceFingerprint: "third", installationIdHash: "i3", buildId: "0.7.0" })).rejects.toMatchObject({ code: "DEVICE_MISMATCH" });
+  });
 });

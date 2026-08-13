@@ -3,7 +3,7 @@ import { calculateExpiry, hashActivationCode, OFFLINE_GRACE_MS, type LicenseCred
 
 type EventType = "generated" | "activated" | "validated" | "disabled" | "restored" | "extended" | "unbound" | "rejected";
 interface CodeRow { id: string; hash: string; plan: LicensePlan; usedAt: Date | null; licenseId: string | null }
-interface LicenseRow { id: string; codeId: string; plan: LicensePlan; device: string | null; installation: string | null; activatedAt: Date; expiresAt: Date | null; status: LicenseStatus }
+interface LicenseRow { id: string; codeId: string; plan: LicensePlan; device: string | null; installation: string | null; activatedAt: Date; expiresAt: Date | null; status: LicenseStatus | "unbound" }
 interface EventRow { type: EventType; licenseId?: string; actor: string; at: Date }
 
 export class ActivationError extends Error {
@@ -42,6 +42,12 @@ export class ActivationService {
       if (!code) throw new ActivationError("CODE_NOT_FOUND", "Activation code is invalid");
       if (code.usedAt) {
         const existing = code.licenseId ? this.store.licenses.get(code.licenseId) : undefined;
+        if (existing?.status === "unbound" && !existing.device) {
+          if (existing.expiresAt && existing.expiresAt <= this.options.now()) throw new ActivationError("LICENSE_EXPIRED", "License expired");
+          existing.device = input.deviceFingerprint; existing.installation = input.installationIdHash; existing.status = "active";
+          this.store.events.push({ type: "activated", licenseId: existing.id, actor: "client", at: this.options.now() });
+          return this.result(existing);
+        }
         throw new ActivationError(existing?.device !== input.deviceFingerprint ? "DEVICE_MISMATCH" : "CODE_ALREADY_USED", "Activation code was already redeemed");
       }
       const activatedAt = this.options.now(); const id = randomUUID();
@@ -70,9 +76,10 @@ export class ActivationService {
     const row = this.required(id); if (row.expiresAt) row.expiresAt = new Date(row.expiresAt.getTime() + hours * 3_600_000);
     this.store.events.push({ type: "extended", licenseId: id, actor, at: this.options.now() });
   }
-  async unbind(id: string, actor: string) { const row = this.required(id); row.device = null; row.installation = null; this.store.events.push({ type: "unbound", licenseId: id, actor, at: this.options.now() }); }
+  async unbind(id: string, actor: string) { const row = this.required(id); row.device = null; row.installation = null; row.status = "unbound"; this.store.events.push({ type: "unbound", licenseId: id, actor, at: this.options.now() }); }
   private required(id: string) { const row = this.store.licenses.get(id); if (!row) throw new ActivationError("LICENSE_NOT_FOUND", "License not found"); return row; }
   private async result(row: LicenseRow) {
+    if (row.status === "unbound" || !row.device) throw new ActivationError("LICENSE_NOT_FOUND", "License is not bound");
     const now = this.options.now();
     const offline = new Date(Math.min(now.getTime() + OFFLINE_GRACE_MS, row.expiresAt?.getTime() ?? Number.MAX_SAFE_INTEGER));
     const credential: LicenseCredential = { version: 1, licenseId: row.id, deviceFingerprint: row.device!, plan: row.plan, status: row.status, issuedAt: now.toISOString(), expiresAt: row.expiresAt?.toISOString() ?? null, offlineUntil: offline.toISOString(), minimumBuildId: this.options.minimumBuildId };

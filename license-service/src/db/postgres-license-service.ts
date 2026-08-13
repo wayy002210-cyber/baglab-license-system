@@ -20,7 +20,16 @@ export class PostgresLicenseService {
       const [code] = await tx`SELECT id, plan, status FROM license_codes WHERE code_hash=${codeHash} FOR UPDATE`;
       if (!code) throw new ActivationError("CODE_NOT_FOUND", "激活码无效");
       if (code.status !== "unused") {
-        const [bound] = await tx`SELECT d.fingerprint_hash FROM licenses l LEFT JOIN devices d ON d.id=l.device_id WHERE l.license_code_id=${code.id}`;
+        const [bound] = await tx`SELECT l.id, l.plan, l.status, l.expires_at, l.device_id, d.fingerprint_hash FROM licenses l LEFT JOIN devices d ON d.id=l.device_id WHERE l.license_code_id=${code.id} FOR UPDATE OF l`;
+        if (bound?.status === "unbound" && !bound.device_id) {
+          if (bound.expires_at && new Date(bound.expires_at) <= this.now()) throw new ActivationError("LICENSE_EXPIRED", "授权已到期");
+          const [device] = await tx`INSERT INTO devices (fingerprint_hash, short_code, installation_id_hash, client_build_id)
+            VALUES (${input.deviceFingerprint}, ${input.deviceFingerprint.slice(0, 12).toUpperCase()}, ${input.installationIdHash}, ${input.buildId})
+            ON CONFLICT (fingerprint_hash) DO UPDATE SET last_online_at=clock_timestamp(), installation_id_hash=EXCLUDED.installation_id_hash, client_build_id=EXCLUDED.client_build_id RETURNING id`;
+          await tx`UPDATE licenses SET device_id=${device.id}, status='active', updated_at=clock_timestamp() WHERE id=${bound.id}`;
+          await tx`INSERT INTO license_events (license_id, license_code_id, device_id, event_type, actor_type, metadata) VALUES (${bound.id}, ${code.id}, ${device.id}, 'activated', 'client', ${tx.json({ rebind: true })})`;
+          return this.issue({ ...bound, status: "active" }, input.deviceFingerprint);
+        }
         throw new ActivationError(bound?.fingerprint_hash !== input.deviceFingerprint ? "DEVICE_MISMATCH" : "CODE_ALREADY_USED", "激活码已被兑换");
       }
       const now = this.now(); const expires = calculateExpiry(code.plan as LicensePlan, now);
