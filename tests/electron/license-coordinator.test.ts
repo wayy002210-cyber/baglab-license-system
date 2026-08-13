@@ -1,0 +1,13 @@
+import { describe,expect,it,vi } from "vitest";
+import { LicenseCoordinator } from "../../electron/license/coordinator";
+import type { DesktopCredential } from "../../electron/license/policy";
+
+const claims:DesktopCredential={version:1,licenseId:"l1",deviceFingerprint:"d1",plan:"day1",status:"active",issuedAt:"2026-08-13T00:00:00Z",expiresAt:"2026-08-14T00:00:00Z",offlineUntil:"2026-08-14T00:00:00Z",minimumBuildId:"0.7.0"};
+function harness(options:{api?:any;stored?:string|null;verified?:DesktopCredential}={}){const values=new Map<string,string>();if(options.stored)values.set("license-credential",options.stored);return{values,coordinator:new LicenseCoordinator({device:{fingerprint:"d1",installationIdHash:"i1",shortCode:"ABC"},buildId:"0.7.0",store:{get:async(name:string)=>values.get(name)??null,set:async(name:string,value:string)=>{values.set(name,value)},delete:async(name:string)=>values.delete(name)},api:options.api??{post:vi.fn()},verify:()=>options.verified??claims,now:()=>new Date("2026-08-13T12:00:00Z")})}}
+describe("license coordinator",()=>{
+  it("activates online and persists only signed credential",async()=>{const api={post:vi.fn().mockResolvedValue({credential:claims,signedCredential:"signed"})};const {coordinator,values}=harness({api});await expect(coordinator.activate("CODE")).resolves.toMatchObject({allowed:true,deviceShortCode:"ABC"});expect(values.get("license-credential")).toBe("signed")});
+  it("validates online first and falls back offline only on network errors",async()=>{const api={post:vi.fn().mockRejectedValue({code:"NETWORK_ERROR"})};const {coordinator}=harness({api,stored:"signed"});await expect(coordinator.initialize()).resolves.toMatchObject({allowed:true,mode:"offline"});expect(api.post).toHaveBeenCalled()});
+  it("does not hide server revocation behind offline mode",async()=>{const api={post:vi.fn().mockRejectedValue({code:"LICENSE_DISABLED",message:"已禁用"})};const {coordinator}=harness({api,stored:"signed"});await expect(coordinator.initialize()).resolves.toMatchObject({allowed:false,code:"LICENSE_DISABLED"})});
+  it("rejects copied credentials bound to another device",async()=>{const {coordinator}=harness({stored:"signed",verified:{...claims,deviceFingerprint:"other"}});await expect(coordinator.initialize()).resolves.toMatchObject({allowed:false,code:"DEVICE_MISMATCH"})});
+  it("rejects obvious system clock rollback",async()=>{const item=harness({stored:"signed"});item.values.set("license-clock","2026-08-13T14:00:00Z");await expect(item.coordinator.initialize()).resolves.toMatchObject({allowed:false,code:"CLOCK_ROLLBACK"})});
+});

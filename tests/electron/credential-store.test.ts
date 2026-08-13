@@ -34,4 +34,11 @@ describe("CredentialStore", () => {
       "Credential value is empty"
     );
   });
+
+  it("allowlists license installation, credential and clock records", async () => {
+    const writes: string[] = [];
+    const store = new CredentialStore({ getPassword: async () => null, setPassword: async (_s, account) => { writes.push(account); }, deletePassword: async () => true });
+    await store.set("license-installation-id", "id"); await store.set("license-credential", "token"); await store.set("license-clock", "time");
+    expect(writes).toEqual(["license-installation-id", "license-credential", "license-clock"]);
+  });
 });

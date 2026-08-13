@@ -8,7 +8,7 @@ import {
   net,
   Menu
 } from "electron";
-import { randomBytes } from "node:crypto";
+import { randomBytes, type JsonWebKey as NodeJsonWebKey } from "node:crypto";
 import { createServer } from "node:net";
 import { assertPublishServiceReady } from "./publish-readiness.js";
 import { createSingleFlight } from "./single-flight.js";
@@ -83,6 +83,10 @@ import { GenerationQueue } from "./services/generation-queue.js";
 import { createProjectTasks } from "./services/copywriting-task-service.js";
 import { defaultSubtitleStyle,defaultTitleStyle } from "../src/shared/media-style.js";
 import { toSafeOutputStem } from "../src/shared/short-title.js";
+import { LicenseApiClient } from "./license/api-client.js";
+import { LicenseCoordinator } from "./license/coordinator.js";
+import { verifySignedCredential } from "./license/credential.js";
+import { collectWindowsDevice } from "./license/windows-device.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -92,6 +96,7 @@ let logger: JsonLogger | null = null;
 let generationQueue: GenerationQueue | null = null;
 let logPath = "";
 let backendStartPromise: Promise<void> | null = null;
+let licenseRefreshTimer: ReturnType<typeof setInterval> | null = null;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
@@ -109,6 +114,7 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 const credentials = new CredentialStore(keytar);
+let licenseCoordinator: LicenseCoordinator | null = null;
 
 function personaRepository(): PersonaRepository {
   if (!database) throw new Error("Database is not ready");
@@ -597,6 +603,15 @@ function createWindow(): void {
 
 ipcMain.handle("backend:status", () => backendState);
 ipcMain.handle("app:getBuildId", () => app.getVersion());
+ipcMain.handle("license:status", () => licenseCoordinator?.getStatus() ?? { allowed: false, mode: "inactive", deviceShortCode: "------------", code: "LICENSE_INITIALIZING" });
+ipcMain.handle("license:activate", async (_event, activationCode: string) => {
+  if (!licenseCoordinator) throw new Error("LICENSE_INITIALIZING");
+  return licenseCoordinator.activate(activationCode);
+});
+ipcMain.handle("license:refresh", async () => {
+  if (!licenseCoordinator) throw new Error("LICENSE_INITIALIZING");
+  return licenseCoordinator.refresh();
+});
 ipcMain.handle("credentials:status", async () => ({
   bailian: Boolean(await credentials.get("bailian")),
   minimax: Boolean(await credentials.get("minimax"))
@@ -1497,6 +1512,17 @@ app.whenReady().then(async () => {
   logPath = join(app.getPath("userData"), "logs", "electron.jsonl");
   logger = new JsonLogger(logPath);
   logger.write("info", "application.start", { version: app.getVersion() });
+  const device = await collectWindowsDevice(credentials);
+  const serviceOrigin = process.env.AUTOCUT_LICENSE_SERVICE_ORIGIN;
+  const publicJwkRaw = process.env.AUTOCUT_LICENSE_PUBLIC_KEY_JWK;
+  if (serviceOrigin && publicJwkRaw) {
+    const publicJwk = JSON.parse(publicJwkRaw) as NodeJsonWebKey;
+    licenseCoordinator = new LicenseCoordinator({ device, buildId: app.getVersion(), store: credentials, api: new LicenseApiClient(serviceOrigin), verify: (token) => verifySignedCredential(token, publicJwk) });
+    await licenseCoordinator.initialize();
+    licenseRefreshTimer = setInterval(() => { void licenseCoordinator?.refresh().then(() => window?.webContents.send("license:changed")); }, 30 * 60_000);
+  } else {
+    logger.write("warn", "license.public_config_missing");
+  }
   database = new Database(resolve(app.getPath("userData"), "autocut.sqlite3"));
   applyMigrations(database);
   ensureBuiltInTemplate(templateRepository());
@@ -1563,4 +1589,6 @@ app.on("before-quit", () => {
   database = null;
   if (publishScheduler) clearInterval(publishScheduler);
   publishScheduler = null;
+  if (licenseRefreshTimer) clearInterval(licenseRefreshTimer);
+  licenseRefreshTimer = null;
 });

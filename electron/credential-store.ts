@@ -1,4 +1,4 @@
-export type CredentialName = "bailian" | "minimax";
+export type CredentialName = "bailian" | "minimax" | "license-installation-id" | "license-credential" | "license-clock";
 
 export type CredentialAdapter = {
   getPassword(service: string, account: string): Promise<string | null>;
@@ -14,6 +14,9 @@ const SERVICE = "AutoCut Studio";
 const ACCOUNTS: Record<CredentialName, string> = {
   bailian: "bailian-api-key",
   minimax: "minimax-api-key"
+  ,"license-installation-id": "license-installation-id"
+  ,"license-credential": "license-credential"
+  ,"license-clock": "license-clock"
 };
 
 export class CredentialStore {

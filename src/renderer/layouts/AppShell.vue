@@ -14,8 +14,11 @@ import {
 } from "@element-plus/icons-vue";
 import logoUrl from "../assets/bag-lab-avatar.png";
 import { PRODUCT_NAME } from "../../shared/product-copy";
+import { useLicenseStore } from "../license/store";
 
 const buildId = ref("");
+const license=useLicenseStore();
+const planLabels={day1:"1天卡",day3:"3天卡",day7:"7天卡",month:"月卡",year:"年卡",permanent:"永久卡"} as const;
 
 const modules = [
   { label: "工作台", path: "/", icon: DataAnalysis },
@@ -74,7 +77,11 @@ onMounted(async () => {
           <p>全自动内容生产</p>
           <h1>{{ PRODUCT_NAME }}</h1>
         </div>
-        <el-tag type="success" effect="light" round>本地模式</el-tag>
+        <div class="license-summary" v-if="license.status?.credential">
+          <span>{{planLabels[license.status.credential.plan]}}</span><span>{{license.status.mode==="online"?"在线":"离线"}}</span><span>设备 {{license.status.deviceShortCode}}</span>
+          <span>{{license.status.credential.expiresAt?`到期 ${new Date(license.status.credential.expiresAt).toLocaleString()}`:"永久授权"}}</span><span>最晚联网 {{new Date(license.status.credential.offlineUntil).toLocaleString()}}</span>
+          <button @click="license.refresh">刷新授权</button>
+        </div>
       </header>
       <main class="page-content">
         <RouterView />
@@ -183,6 +190,7 @@ nav {
 .topbar h1 {
   margin: 0;
 }
+.license-summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;font-size:12px;color:#637089}.license-summary span{padding:5px 8px;background:#fff;border:1px solid #e0e6f0;border-radius:8px}.license-summary button{border:0;border-radius:8px;background:#222;color:#fff;padding:6px 10px;cursor:pointer}
 .topbar p {
   color: #8794a9;
   font-size: 12px;

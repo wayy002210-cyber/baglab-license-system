@@ -21,6 +21,12 @@ const credentialStatusSchema = z.object({
   bailian: z.boolean(),
   minimax: z.boolean()
 });
+const licenseStatusSchema = z.object({
+  allowed: z.boolean(), mode: z.enum(["online", "offline", "inactive"]), deviceShortCode: z.string(),
+  code: z.string().optional(), message: z.string().optional(), credential: z.object({
+    version:z.literal(1),licenseId:z.string(),deviceFingerprint:z.string(),plan:z.enum(["day1","day3","day7","month","year","permanent"]),status:z.enum(["active","disabled","expired"]),issuedAt:z.string(),expiresAt:z.string().nullable(),offlineUntil:z.string(),minimumBuildId:z.string()
+  }).optional()
+});
 const personaSchema = personaInputSchema.extend({
   id: z.string().uuid(),
   createdAt: z.string(),
@@ -376,6 +382,10 @@ contextBridge.exposeInMainWorld("autocut", {
     backendStatusSchema.parse(await ipcRenderer.invoke("backend:status")),
   getBuildId: async () =>
     z.string().parse(await ipcRenderer.invoke("app:getBuildId")),
+  getLicenseStatus: async () => licenseStatusSchema.parse(await ipcRenderer.invoke("license:status")),
+  activateLicense: async (activationCode: string) => licenseStatusSchema.parse(await ipcRenderer.invoke("license:activate", z.string().trim().min(12).max(128).parse(activationCode))),
+  refreshLicense: async () => licenseStatusSchema.parse(await ipcRenderer.invoke("license:refresh")),
+  onLicenseChanged: (callback: () => void) => { const listener=()=>callback();ipcRenderer.on("license:changed",listener);return()=>ipcRenderer.removeListener("license:changed",listener); },
   credentialStatus: async () =>
     credentialStatusSchema.parse(
       await ipcRenderer.invoke("credentials:status")

@@ -1,4 +1,5 @@
 import type { CreationDraft, PersonaInput } from "../shared/contracts";
+import type { LicenseStatus } from "../shared/license";
 
 type Persona = PersonaInput & {
   id: string;
@@ -22,6 +23,10 @@ declare global {
         | { status: "stopped" | "failed"; message: string }
       >;
       getBuildId(): Promise<string>;
+      getLicenseStatus(): Promise<LicenseStatus>;
+      activateLicense(activationCode: string): Promise<LicenseStatus>;
+      refreshLicense(): Promise<LicenseStatus>;
+      onLicenseChanged(callback: () => void): () => void;
       credentialStatus(): Promise<{ bailian: boolean; minimax: boolean }>;
       setCredential(
         name: "bailian" | "minimax",
