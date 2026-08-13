@@ -3,6 +3,8 @@ node_modules/
 .python-test-deps/
 dist/
 dist-electron/
+.next/
+*.tsbuildinfo
 .coverage/
 .pytest_cache/
 __pycache__/
