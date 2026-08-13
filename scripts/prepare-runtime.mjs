@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 const root = process.cwd();
 const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 const resources = join(root, "build-resources");
+const licensePublicConfigSource = join(root, "config", "license-public.json");
 const backendOutput = join(resources, "backend");
 const binOutput = join(resources, "bin");
 const bundledFfmpegDir =
@@ -12,6 +13,10 @@ const bundledFfmpegDir =
 rmSync(resources, { recursive: true, force: true });
 mkdirSync(backendOutput, { recursive: true });
 mkdirSync(binOutput, { recursive: true });
+if (!existsSync(licensePublicConfigSource)) {
+  throw new Error("config/license-public.json is missing");
+}
+cpSync(licensePublicConfigSource, join(resources, "license-public.json"));
 
 function locate(command) {
   const bundledPath = join(bundledFfmpegDir, command);
