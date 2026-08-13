@@ -1,6 +1,6 @@
 {
   "name": "autocut-studio",
-  "version": "0.6.8-batchfix.20260812.220000",
+  "version": "0.7.0-license.20260813.162600",
   "description": "Windows 本地自动混剪、配音、合成与发布工作台",
   "author": "袋研官 BAG LAB",
   "private": true,
@@ -39,6 +39,10 @@
       "node_modules/keytar/**/*"
     ],
     "extraResources": [
+      {
+        "from": "build-resources/license-public.json",
+        "to": "license-public.json"
+      },
       {
         "from": "build-resources/backend",
         "to": "backend"

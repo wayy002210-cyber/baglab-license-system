@@ -89,6 +89,7 @@ import { verifySignedCredential } from "./license/credential.js";
 import { collectWindowsDevice } from "./license/windows-device.js";
 import { createLicensedHandler } from "./license/ipc-guard.js";
 import { issueLocalLicenseProof } from "./license/local-proof.js";
+import { loadLicensePublicConfig } from "./license/public-config.js";
 
 let window: BrowserWindow | null = null;
 let backend: ChildProcess | null = null;
@@ -608,6 +609,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
+      ,devTools: !app.isPackaged
     }
   });
   window.once("ready-to-show", () => window?.show());
@@ -1550,15 +1552,16 @@ app.whenReady().then(async () => {
   logger.write("info", "application.start", { version: app.getVersion() });
   const device = await collectWindowsDevice(credentials);
   localLicenseDeviceFingerprint = device.fingerprint;
-  const serviceOrigin = process.env.AUTOCUT_LICENSE_SERVICE_ORIGIN;
-  const publicJwkRaw = process.env.AUTOCUT_LICENSE_PUBLIC_KEY_JWK;
-  if (serviceOrigin && publicJwkRaw) {
-    const publicJwk = JSON.parse(publicJwkRaw) as NodeJsonWebKey;
+  try {
+    const { serviceOrigin, publicJwk } = loadLicensePublicConfig({
+      environment: process.env,
+      packagedConfigPath: resolve(process.resourcesPath, "license-public.json")
+    });
     licenseCoordinator = new LicenseCoordinator({ device, buildId: app.getVersion(), store: credentials, api: new LicenseApiClient(serviceOrigin), verify: (token) => verifySignedCredential(token, publicJwk) });
     await licenseCoordinator.initialize();
     licenseRefreshTimer = setInterval(() => { void licenseCoordinator?.refresh().then(() => window?.webContents.send("license:changed")); }, 30 * 60_000);
-  } else {
-    logger.write("warn", "license.public_config_missing");
+  } catch (error) {
+    logger.write("warn", "license.public_config_missing", { error: error instanceof Error ? error.message : String(error) });
   }
   database = new Database(resolve(app.getPath("userData"), "autocut.sqlite3"));
   applyMigrations(database);
