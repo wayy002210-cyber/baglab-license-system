@@ -11,4 +11,6 @@ const schema = z.object({
 });
 
 export type ServiceConfig = z.infer<typeof schema>;
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServiceConfig { return schema.parse(env); }
+export function loadConfig(env: Record<string, string | undefined> = process.env): ServiceConfig {
+  return schema.parse({ ...env, DATABASE_URL: env.DATABASE_URL ?? env.LICENSE_DB_DATABASE_URL });
+}
