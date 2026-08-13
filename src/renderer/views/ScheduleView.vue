@@ -23,20 +23,22 @@ const agentEvents = ref<Awaited<ReturnType<typeof window.autocut.listPublishJobE
 const templateName = ref("");
 const templateTopics = ref("");
 const selectedAccounts = ref<Record<string, string[]>>({});
-const scheduleTimes = ref<Record<string, Date | null>>({});
+const publishTimes = ref<Record<string, Date | null>>({});
 const mode = ref("auto");
-const statusLabel: Record<Asset["status"], string> = { unscheduled: "待排期", scheduled: "排期中", publishing: "发布中", published: "已发布", failed: "发布失败", discarded: "已删除" };
-const visible = computed(() => assets.value.filter((asset) => activeTab.value === "unscheduled" ? ["unscheduled", "failed"].includes(asset.status) : activeTab.value === "scheduled" ? ["scheduled", "publishing"].includes(asset.status) : asset.status === "published"));
+const queueRunning = ref(false);
+const statusLabel: Record<Asset["status"], string> = { unscheduled: "待发布", scheduled: "待发布", publishing: "发布中", published: "已发布", failed: "发布失败", discarded: "已删除" };
+const visible = computed(() => assets.value.filter((asset) => activeTab.value === "unscheduled" ? asset.status === "unscheduled" : activeTab.value === "scheduled" ? ["scheduled", "publishing", "failed"].includes(asset.status) : asset.status === "published"));
 const missing = computed(() => assets.value.filter((asset) => !asset.publishTitle.trim() || !asset.topics.length).length);
 
 function accountLabel(id: string) { const account = accounts.value.find((value) => value.id === id); const platform = account?.platform === "douyin" ? "抖音" : account?.platform === "wechat_channels" ? "视频号" : "快手"; return account ? `${account.name} / ${platform}` : id; }
 async function load() {
   [assets.value, accounts.value, templates.value, jobs.value] = await Promise.all([window.autocut.listPublishAssets(), window.autocut.listPublishAccounts(), window.autocut.listPublishTopicTemplates(), window.autocut.listPublishJobs()]);
-  for (const asset of assets.value) { selectedAccounts.value[asset.id] ??= []; scheduleTimes.value[asset.id] ??= new Date(Date.now() + 20 * 60 * 1000); }
+  for (const asset of assets.value) { selectedAccounts.value[asset.id] ??= []; publishTimes.value[asset.id] ??= null; }
 }
 function jobsFor(asset: Asset) { return jobs.value.filter((job) => job.publishAssetId === asset.id); }
 function activeJob(asset: Asset) { return jobsFor(asset).find((job) => ["publishing", "needs_user"].includes(job.status)) ?? null; }
-const workflowLabel: Record<string, string> = { opening_profile:"正在打开浏览器", checking_login:"检查登录状态", waiting_for_human:"等待人工接管", uploading_video:"正在上传视频", waiting_upload:"等待上传完成", filling_metadata:"正在填写标题与话题", uploading_cover:"正在上传封面", configuring_publish_time:"正在设置发布时间", submitting:"正在提交发布", verifying:"正在验证发布", published:"发布成功", failed:"发布失败", canceled:"已取消" };
+function failedJob(asset: Asset) { return jobsFor(asset).find((job) => job.status === "failed") ?? null; }
+const workflowLabel: Record<string, string> = { opening_profile:"正在打开浏览器", checking_login:"检查登录状态", waiting_for_human:"浏览器已打开，请完成登录后点击继续发布", uploading_video:"正在上传视频", waiting_upload:"等待上传完成", filling_metadata:"正在填写标题与话题（视频同步上传中）", uploading_cover:"正在上传封面", configuring_publish_time:"正在设置发布时间", submitting:"正在提交发布", verifying:"正在验证发布", published:"发布成功", failed:"发布失败", canceled:"已取消" };
 async function save(asset: Asset, showError = true): Promise<boolean> {
   try {
     Object.assign(asset, await window.autocut.updatePublishAsset(asset.id, createPublishAssetPatch(asset)));
@@ -55,26 +57,59 @@ async function ensureTopics(asset: Asset) {
   asset.topics = [...template.topics];
   await save(asset);
 }
-async function cover(asset: Asset) { const path = await window.autocut.selectPublishCover(); if (path) { asset.coverPath = path; await save(asset); } }
-async function publish(asset: Asset, scheduled: boolean) {
+async function selectVerticalCover(asset: Asset) {
+  const path = await window.autocut.selectPublishCover();
+  if (!path) return;
+  asset.verticalCoverPath = path;
+  asset.coverPath = path;
+  await save(asset);
+}
+async function selectHorizontalCover(asset: Asset) {
+  const path = await window.autocut.selectPublishCover();
+  if (!path) return;
+  asset.horizontalCoverPath = path;
+  await save(asset);
+}
+async function publish(asset: Asset, withPlatformPublishTime: boolean) {
   if (!asset.publishTitle.trim()) return ElMessage.warning("请先填写发布标题");
   await ensureTopics(asset);
   if (!asset.topics.length) return ElMessage.warning("请先创建或填写发布话题模板");
   const accountIds = selectedAccounts.value[asset.id] ?? [];
   if (!accountIds.length) return ElMessage.warning("请至少选择一个已登录发布账号");
+  const publishTime = withPlatformPublishTime ? publishTimes.value[asset.id]?.toISOString() ?? null : null;
+  if (withPlatformPublishTime && !publishTime) return ElMessage.warning("请选择平台发布时间，或点击立即发布");
   busy.value = asset.id;
   try {
     if (!await save(asset, false)) throw new Error("发布资料保存失败，请检查标题、话题和封面后重试");
-    await window.autocut.createPublishJobsForAsset(createPublishJobsInput(asset.id, accountIds, scheduled ? (scheduleTimes.value[asset.id] ?? new Date(Date.now() + 20 * 60 * 1000)).toISOString() : null));
+    await window.autocut.createPublishJobsForAsset({ ...createPublishJobsInput(asset.id, accountIds, publishTime), startImmediately: !withPlatformPublishTime });
     await load();
-    ElMessage.success(scheduled ? "已创建平台定时发布任务" : "已进入立即发布队列");
+    activeTab.value = "scheduled";
+    ElMessage.success(withPlatformPublishTime ? "已进入发布队列，将在平台设置指定公开时间" : "已进入立即发布队列");
   } catch (error) { ElMessage.error(toUserMessage(error, "发布任务创建失败")); }
   finally { busy.value = ""; }
+}
+async function startQueue() {
+  queueRunning.value = true;
+  try {
+    await window.autocut.startPublishQueue();
+    ElMessage.success("发布队列已开始，将按顺序逐条执行");
+    await load();
+  } catch (error) {
+    ElMessage.error(toUserMessage(error, "启动发布队列失败"));
+  } finally {
+    queueRunning.value = false;
+  }
 }
 async function resume(job: PublishJob) {
   busy.value = job.publishAssetId ?? job.id;
   try { await window.autocut.resumePublishJob(job.id); ElMessage.success("已继续发布，请在浏览器中等待平台处理"); await load(); }
   catch (error) { ElMessage.error(toUserMessage(error, "继续发布失败")); }
+  finally { busy.value = ""; }
+}
+async function retry(job: PublishJob) {
+  busy.value = job.publishAssetId ?? job.id;
+  try { await window.autocut.retryPublishJob(job.id); ElMessage.success("已重新执行该条发布任务"); await load(); }
+  catch (error) { ElMessage.error(toUserMessage(error, "重试发布失败")); }
   finally { busy.value = ""; }
 }
 async function showEvents(job: PublishJob) {
@@ -95,15 +130,15 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); });
 </script>
 
 <template>
-  <div class="page"><PageIntro title="发布排期" description="集中配置成片的标题、话题、封面和发布账号，支持立即发布与平台定时发布。" />
+  <div class="page"><PageIntro title="发布任务中心" description="集中配置成片标题、话题、封面、发布账号和平台公开时间；点击发布后进入发布队列。" />
     <section class="surface publish-shell"><div class="main">
-      <div class="notice">批量生成成功的成片会自动出现在本页。精细化发布保留逐条配置逻辑；批量发布可按平台和账号轮询，为多条视频完成分配与排期。</div>
-      <div class="stats"><div><strong>{{ assets.filter((a) => a.status === 'unscheduled').length }}</strong><span>待排期视频</span></div><div><strong>{{ assets.filter((a) => ['scheduled','publishing'].includes(a.status)).length }}</strong><span>排期中</span></div><div><strong>{{ missing }}</strong><span>待补标题 / 话题</span></div><div><strong>{{ assets.filter((a) => a.status === 'published').length }}</strong><span>已有发布结果</span></div></div>
-      <div class="switches"><el-segmented v-model="activeTab" :options="[{label:'未排期',value:'unscheduled'},{label:'排期中',value:'scheduled'},{label:'已有结果',value:'published'}]" /><span>立即发布方式</span><el-segmented v-model="mode" :options="[{label:'自动发布',value:'auto'},{label:'手动确认',value:'manual'}]" /><el-button @click="templateDialog = true">管理话题模板</el-button></div>
-      <h3>排期列表</h3><div class="asset-list">
+      <div class="notice">批量生成成功的成片会自动出现在本页。平台发布时间只用于在平台页面设置公开时间，不再代表本地等待启动；只有点击发布后才会进入发布队列。</div>
+      <div class="stats"><div><strong>{{ assets.filter((a) => a.status === 'unscheduled').length }}</strong><span>待发布视频</span></div><div><strong>{{ assets.filter((a) => ['scheduled','publishing'].includes(a.status)).length }}</strong><span>发布队列</span></div><div><strong>{{ missing }}</strong><span>待补标题 / 话题</span></div><div><strong>{{ assets.filter((a) => a.status === 'published').length }}</strong><span>已有发布结果</span></div></div>
+      <div class="switches"><el-segmented v-model="activeTab" :options="[{label:'待发布',value:'unscheduled'},{label:'发布队列',value:'scheduled'},{label:'已有结果',value:'published'}]" /><span>发布方式</span><el-segmented v-model="mode" :options="[{label:'自动发布',value:'auto'},{label:'手动确认',value:'manual'}]" /><el-button v-if="activeTab === 'scheduled'" type="primary" :loading="queueRunning" @click="startQueue">一键发布</el-button><el-button @click="templateDialog = true">管理话题模板</el-button></div>
+      <h3>发布任务列表</h3><div class="asset-list">
         <article v-for="asset in visible" :key="asset.id" class="asset-card"><div class="timeline" /><header><el-tag>{{ statusLabel[asset.status] }}</el-tag><strong>{{ new Date(asset.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) }} · {{ asset.shortTitle }}</strong><el-tag type="success" effect="plain">{{ asset.publishTitle && asset.topics.length ? '标题 / 话题已填' : '待补资料' }}</el-tag><span>{{ (selectedAccounts[asset.id] ?? []).length ? `已选 ${(selectedAccounts[asset.id] ?? []).length} 个账号` : '未选择发布账号' }}</span><el-button class="preview-btn" @click="preview = asset">预览视频</el-button></header>
-          <div class="form-grid"><label>发布标题<el-input v-model="asset.publishTitle" type="textarea" :rows="2" maxlength="30" show-word-limit @blur="save(asset)" /></label><label>发布话题<div class="topic-row"><el-select :model-value="asset.topicTemplateId ?? ''" placeholder="选择话题模板" @change="chooseTemplate(asset, String($event))"><el-option label="随机话题模板" value="" /><el-option v-for="template in templates" :key="template.id" :label="template.name" :value="template.id" /></el-select><el-input :model-value="asset.topics.map((value) => '#'+value.replace(/^#/,'')).join(' ')" placeholder="#工厂 #定制" @change="asset.topics=String($event).split(/[,，\s#]+/).filter(Boolean); save(asset)" /></div></label><label>发布账号<el-select v-model="selectedAccounts[asset.id]" multiple collapse-tags placeholder="选择一个或多个已登录账号"><el-option v-for="account in accounts.filter((value) => value.linkStatus === 'connected')" :key="account.id" :label="accountLabel(account.id)" :value="account.id" /></el-select></label><label>本地封面<el-button class="cover" @click="cover(asset)">{{ asset.coverPath ? '已选择：'+asset.coverPath.split(/[\\/]/).pop() : '点击选择本地封面' }}</el-button></label></div>
-          <footer><template v-if="activeJob(asset)"><span class="agent-state">{{ workflowLabel[activeJob(asset)?.workflowState ?? ''] ?? activeJob(asset)?.workflowState }}</span><el-button plain @click="showEvents(activeJob(asset)!)">查看发布日志</el-button><el-button v-if="activeJob(asset)?.status === 'needs_user'" type="primary" :loading="busy === asset.id" @click="resume(activeJob(asset)!)">继续发布</el-button><el-button v-if="['publishing','needs_user'].includes(activeJob(asset)?.status ?? '')" plain @click="cancelJob(activeJob(asset)!)">取消发布</el-button></template><template v-else-if="(selectedAccounts[asset.id] ?? []).length"><el-date-picker v-model="scheduleTimes[asset.id]" type="datetime" format="YYYY年MM月DD日 HH:mm" placeholder="默认20分钟后" /><el-button :loading="busy === asset.id" @click="publish(asset,true)">设定排期</el-button><el-button type="primary" :loading="busy === asset.id" @click="publish(asset,false)">立即发布</el-button></template><span v-else>请选择发布账号后操作</span><el-button class="delete" type="danger" plain @click="discard(asset)">删除</el-button></footer>
+          <div class="form-grid"><label>发布标题<el-input v-model="asset.publishTitle" type="textarea" :rows="2" maxlength="30" show-word-limit @blur="save(asset)" /></label><label>发布话题<div class="topic-row"><el-select :model-value="asset.topicTemplateId ?? ''" placeholder="选择话题模板" @change="chooseTemplate(asset, String($event))"><el-option label="随机话题模板" value="" /><el-option v-for="template in templates" :key="template.id" :label="template.name" :value="template.id" /></el-select><el-input :model-value="asset.topics.map((value) => '#'+value.replace(/^#/,'')).join(' ')" placeholder="#工厂 #定制" @change="asset.topics=String($event).split(/[,，\s#]+/).filter(Boolean); save(asset)" /></div></label><label>发布账号<el-select v-model="selectedAccounts[asset.id]" multiple collapse-tags placeholder="选择一个或多个已登录账号"><el-option v-for="account in accounts.filter((value) => value.linkStatus === 'connected')" :key="account.id" :label="accountLabel(account.id)" :value="account.id" /></el-select></label><label>竖版封面（推荐9:16）<el-button class="cover" @click="selectVerticalCover(asset)">{{ (asset.verticalCoverPath ?? asset.coverPath) ? '已选择：'+(asset.verticalCoverPath ?? asset.coverPath)!.split(/[\\/]/).pop() : '选择竖版封面' }}</el-button></label><label>横版封面（推荐16:9）<el-button class="cover" @click="selectHorizontalCover(asset)">{{ asset.horizontalCoverPath ? '已选择：'+asset.horizontalCoverPath.split(/[\\/]/).pop() : '选择横版封面' }}</el-button></label></div>
+          <footer><template v-if="activeJob(asset)"><span class="agent-state">{{ workflowLabel[activeJob(asset)?.workflowState ?? ''] ?? activeJob(asset)?.workflowState }}</span><el-button plain @click="showEvents(activeJob(asset)!)">查看发布日志</el-button><el-button v-if="activeJob(asset)?.status === 'needs_user'" type="primary" :loading="busy === asset.id" @click="resume(activeJob(asset)!)">继续发布</el-button><el-button v-if="['publishing','needs_user'].includes(activeJob(asset)?.status ?? '')" plain @click="cancelJob(activeJob(asset)!)">取消发布</el-button></template><template v-else-if="failedJob(asset)"><span class="agent-state">发布失败：{{ failedJob(asset)?.errorMessage ?? '未知原因' }}</span><el-button plain @click="showEvents(failedJob(asset)!)">查看发布日志</el-button><el-button type="primary" :loading="busy === asset.id" @click="retry(failedJob(asset)!)">重试该条</el-button></template><template v-else-if="(selectedAccounts[asset.id] ?? []).length"><el-date-picker v-model="publishTimes[asset.id]" type="datetime" format="YYYY年MM月DD日 HH:mm" placeholder="平台发布时间（不填则立即发布）" /><el-button :loading="busy === asset.id" @click="publish(asset,true)">加入发布队列</el-button><el-button type="primary" :loading="busy === asset.id" @click="publish(asset,false)">立即发布</el-button></template><span v-else>请选择发布账号后操作</span><el-button class="delete" type="danger" plain @click="discard(asset)">删除</el-button></footer>
         </article><el-empty v-if="!visible.length" description="当前分类暂无视频" />
       </div></div>
       <aside><h3>通用预览</h3><video v-if="preview" :key="preview.id" controls preload="metadata" :src="`autocut-media://task/${preview.taskId}`" /><div v-else class="empty-preview">点击卡片上的“预览视频”<br>在此播放成片</div><span v-if="preview">{{ preview.shortTitle }}</span><el-button v-if="preview" text @click="preview = null">清空预览</el-button></aside>

@@ -41,6 +41,6 @@ describe("database migrations", () => {
     const row = database
       .prepare("SELECT COUNT(*) AS count FROM schema_migrations")
       .get() as { count: number };
-    expect(row.count).toBe(5);
+    expect(row.count).toBe(6);
   });
 });

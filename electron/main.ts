@@ -11,6 +11,8 @@ import {
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { assertPublishServiceReady } from "./publish-readiness.js";
+import { createSingleFlight } from "./single-flight.js";
+import { runPublishBatch } from "./publish-batch.js";
 import { basename, extname, join, resolve } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -89,6 +91,7 @@ let publishScheduler: ReturnType<typeof setInterval> | null = null;
 let logger: JsonLogger | null = null;
 let generationQueue: GenerationQueue | null = null;
 let logPath = "";
+let backendStartPromise: Promise<void> | null = null;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
@@ -283,10 +286,10 @@ async function runGenerationTask(task: GenerationTask): Promise<void> {
   }
 }
 
-async function runNextPublishJob(): Promise<void> {
-  if (backendState.status !== "ready") return;
-  const job = publishRepository().claimNextDue(new Date().toISOString());
-  if (!job) return;
+async function runNextPublishJob(jobId?: string): Promise<boolean> {
+  if (backendState.status !== "ready") return false;
+  const job = jobId ? publishRepository().claim(jobId) : publishRepository().claimNextDue(new Date().toISOString());
+  if (!job) return false;
   logger?.write("info", "publish.claimed", {
     jobId: job.id,
     accountId: job.accountId,
@@ -299,7 +302,7 @@ async function runNextPublishJob(): Promise<void> {
       errorMessage: "发布账号或成片文件不存在"
     });
     logger?.write("error", "publish.invalid_input", { jobId: job.id });
-    return;
+    return false;
   }
   try {
     const response = await fetch(
@@ -315,12 +318,14 @@ async function runNextPublishJob(): Promise<void> {
           userDataDir: account.userDataDir,
           videoPath: task.outputPath,
           title: job.title,
-          description: String(
-            (task.snapshot.copywriting as { text?: string } | undefined)?.text ?? ""
-          ),
+          // Douyin's description editor receives only hashtags. Full scripts
+          // must never be copied into the platform's work-description field.
+          description: "",
           topics: job.topics,
-          scheduledAt: job.scheduledAt,
+          scheduledAt: job.publishTime ?? job.scheduledAt,
           coverPath: job.coverPath,
+          verticalCoverPath: job.verticalCoverPath,
+          horizontalCoverPath: job.horizontalCoverPath,
           screenshotDir: join(app.getPath("userData"), "logs", "publish", job.id)
         })
       }
@@ -339,14 +344,36 @@ async function runNextPublishJob(): Promise<void> {
     }
     publishRepository().setAgentSession(job.id, result.sessionId ?? null);
     await monitorPublishAgent(job.id, account.id);
+    return publishRepository().getJob(job.id)?.status === "published";
   } catch (error) {
-    if (publishRepository().getJob(job.id)?.status === "canceled") return;
+    if (publishRepository().getJob(job.id)?.status === "canceled") return false;
     publishRepository().finishJob(job.id, "failed", {
       errorMessage: error instanceof Error ? error.message : "发布失败"
     });
     logger?.write("error", "publish.failed", { jobId: job.id, error });
+    return false;
   }
 }
+
+const wakePublishRunner = createSingleFlight(async (jobIds?: string[]) => {
+  if (jobIds?.length) {
+    logger?.write("info", "publish.batch_started", { total: jobIds.length, jobIds });
+    const result = await runPublishBatch(jobIds, runNextPublishJob);
+    logger?.write("info", "publish.batch_completed", result);
+    return;
+  }
+  const readyIds = publishRepository().listJobs()
+    .filter((job) => job.status === "ready")
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .map((job) => job.id);
+  logger?.write("info", "publish.batch_started", { total: readyIds.length, jobIds: readyIds });
+  const result = await runPublishBatch(readyIds, runNextPublishJob);
+  logger?.write("info", "publish.batch_completed", result);
+}, (_jobIds?: string[]) => {
+  logger?.write("warn", "publish.runner.skip_active", {
+    reason: "publish runner already active in this Electron process"
+  });
+});
 
 async function monitorPublishAgent(jobId: string, accountId: string): Promise<void> {
   while (backendState.status === "ready") {
@@ -366,8 +393,7 @@ async function monitorPublishAgent(jobId: string, accountId: string): Promise<vo
     const current = publishRepository().getJob(jobId);
     if (!current || current.status === "canceled") return;
     if (snapshot.state === "waiting_for_human") {
-      publishRepository().finishJob(jobId, "needs_user", { errorMessage: snapshot.message, screenshotPath: snapshot.screenshotPath ?? undefined, resultUrl: snapshot.currentUrl ?? undefined });
-      publishRepository().updateAccountStatus(accountId, "needs_user");
+      publishRepository().finishJob(jobId, "failed", { errorMessage: snapshot.message, screenshotPath: snapshot.screenshotPath ?? undefined, resultUrl: snapshot.currentUrl ?? undefined });
       return;
     }
     if (snapshot.state === "published") {
@@ -385,12 +411,19 @@ async function monitorPublishAgent(jobId: string, accountId: string): Promise<vo
     publishRepository().updateWorkflow(jobId, snapshot.state, snapshot.message);
   }
 }
-let backendState:
-  | { status: "starting" | "ready"; baseUrl: string; token: string }
-  | { status: "stopped" | "failed"; message: string } = {
+type BackendReadyState = { status: "ready"; baseUrl: string; token: string };
+type BackendState =
+  | BackendReadyState
+  | { status: "starting"; baseUrl: string; token: string }
+  | { status: "stopped" | "failed"; message: string };
+let backendState: BackendState = {
   status: "stopped",
   message: "本地服务尚未启动"
 };
+
+function isBackendReady(state: BackendState): state is BackendReadyState {
+  return state.status === "ready";
+}
 
 function findFreePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
@@ -408,64 +441,122 @@ function findFreePort(): Promise<number> {
   });
 }
 
-async function startBackend(): Promise<void> {
-  if (app.isPackaged) terminateStalePackagedBackends();
-  const port = await findFreePort();
-  const token = randomBytes(32).toString("hex");
+async function startBackendInternal(): Promise<void> {
   const backendDirectory = app.isPackaged
     ? resolve(process.resourcesPath, "backend")
     : resolve(process.cwd(), "backend");
-  const config = createBackendLaunchConfig({
-    pythonExecutable: app.isPackaged
-      ? resolve(backendDirectory, "autocut-backend.exe")
-      : process.env.AUTOCUT_PYTHON ?? "python",
-    backendDirectory,
-    sessionToken: token,
-    port,
-    packaged: app.isPackaged,
-    resourceDirectory: app.isPackaged ? process.resourcesPath : undefined,
-    dataDirectory: app.getPath("userData")
-  });
-  backendState = {
-    status: "starting",
-    baseUrl: `http://127.0.0.1:${port}`,
-    token
-  };
-  const processHandle = spawnBackend(config);
-  backend = processHandle;
-  processHandle.once("spawn", async () => {
+  if (app.isPackaged) terminateStalePackagedBackends();
+
+  // Do not expose the renderer until health has passed.  Previously this
+  // method returned immediately after spawn, leaving a race where page hooks
+  // could ask the backend for account status while it was still booting.
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const port = await findFreePort();
+    const token = randomBytes(32).toString("hex");
+    const packagedExecutable = resolve(
+      backendDirectory,
+      `autocut-backend-${app.getVersion()}.exe`
+    );
+    const config = createBackendLaunchConfig({
+      pythonExecutable: app.isPackaged
+        ? packagedExecutable
+        : process.env.AUTOCUT_PYTHON ?? "python",
+      backendDirectory,
+      sessionToken: token,
+      port,
+      packaged: app.isPackaged,
+      resourceDirectory: app.isPackaged ? process.resourcesPath : undefined,
+      dataDirectory: app.getPath("userData"),
+      buildId: app.getVersion(),
+      installRoot: app.isPackaged ? process.resourcesPath : process.cwd(),
+      lockFilePath: join(app.getPath("userData"), "runtime", "autocut-backend.lock")
+    });
+    if (app.isPackaged && !existsSync(packagedExecutable)) {
+      lastError = new Error(
+        `本地服务组件不完整：未找到 ${basename(packagedExecutable)}。请运行最新安装包覆盖安装。`
+      );
+      break;
+    }
+    backendState = { status: "starting", baseUrl: `http://127.0.0.1:${port}`, token };
+    const processHandle = spawnBackend(config);
+    backend = processHandle;
+    // Always consume the child streams. Leaving the pipe unread eventually
+    // blocks Uvicorn/Playwright on Windows and made a healthy backend appear
+    // to randomly go offline after account checks.
+    const consumeBackendOutput = (stream: NodeJS.ReadableStream | null, level: "info" | "warn") => {
+      if (!stream) return;
+      stream.on("data", (chunk: Buffer | string) => {
+        const message = String(chunk).trim();
+        if (message) logger?.write(level, "backend.output", { message: message.slice(0, 4_000) });
+      });
+    };
+    consumeBackendOutput(processHandle.stdout, "info");
+    consumeBackendOutput(processHandle.stderr, "warn");
+    let launchError: Error | null = null;
+    processHandle.once("error", (error) => {
+      launchError = error;
+      logger?.write("error", "backend.process_error", { error: error.message });
+    });
+    processHandle.once("exit", (code) => {
+      logger?.write("warn", "backend.exited", { code, pid: processHandle.pid });
+      if (backend === processHandle && backendState.status !== "failed") {
+        backendState = { status: "stopped", message: `本地服务已退出 (${code ?? "unknown"})` };
+      }
+    });
     try {
       await waitForBackendHealth({
         baseUrl: `http://127.0.0.1:${port}`,
         token,
-        expectedBuildId: app.getVersion()
+        expectedBuildId: app.getVersion(),
+        attempts: 80
       });
-      backendState = {
-        status: "ready",
-        baseUrl: `http://127.0.0.1:${port}`,
-        token
-      };
-      logger?.write("info", "backend.ready", { port });
+      if (launchError) throw launchError;
+      backendState = { status: "ready", baseUrl: `http://127.0.0.1:${port}`, token };
+      logger?.write("info", "backend.ready", { port, attempt });
+      return;
     } catch (error) {
-      backendState = {
-        status: "failed",
-        message: error instanceof Error ? error.message : "后端健康检查失败"
-      };
-      logger?.write("error", "backend.health_failed", { error });
-      processHandle.kill();
+      lastError = error;
+      logger?.write("warn", "backend.start_retry", { attempt, error });
+      if (processHandle.pid) terminateBackendProcessTree(processHandle.pid);
+      else processHandle.kill();
+      backend = null;
+      if (attempt === 1 && app.isPackaged) terminateStalePackagedBackends();
     }
-  });
-  processHandle.once("error", (error) => {
-    backendState = { status: "failed", message: error.message };
-  });
-  processHandle.once("exit", (code) => {
-    if (backendState.status !== "failed") {
-      backendState = {
-        status: "stopped",
-        message: `本地服务已退出 (${code ?? "unknown"})`
-      };
+  }
+  backendState = {
+    status: "failed",
+    message: lastError instanceof Error ? lastError.message : "后端健康检查失败"
+  };
+  logger?.write("error", "backend.health_failed", { error: lastError });
+}
+
+async function startBackend(): Promise<void> {
+  if (!backendStartPromise) {
+    backendStartPromise = startBackendInternal().finally(() => {
+      backendStartPromise = null;
+    });
+  }
+  return backendStartPromise;
+}
+
+async function ensureBackendReady(action: string): Promise<BackendReadyState> {
+  if (isBackendReady(backendState)) {
+    try {
+      const response = await fetch(`${backendState.baseUrl}/health`, {
+        headers: { "X-Autocut-Token": backendState.token },
+        signal: AbortSignal.timeout(3_000)
+      });
+      if (response.ok) return backendState;
+    } catch (error) {
+      logger?.write("warn", "backend.health_lost", { action, error: error instanceof Error ? error.message : String(error) });
     }
-  });
+    backendState = { status: "stopped", message: "本地服务连接已中断，正在自动恢复" };
+  }
+  await startBackend();
+  if (isBackendReady(backendState)) return backendState;
+  const detail = "message" in backendState ? backendState.message : "本地服务仍在启动";
+  throw new Error(`${action}不可用：${detail}。请关闭软件后使用最新安装包覆盖安装，并在“系统设置”导出诊断包。`);
 }
 
 function createWindow(): void {
@@ -505,6 +596,7 @@ function createWindow(): void {
 }
 
 ipcMain.handle("backend:status", () => backendState);
+ipcMain.handle("app:getBuildId", () => app.getVersion());
 ipcMain.handle("credentials:status", async () => ({
   bailian: Boolean(await credentials.get("bailian")),
   minimax: Boolean(await credentials.get("minimax"))
@@ -571,16 +663,16 @@ ipcMain.handle("credentials:testMinimax", async () => {
   };
 });
 ipcMain.handle("publishAccounts:check", async (_event, id: string) => {
-  if (backendState.status !== "ready") throw new Error("本地发布服务尚未就绪");
+  const service = await ensureBackendReady("账号状态检测");
   const account = publishRepository().getAccount(id);
   if (!account) throw new Error("发布账号不存在");
   const response = await fetch(
-    `${backendState.baseUrl}/publish/accounts/${id}/check`,
+    `${service.baseUrl}/publish/accounts/${id}/check`,
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Autocut-Token": backendState.token
+        "X-Autocut-Token": service.token
       },
       body: JSON.stringify({
         platform: account.platform,
@@ -588,26 +680,24 @@ ipcMain.handle("publishAccounts:check", async (_event, id: string) => {
       })
     }
   );
-  const result = (await response.json()) as {
+  const result = await readJsonResponse<{
     status?: "unknown" | "connected" | "expired" | "needs_user";
     detail?: string;
-  };
-  if (!response.ok || !result.status) {
-    throw new Error(result.detail || "账号状态检测失败");
-  }
+  }>(response, "账号状态检测失败");
+  if (!result.status) throw new Error("账号状态检测失败：本地服务没有返回账号状态");
   return publishRepository().updateAccountStatus(id, result.status);
 });
 ipcMain.handle("publishAccounts:connect", async (_event, id: string) => {
-  if (backendState.status !== "ready") throw new Error("本地发布服务尚未就绪");
+  const service = await ensureBackendReady("登录窗口");
   const account = publishRepository().getAccount(id);
   if (!account) throw new Error("发布账号不存在");
   const response = await fetch(
-    `${backendState.baseUrl}/publish/accounts/${id}/connect`,
+    `${service.baseUrl}/publish/accounts/${id}/connect`,
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Autocut-Token": backendState.token
+        "X-Autocut-Token": service.token
       },
       body: JSON.stringify({
         platform: account.platform,
@@ -615,13 +705,11 @@ ipcMain.handle("publishAccounts:connect", async (_event, id: string) => {
       })
     }
   );
-  const result = (await response.json()) as {
+  const result = await readJsonResponse<{
     status?: "unknown" | "connected" | "expired" | "needs_user";
     detail?: string;
-  };
-  if (!response.ok || !result.status) {
-    throw new Error(result.detail || "账号登录连接失败");
-  }
+  }>(response, "账号登录窗口打开失败");
+  if (!result.status) throw new Error("账号登录窗口打开失败：本地服务没有返回账号状态");
   return publishRepository().updateAccountStatus(id, result.status);
 });
 ipcMain.handle("personas:list", () => personaRepository().list());
@@ -1081,8 +1169,20 @@ ipcMain.handle("publishTopics:delete", (_event, id:string) => ({deleted:publishR
 ipcMain.handle("publishAssets:createJobs", (_event, input: Parameters<PublishRepository["createJobsForAsset"]>[0]) => {
   assertPublishServiceReady(backendState);
   const jobs = publishRepository().createJobsForAsset(input);
-  void runNextPublishJob();
+  if ((input as typeof input & { startImmediately?: boolean }).startImmediately) void wakePublishRunner(jobs.map((job) => job.id));
   return jobs;
+});
+ipcMain.handle("publishJobs:startQueue", () => {
+  assertPublishServiceReady(backendState);
+  void wakePublishRunner();
+  return { started: true };
+});
+ipcMain.handle("publishJobs:retry", (_event, id: string) => {
+  assertPublishServiceReady(backendState);
+  const job = publishRepository().getJob(id);
+  if (!job || job.status !== "failed") throw new Error("该任务当前不可重试");
+  void wakePublishRunner([id]);
+  return { started: true };
 });
 ipcMain.handle("publishJobs:list", () => publishRepository().listJobs());
 ipcMain.handle(
@@ -1094,8 +1194,11 @@ ipcMain.handle(
       accountId: string;
       title: string;
       topics: string[];
-      scheduledAt: string | null;
+      scheduledAt?: string | null;
+      publishTime?: string | null;
       coverPath?: string | null;
+      verticalCoverPath?: string | null;
+      horizontalCoverPath?: string | null;
     }
   ) =>
     publishRepository().createJob({
@@ -1103,7 +1206,7 @@ ipcMain.handle(
       idempotencyKey: [
         input.taskId,
         input.accountId,
-        input.scheduledAt ?? "now"
+        input.publishTime ?? input.scheduledAt ?? "now"
       ].join(":")
     })
 );
@@ -1438,9 +1541,6 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(task.outputPath).toString());
   });
   await startBackend();
-  // Keep the browser-agent heartbeat and queue wake-up cadence aligned with the UI.
-  publishScheduler = setInterval(() => void runNextPublishJob(), 5_000);
-  void runNextPublishJob();
   createWindow();
 }).catch((error: unknown) => {
   reportStartupFailure(

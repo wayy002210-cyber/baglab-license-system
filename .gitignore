@@ -1,4 +1,6 @@
 node_modules/
+.pnpm-store/
+.python-test-deps/
 dist/
 dist-electron/
 .coverage/
@@ -15,6 +17,8 @@ output/
 build-resources/
 release/
 release-agent*/
+docs/audit-checkpoints/
+参考/videomix/
 backend/build/
 backend/*.spec
 vendor/ffmpeg/*.exe

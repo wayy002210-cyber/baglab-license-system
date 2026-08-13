@@ -1,16 +1,11 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
-const electronVersion = "41.10.3";
-const electronRebuild = join(
-  root,
-  "node_modules",
-  "@electron",
-  "rebuild",
-  "lib",
-  "cli.js"
-);
+const electronVersion = JSON.parse(
+  readFileSync(join(root, "node_modules", "electron", "package.json"), "utf8")
+).version;
 const builder = join(root, "node_modules", "electron-builder", "cli.js");
 const nativeVerifier = join(
   root,
@@ -40,16 +35,23 @@ if (preloadVerification.status !== 0) {
   );
 }
 
+const pnpmDirectory = join(root, "node_modules", ".pnpm");
+const electronRebuildDirectory = readdirSync(pnpmDirectory).find((name) =>
+  name.startsWith("@electron+rebuild@")
+);
+if (!electronRebuildDirectory) throw new Error("@electron/rebuild is not installed");
+const electronRebuild = join(
+  pnpmDirectory,
+  electronRebuildDirectory,
+  "node_modules",
+  "@electron",
+  "rebuild",
+  "lib",
+  "cli.js"
+);
 const rebuild = spawnSync(
   process.execPath,
-  [
-    electronRebuild,
-    "-f",
-    "-o",
-    "better-sqlite3",
-    "-v",
-    electronVersion
-  ],
+  [electronRebuild, "-f", "-w", "better-sqlite3", "-w", "keytar", "-v", electronVersion],
   { stdio: "inherit", windowsHide: true }
 );
 if (rebuild.status !== 0) {
@@ -57,6 +59,28 @@ if (rebuild.status !== 0) {
     `electron native rebuild failed with exit code ${rebuild.status}`
   );
 }
+
+const electronExecutable = join(root, "node_modules", "electron", "dist", "electron.exe");
+const workspaceNativeProbe = spawnSync(
+  electronExecutable,
+  [
+    "-e",
+    "const D=require('better-sqlite3');const d=new D(':memory:');require('keytar');d.close();"
+  ],
+  {
+    cwd: root,
+    stdio: "inherit",
+    windowsHide: true,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
+  }
+);
+if (workspaceNativeProbe.status !== 0) {
+  throw new Error(
+    `workspace Electron native probe failed with exit code ${workspaceNativeProbe.status}`
+  );
+}
+
+rmSync(join(root, "release"), { recursive: true, force: true });
 
 const build = spawnSync(
   process.execPath,
@@ -93,6 +117,7 @@ if (build.status !== 0) {
   throw new Error(`electron-builder failed with exit code ${build.status}`);
 }
 if (nativeVerification.status !== 0) {
+  rmSync(join(root, "release"), { recursive: true, force: true });
   throw new Error(
     `packaged native verification failed with exit code ${nativeVerification.status}`
   );

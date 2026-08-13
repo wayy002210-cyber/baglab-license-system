@@ -21,6 +21,7 @@ declare global {
           }
         | { status: "stopped" | "failed"; message: string }
       >;
+      getBuildId(): Promise<string>;
       credentialStatus(): Promise<{ bailian: boolean; minimax: boolean }>;
       setCredential(
         name: "bailian" | "minimax",
@@ -261,13 +262,15 @@ declare global {
       connectPublishAccount(id: string): Promise<PublishAccount>;
       deletePublishAccount(id: string): Promise<{ deleted: boolean }>;
       listPublishAssets():Promise<PublishAsset[]>;
-      updatePublishAsset(id:string,input:Partial<Pick<PublishAsset,"publishTitle"|"topics"|"topicTemplateId"|"coverPath">>):Promise<PublishAsset>;
+      updatePublishAsset(id:string,input:Partial<Pick<PublishAsset,"publishTitle"|"topics"|"topicTemplateId"|"coverPath"|"verticalCoverPath"|"horizontalCoverPath">>):Promise<PublishAsset>;
       discardPublishAsset(id:string):Promise<PublishAsset>;
       selectPublishCover():Promise<string|null>;
       listPublishTopicTemplates():Promise<PublishTopicTemplate[]>;
       savePublishTopicTemplate(input:{id?:string;name:string;topics:string[]}):Promise<PublishTopicTemplate>;
       deletePublishTopicTemplate(id:string):Promise<{deleted:boolean}>;
-      createPublishJobsForAsset(input:{assetId:string;accountIds:string[];scheduledAt:string|null}):Promise<PublishJob[]>;
+      createPublishJobsForAsset(input:{assetId:string;accountIds:string[];scheduledAt?:string|null;publishTime?:string|null;startImmediately?:boolean}):Promise<PublishJob[]>;
+      startPublishQueue():Promise<{started:boolean}>;
+      retryPublishJob(id:string):Promise<{started:boolean}>;
       listPublishJobs(): Promise<PublishJob[]>;
       listPublishJobEvents(id:string):Promise<Array<{id:string;jobId:string;state:string;level:"info"|"warning"|"error";message:string;details:Record<string,unknown>;createdAt:string}>>;
       resumePublishJob(id:string):Promise<PublishJob>;
@@ -276,8 +279,11 @@ declare global {
         accountId: string;
         title: string;
         topics: string[];
-        scheduledAt: string | null;
+        scheduledAt?: string | null;
+        publishTime?: string | null;
         coverPath?: string | null;
+        verticalCoverPath?: string | null;
+        horizontalCoverPath?: string | null;
       }): Promise<PublishJob>;
       cancelPublishJob(id: string): Promise<PublishJob>;
       deletePublishJob(id: string): Promise<{ deleted: boolean }>;
@@ -405,13 +411,15 @@ type PublishAccount = {
 type PublishJob = {
   id: string; taskId: string; publishAssetId:string|null; accountId: string; title: string; topics: string[];
   coverPath: string | null;
-  status: "pending" | "scheduled" | "publishing" | "published" | "failed" | "needs_user" | "canceled";
+  verticalCoverPath: string | null;
+  horizontalCoverPath: string | null;
+  status: "ready" | "pending" | "scheduled" | "publishing" | "published" | "failed" | "needs_user" | "canceled";
   workflowState: string; lastStepError:string|null; lastHeartbeatAt:string|null; agentSessionId:string|null;
-  scheduledAt: string | null; startedAt: string | null; completedAt: string | null;
+  scheduledAt: string | null; publishTime: string | null; startedAt: string | null; completedAt: string | null;
   errorMessage: string | null; screenshotPath: string | null; resultUrl:string|null; attemptCount: number;
   idempotencyKey: string; createdAt: string; updatedAt: string;
 };
-type PublishAsset={id:string;taskId:string;shortTitle:string;topic:string;publishTitle:string;topics:string[];topicTemplateId:string|null;coverPath:string|null;status:"unscheduled"|"scheduled"|"publishing"|"published"|"failed"|"discarded";createdAt:string;updatedAt:string};
+type PublishAsset={id:string;taskId:string;shortTitle:string;topic:string;publishTitle:string;topics:string[];topicTemplateId:string|null;coverPath:string|null;verticalCoverPath:string|null;horizontalCoverPath:string|null;status:"unscheduled"|"scheduled"|"publishing"|"published"|"failed"|"discarded";createdAt:string;updatedAt:string};
 type PublishTopicTemplate={id:string;name:string;topics:string[];createdAt:string;updatedAt:string};
 type MediaSettings = {
   outputDirectory: string;

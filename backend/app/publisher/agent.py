@@ -7,6 +7,7 @@ confirmation.  The desktop client polls this manager every five seconds and
 persists the state/event trail into SQLite.
 """
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from app.publisher.adapters import (
     PublishResult,
     WechatChannelsPublisher,
 )
+from app.publisher.diagnostics import PublishDiagnostics
 from app.publisher.playwright_page import PersistentBrowserSession
 
 Platform = Literal["douyin", "wechat_channels", "kuaishou"]
@@ -64,6 +66,7 @@ class AgentRecord:
     result_url: str | None = None
     events: list[AgentEvent] = field(default_factory=list)
     session: PersistentBrowserSession | None = None
+    diagnostics: PublishDiagnostics | None = None
     cancellation: PublishCancellation = field(default_factory=PublishCancellation)
     resume_requested: Event = field(default_factory=Event)
     done: Event = field(default_factory=Event)
@@ -123,14 +126,26 @@ class BrowserAgentManager:
         record.thread.start()
 
     def _run(self, record: AgentRecord, resume: bool) -> None:
+        page = None
         try:
             record.cancellation.raise_if_canceled()
             if not self.media_validator(record.request.video_path):
                 self._transition(record, "failed", "成片文件无效或尚未写入完成，无法上传", "error")
                 return
+            if record.diagnostics is None:
+                record.diagnostics = PublishDiagnostics(
+                    record.request.screenshot_dir,
+                    job_id=record.job_id,
+                    platform=record.platform,
+                )
+                record.diagnostics.write_manifest(
+                    record.request,
+                    build_id=os.environ.get("AUTOCUT_BUILD_ID", "unknown"),
+                    install_root=os.environ.get("AUTOCUT_INSTALL_ROOT", ""),
+                )
             if record.session is None:
                 self._transition(record, "opening_profile", "正在打开该账号的独立浏览器环境")
-                record.session = PersistentBrowserSession(record.user_data_dir)
+                record.session = PersistentBrowserSession(record.user_data_dir, diagnostics=record.diagnostics)
                 page = record.session.start()
             else:
                 page = record.session.start()
@@ -138,6 +153,7 @@ class BrowserAgentManager:
 
             page.page.goto(UPLOAD_URLS[record.platform], wait_until="domcontentloaded")
             record.current_url = page.url
+            self._record_page_state(record, page, "after-open-upload-page", screenshot=True)
             self._transition(record, "checking_login", "正在检查平台登录状态")
             page.page.wait_for_timeout(1_000)
             if page.is_login_required() or page.has_human_challenge():
@@ -171,9 +187,13 @@ class BrowserAgentManager:
                 # Do not re-upload after a post-submit challenge.  Once the
                 # user resumes, only verify whether the platform accepted it.
                 self._transition(record, "verifying", "正在验证人工接管后的发布结果")
-                if page.wait_for_publish_success():
+                wait_outcome = getattr(page, "wait_for_publish_outcome", None)
+                outcome = wait_outcome() if callable(wait_outcome) else ("published" if page.wait_for_publish_success() else "pending")
+                if outcome == "published":
                     self._transition(record, "published", "平台已确认发布成功")
                     record.result_url = page.url
+                elif outcome == "needs_user":
+                    return self._wait_for_human(record, page, "平台仍在等待验证，请完成验证后继续发布或取消任务")
                 else:
                     self._wait_for_human(record, page, "尚未检测到发布成功，请检查页面后继续发布或取消任务")
                     return
@@ -184,6 +204,8 @@ class BrowserAgentManager:
         except PublishCancelled as error:
             self._transition(record, "canceled", str(error), "warning")
         except Exception as error:  # Browser/process failures are made actionable in the UI.
+            if page is not None:
+                self._record_page_state(record, page, "failed", screenshot=True, html=True)
             self._transition(record, "failed", f"浏览器代理执行失败：{str(error)[:400]}", "error")
         finally:
             if record.state != "waiting_for_human":
@@ -191,9 +213,15 @@ class BrowserAgentManager:
                 record.done.set()
 
     def _wait_for_human(self, record: AgentRecord, page, message: str) -> bool:
-        screenshot = Path(record.request.screenshot_dir) / f"publish-{record.job_id}-needs-user.png"
-        page.screenshot(str(screenshot))
-        record.screenshot_path = str(screenshot)
+        screenshot_path: str | None = None
+        if record.diagnostics:
+            self._record_page_state(record, page, "needs-user", screenshot=True, html=True)
+            screenshot_path = record.diagnostics.screenshot(page.page, "needs-user")
+        else:
+            screenshot = Path(record.request.screenshot_dir) / f"publish-{record.job_id}-needs-user.png"
+            page.screenshot(str(screenshot))
+            screenshot_path = str(screenshot)
+        record.screenshot_path = screenshot_path
         record.current_url = page.url
         self._transition(record, "waiting_for_human", message, "warning")
         # Keep the persistent profile and the Playwright owner thread alive.
@@ -216,10 +244,22 @@ class BrowserAgentManager:
             record.session.close()
             record.session = None
 
+    def _record_page_state(self, record: AgentRecord, page, label: str, *, screenshot: bool = False, html: bool = False) -> None:
+        if not record.diagnostics:
+            return
+        underlying_page = getattr(page, "page", page)
+        record.diagnostics.page_state(underlying_page, label)
+        if screenshot:
+            record.diagnostics.screenshot(underlying_page, label)
+        if html:
+            record.diagnostics.html(underlying_page, label)
+
     def _transition(self, record: AgentRecord, state: AgentState, message: str, level: Literal["info", "warning", "error"] = "info") -> None:
         with self._lock:
             record.state, record.message = state, message
             record.events.append(AgentEvent(str(uuid4()), state, level, message, datetime.now(timezone.utc).isoformat()))
+            if record.diagnostics:
+                record.diagnostics.state(state, message, {"level": level})
 
     @staticmethod
     def _snapshot(record: AgentRecord) -> dict:

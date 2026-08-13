@@ -128,6 +128,8 @@ CREATE TABLE IF NOT EXISTS publish_assets (
   topics_json TEXT NOT NULL DEFAULT '[]',
   topic_template_id TEXT,
   cover_path TEXT,
+  vertical_cover_path TEXT,
+  horizontal_cover_path TEXT,
   status TEXT NOT NULL DEFAULT 'unscheduled',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -151,8 +153,11 @@ CREATE TABLE IF NOT EXISTS publish_jobs (
   title TEXT NOT NULL,
   topics_json TEXT NOT NULL DEFAULT '[]',
   cover_path TEXT,
+  vertical_cover_path TEXT,
+  horizontal_cover_path TEXT,
   status TEXT NOT NULL,
   scheduled_at TEXT,
+  publish_time TEXT,
   started_at TEXT,
   completed_at TEXT,
   error_message TEXT,
@@ -180,6 +185,8 @@ CREATE INDEX IF NOT EXISTS publish_job_events_job_idx
 
 CREATE INDEX IF NOT EXISTS publish_jobs_due_idx
   ON publish_jobs(status, scheduled_at);
+CREATE INDEX IF NOT EXISTS publish_jobs_ready_idx
+  ON publish_jobs(status, created_at);
 
 CREATE TABLE IF NOT EXISTS asset_usage_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -283,7 +290,32 @@ export function applyMigrations(database: Database.Database): void {
     if (!accountColumns.some((column) => column.name === "positioning")) {
       database.exec("ALTER TABLE publish_accounts ADD COLUMN positioning TEXT NOT NULL DEFAULT ''");
     }
+    const assetColumns = database.prepare("PRAGMA table_info(publish_assets)").all() as Array<{ name: string }>;
+    if (!assetColumns.some((column) => column.name === "vertical_cover_path")) {
+      database.exec("ALTER TABLE publish_assets ADD COLUMN vertical_cover_path TEXT");
+      database.exec(
+        "UPDATE publish_assets SET vertical_cover_path = cover_path WHERE vertical_cover_path IS NULL AND cover_path IS NOT NULL"
+      );
+    }
+    if (!assetColumns.some((column) => column.name === "horizontal_cover_path")) {
+      database.exec("ALTER TABLE publish_assets ADD COLUMN horizontal_cover_path TEXT");
+    }
     const jobColumns = database.prepare("PRAGMA table_info(publish_jobs)").all() as Array<{ name: string }>;
+    if (!jobColumns.some((column) => column.name === "vertical_cover_path")) {
+      database.exec("ALTER TABLE publish_jobs ADD COLUMN vertical_cover_path TEXT");
+      database.exec(
+        "UPDATE publish_jobs SET vertical_cover_path = cover_path WHERE vertical_cover_path IS NULL AND cover_path IS NOT NULL"
+      );
+    }
+    if (!jobColumns.some((column) => column.name === "horizontal_cover_path")) {
+      database.exec("ALTER TABLE publish_jobs ADD COLUMN horizontal_cover_path TEXT");
+    }
+    if (!jobColumns.some((column) => column.name === "publish_time")) {
+      database.exec("ALTER TABLE publish_jobs ADD COLUMN publish_time TEXT");
+      database.exec(
+        "UPDATE publish_jobs SET publish_time = scheduled_at WHERE publish_time IS NULL AND scheduled_at IS NOT NULL"
+      );
+    }
     if (!jobColumns.some((column) => column.name === "publish_asset_id")) {
       database.exec("ALTER TABLE publish_jobs ADD COLUMN publish_asset_id TEXT REFERENCES publish_assets(id)");
     }
@@ -316,6 +348,9 @@ export function applyMigrations(database: Database.Database): void {
       .run(new Date().toISOString());
     database.prepare(
       `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (5, ?)`
+    ).run(new Date().toISOString());
+    database.prepare(
+      `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (7, ?)`
     ).run(new Date().toISOString());
     database.prepare(
       `INSERT OR IGNORE INTO queue_state(id, status, active_task_id, updated_at)

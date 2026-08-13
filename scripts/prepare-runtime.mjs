@@ -1,8 +1,9 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const root = process.cwd();
+const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 const resources = join(root, "build-resources");
 const backendOutput = join(resources, "backend");
 const binOutput = join(resources, "bin");
@@ -38,7 +39,7 @@ const pyinstaller = spawnSync(
     "--clean",
     "--onefile",
     "--name",
-    "autocut-backend",
+    `autocut-backend-${packageVersion}`,
     "--distpath",
     backendOutput,
     "--workpath",
@@ -56,6 +57,11 @@ const pyinstaller = spawnSync(
 if (pyinstaller.status !== 0) {
   throw new Error(`PyInstaller failed with exit code ${pyinstaller.status}`);
 }
+writeFileSync(
+  join(backendOutput, "runtime.json"),
+  JSON.stringify({ version: packageVersion, executable: `autocut-backend-${packageVersion}.exe` }, null, 2),
+  "utf8"
+);
 
 const browserSource = join(
   process.env.LOCALAPPDATA ?? "",

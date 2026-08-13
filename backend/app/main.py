@@ -56,9 +56,11 @@ from app.tasks.worker import GenerationWorker, TaskEvent, TaskExecutionRequest
 from app.tasks.pipeline import AudioDurationProbe, GenerationPipeline
 from app.tasks.secure_runtime import SecurePipelineRuntime
 from app.publisher.adapters import PublishRequest, PublishResult
-from app.publisher.service import Platform, PublishingService
+from app.publisher.service import AccountBrowserError, Platform, PublishingService
+from app.single_instance import exit_if_backend_lock_is_taken
 
-BACKEND_BUILD_ID = "0.5.9"
+BACKEND_BUILD_ID = os.environ.get("AUTOCUT_BUILD_ID", "0.6.8-batchfix.20260812.220000")
+BACKEND_LOCK_PATH: str | None = None
 
 
 class CreateTaskRequest(BaseModel):
@@ -248,11 +250,14 @@ def create_app(
             raise HTTPException(status_code=401, detail="Invalid session token")
 
     @app.get("/health", dependencies=[Depends(authorize)])
-    def health() -> dict[str, str]:
+    def health() -> dict[str, str | int | None]:
         return {
             "status": "ok",
             "service": "autocut-backend",
             "buildId": BACKEND_BUILD_ID,
+            "pid": os.getpid(),
+            "installRoot": os.environ.get("AUTOCUT_INSTALL_ROOT"),
+            "lockPath": BACKEND_LOCK_PATH,
         }
 
     @app.get("/media/gpu-encoder", dependencies=[Depends(authorize)])
@@ -628,10 +633,13 @@ def create_app(
     def check_publish_account(
         account_id: str, payload: PublishAccountCheckRequest
     ) -> dict[str, str]:
-        status = publisher.check_account(
-            platform=payload.platform,
-            user_data_dir=payload.user_data_dir,
-        )
+        try:
+            status = publisher.check_account(
+                platform=payload.platform,
+                user_data_dir=payload.user_data_dir,
+            )
+        except AccountBrowserError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
         return {"accountId": account_id, "status": status}
 
     @app.post(
@@ -641,10 +649,13 @@ def create_app(
     def connect_publish_account(
         account_id: str, payload: PublishAccountCheckRequest
     ) -> dict[str, str]:
-        status = publisher.connect_account(
-            platform=payload.platform,
-            user_data_dir=payload.user_data_dir,
-        )
+        try:
+            status = publisher.connect_account(
+                platform=payload.platform,
+                user_data_dir=payload.user_data_dir,
+            )
+        except AccountBrowserError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
         return {"accountId": account_id, "status": status}
 
     @app.post(
@@ -719,6 +730,9 @@ def create_app(
 def run() -> None:
     import uvicorn
 
+    global BACKEND_LOCK_PATH
+    if BACKEND_LOCK_PATH is None:
+        BACKEND_LOCK_PATH = str(exit_if_backend_lock_is_taken())
     port = int(os.environ.get("AUTOCUT_PORT", "0"))
     app = create_app()
     uvicorn.run(app, host="127.0.0.1", port=port)

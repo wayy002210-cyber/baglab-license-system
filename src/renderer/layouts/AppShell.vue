@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, ref } from "vue";
 import {
   Calendar,
   Collection,
@@ -14,6 +15,8 @@ import {
 import logoUrl from "../assets/bag-lab-avatar.png";
 import { PRODUCT_NAME } from "../../shared/product-copy";
 
+const buildId = ref("");
+
 const modules = [
   { label: "工作台", path: "/", icon: DataAnalysis },
   { label: "账号档案", path: "/personas", icon: User },
@@ -26,6 +29,14 @@ const modules = [
   { label: "发布排期", path: "/schedule", icon: Calendar },
   { label: "系统设置", path: "/settings", icon: Setting }
 ] as const;
+
+onMounted(async () => {
+  try {
+    buildId.value = await window.autocut.getBuildId();
+  } catch {
+    buildId.value = "";
+  }
+});
 </script>
 
 <template>
@@ -50,8 +61,11 @@ const modules = [
         </RouterLink>
       </nav>
       <div class="sidebar__footer">
-        <span class="status-dot" />
-        本地服务
+        <div>
+          <span class="status-dot" />
+          本地服务
+        </div>
+        <small v-if="buildId">Build {{ buildId }}</small>
       </div>
     </aside>
     <section class="workspace">
@@ -140,6 +154,12 @@ nav {
   padding: 12px;
   font-size: 13px;
   color: #aaa;
+}
+.sidebar__footer small {
+  display: block;
+  margin-top: 6px;
+  color: #777;
+  word-break: break-all;
 }
 .status-dot {
   display: inline-block;

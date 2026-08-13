@@ -29,6 +29,22 @@ UPLOAD_URLS: dict[Platform, str] = {
 }
 
 
+class AccountBrowserError(RuntimeError):
+    """A safe, actionable error exposed by the account browser endpoints."""
+
+
+def _account_browser_error(action: str, error: Exception) -> AccountBrowserError:
+    detail = str(error)
+    normalized = detail.lower()
+    if any(token in normalized for token in ("processsingleton", "user data directory", "profile is already in use", "singletonlock")):
+        return AccountBrowserError("该账号的登录浏览器正在使用中。请先关闭该账号打开的浏览器窗口，再重试。")
+    if any(token in normalized for token in ("executable doesn't exist", "browser executable", "playwright")):
+        return AccountBrowserError("本地浏览器组件不可用。请关闭软件后使用最新安装包覆盖安装，再重新打开软件。")
+    if "timeout" in normalized:
+        return AccountBrowserError(f"{action}超时：平台页面响应较慢，请检查网络后重试。")
+    return AccountBrowserError(f"{action}失败：{detail[:240] or '浏览器组件返回未知错误'}")
+
+
 class PublishingService:
     def __init__(
         self,
@@ -58,12 +74,18 @@ class PublishingService:
         return self.agent.get(job_id)
 
     def check_account(self, *, platform: Platform, user_data_dir: str) -> str:
-        with self.session_factory(user_data_dir) as page:
-            page.page.goto(UPLOAD_URLS[platform], wait_until="domcontentloaded")
-            page.page.wait_for_timeout(2_000)
-            if page.has_human_challenge():
-                return "needs_user"
-            return "expired" if page.is_login_required() else "connected"
+        # Account checks are intentionally silent; only explicit login opens a
+        # visible browser window. Test factories remain fully supported.
+        try:
+            session = PersistentBrowserSession(user_data_dir, headless=True) if self.session_factory is PersistentBrowserSession else self.session_factory(user_data_dir)
+            with session as page:
+                page.page.goto(UPLOAD_URLS[platform], wait_until="domcontentloaded")
+                page.page.wait_for_timeout(2_000)
+                if page.has_human_challenge():
+                    return "needs_user"
+                return "expired" if page.is_login_required() else "connected"
+        except Exception as error:
+            raise _account_browser_error("账号状态检测", error) from error
 
     def connect_account(
         self,
@@ -73,16 +95,19 @@ class PublishingService:
         max_wait_ms: int = 180_000,
         poll_interval_ms: int = 1_500,
     ) -> str:
-        with self.session_factory(user_data_dir) as page:
-            page.page.goto(UPLOAD_URLS[platform], wait_until="domcontentloaded")
-            deadline = monotonic() + max_wait_ms / 1000
-            saw_challenge = False
-            while monotonic() < deadline:
-                page.page.wait_for_timeout(poll_interval_ms)
-                saw_challenge = saw_challenge or page.has_human_challenge()
-                if not page.is_login_required() and not page.has_human_challenge():
-                    return "connected"
-            return "needs_user" if saw_challenge else "expired"
+        try:
+            with self.session_factory(user_data_dir) as page:
+                page.page.goto(UPLOAD_URLS[platform], wait_until="domcontentloaded")
+                deadline = monotonic() + max_wait_ms / 1000
+                saw_challenge = False
+                while monotonic() < deadline:
+                    page.page.wait_for_timeout(poll_interval_ms)
+                    saw_challenge = saw_challenge or page.has_human_challenge()
+                    if not page.is_login_required() and not page.has_human_challenge():
+                        return "connected"
+                return "needs_user" if saw_challenge else "expired"
+        except Exception as error:
+            raise _account_browser_error("登录窗口打开", error) from error
 
     def publish(
         self,

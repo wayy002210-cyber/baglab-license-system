@@ -3,22 +3,48 @@ import {
   copyFileSync,
   mkdtempSync,
   mkdirSync,
+  readdirSync,
   rmSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { extractAll } from "@electron/asar";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const pnpmDirectory = join(process.cwd(), "node_modules", ".pnpm");
+const asarDirectory = readdirSync(pnpmDirectory).find((name) =>
+  name.startsWith("@electron+asar@")
+);
+if (!asarDirectory) throw new Error("@electron/asar is not installed");
+const { extractAll } = require(
+  join(pnpmDirectory, asarDirectory, "node_modules", "@electron", "asar")
+);
 
 const root = process.cwd();
-const outputDirectory = process.env.PACKAGED_OUTPUT ?? "release";
-const resources = join(root, outputDirectory, "win-unpacked", "resources");
-const extracted = mkdtempSync(join(tmpdir(), "autocut-native-check-"));
-const executable = join(
-  root,
-  outputDirectory,
-  "win-unpacked",
-  "袋研官矩阵混剪工作台.exe"
+const outputArgument = process.argv.find((argument) =>
+  argument.startsWith("--output=")
 );
+const installedArgument = process.argv.find((argument) =>
+  argument.startsWith("--installed=")
+);
+const outputDirectory =
+  outputArgument?.slice("--output=".length) ??
+  process.env.PACKAGED_OUTPUT ??
+  "release";
+const installedDirectory = installedArgument?.slice("--installed=".length);
+const unpackedDirectory = installedDirectory
+  ? installedDirectory
+  : join(root, outputDirectory, "win-unpacked");
+const resources = join(unpackedDirectory, "resources");
+const extracted = mkdtempSync(join(tmpdir(), "autocut-native-check-"));
+const executableName = readdirSync(unpackedDirectory).find((name) => {
+  const lowerName = name.toLowerCase();
+  return lowerName.endsWith(".exe") && !lowerName.startsWith("uninstall");
+});
+if (!executableName) {
+  throw new Error(`No packaged executable found in ${unpackedDirectory}`);
+}
+const executable = join(unpackedDirectory, executableName);
 
 try {
   extractAll(join(resources, "app.asar"), extracted);

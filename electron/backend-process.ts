@@ -1,10 +1,21 @@
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+﻿import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 export function terminateStalePackagedBackends(
   executor: (command: string, args: string[]) => unknown = (command, args) =>
     spawnSync(command, args, { windowsHide: true, stdio: "ignore" })
 ): void {
   executor("taskkill.exe", ["/IM", "autocut-backend.exe", "/T", "/F"]);
+  // New installers use a versioned executable name so an update never needs to
+  // overwrite a running backend binary.  Remove every previous version before
+  // starting the backend owned by the current desktop process.
+  executor("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    "Get-Process -Name 'autocut-backend-*' -ErrorAction SilentlyContinue | Stop-Process -Force"
+  ]);
 }
 
 export function terminateBackendProcessTree(
@@ -23,6 +34,9 @@ export type BackendLaunchInput = {
   packaged?: boolean;
   resourceDirectory?: string;
   dataDirectory?: string;
+  buildId?: string;
+  installRoot?: string;
+  lockFilePath?: string;
 };
 
 export type BackendLaunchConfig = {
@@ -44,6 +58,9 @@ export function createBackendLaunchConfig(
       AUTOCUT_HOST: "127.0.0.1",
       AUTOCUT_PORT: String(input.port),
       AUTOCUT_SESSION_TOKEN: input.sessionToken,
+      ...(input.buildId ? { AUTOCUT_BUILD_ID: input.buildId } : {}),
+      ...(input.installRoot ? { AUTOCUT_INSTALL_ROOT: input.installRoot } : {}),
+      ...(input.lockFilePath ? { AUTOCUT_BACKEND_LOCK_FILE: input.lockFilePath } : {}),
       ...(input.resourceDirectory
         ? {
             AUTOCUT_FFMPEG: `${input.resourceDirectory}/bin/ffmpeg.exe`,
@@ -58,7 +75,8 @@ export function createBackendLaunchConfig(
             AUTOCUT_WORK_DIRECTORY: `${input.dataDirectory}/work`
           }
         : {}),
-      PYTHONUTF8: "1"
+      PYTHONUTF8: "1",
+      PYTHONIOENCODING: "utf-8"
     }
   };
 }
@@ -97,7 +115,7 @@ export async function waitForBackendHealth(input: {
           const payload = (await response.json()) as { buildId?: string };
           if (payload.buildId !== input.expectedBuildId) {
             throw new Error(
-              `前后端版本不一致：桌面端 ${input.expectedBuildId}，本地服务 ${payload.buildId ?? "未知"}。请关闭软件后重新安装最新版。`
+              `前后端版本不一致：桌面端 ${input.expectedBuildId}，本地服务 ${payload.buildId ?? "未知"}。请关闭软件后重新安装最新版本。`
             );
           }
         }

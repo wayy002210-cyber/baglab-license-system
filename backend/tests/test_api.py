@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+from app.main import BACKEND_BUILD_ID, create_app
 from app.media.asset_scanner import ScanResult, ScannedAsset
 from app.copywriting.service import RewriteResult
 from app.copywriting.compliance import ComplianceResult
@@ -15,11 +15,13 @@ def test_health_requires_session_token() -> None:
     response = client.get("/health", headers={"X-Autocut-Token": "secret"})
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok",
-        "service": "autocut-backend",
-        "buildId": "0.5.9",
-    }
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["service"] == "autocut-backend"
+    assert payload["buildId"] == BACKEND_BUILD_ID
+    assert isinstance(payload["pid"], int)
+    assert "installRoot" in payload
+    assert "lockPath" in payload
 
 
 def test_task_creation_rejects_batches_over_twenty() -> None:

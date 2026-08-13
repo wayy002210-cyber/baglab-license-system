@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import {
   createBackendLaunchConfig,
   terminateBackendProcessTree,
@@ -12,7 +12,10 @@ describe("createBackendLaunchConfig", () => {
       pythonExecutable: "python",
       backendDirectory: "D:/autocut/backend",
       sessionToken: "token-123",
-      port: 43120
+      port: 43120,
+      buildId: "0.6.7-diag.test",
+      installRoot: "D:/autocut",
+      lockFilePath: "D:/autocut/userData/runtime/autocut-backend.lock"
     });
 
     expect(config.command).toBe("python");
@@ -21,6 +24,12 @@ describe("createBackendLaunchConfig", () => {
     expect(config.env.AUTOCUT_SESSION_TOKEN).toBe("token-123");
     expect(config.env.AUTOCUT_PORT).toBe("43120");
     expect(config.env.AUTOCUT_HOST).toBe("127.0.0.1");
+    expect(config.env.AUTOCUT_BUILD_ID).toBe("0.6.7-diag.test");
+    expect(config.env.AUTOCUT_INSTALL_ROOT).toBe("D:/autocut");
+    expect(config.env.AUTOCUT_BACKEND_LOCK_FILE).toBe(
+      "D:/autocut/userData/runtime/autocut-backend.lock"
+    );
+    expect(config.env.PYTHONIOENCODING).toBe("utf-8");
   });
 
   it("launches the packaged backend executable without Python module args", () => {
@@ -79,10 +88,16 @@ describe("terminateStalePackagedBackends", () => {
       calls.push({ command, args });
       return { status: 0 } as never;
     });
-    expect(calls).toEqual([{
-      command: "taskkill.exe",
-      args: ["/IM", "autocut-backend.exe", "/T", "/F"]
-    }]);
+    expect(calls).toEqual([
+      { command: "taskkill.exe", args: ["/IM", "autocut-backend.exe", "/T", "/F"] },
+      {
+        command: "powershell.exe",
+        args: [
+          "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+          "Get-Process -Name 'autocut-backend-*' -ErrorAction SilentlyContinue | Stop-Process -Force"
+        ]
+      }
+    ]);
   });
 });
 

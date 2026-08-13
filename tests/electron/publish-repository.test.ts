@@ -40,7 +40,7 @@ describe("PublishRepository", () => {
     expect(repository.listAccounts()).toHaveLength(1);
   });
 
-  it("creates idempotent scheduled jobs and rejects duplicates", () => {
+  it("returns the existing job when a live idempotency key is submitted again", () => {
     seedTask("task-1");
     const account = repository.createAccount({
       name: "小红书",
@@ -56,9 +56,33 @@ describe("PublishRepository", () => {
       idempotencyKey: "task-1:xhs:20260801"
     };
 
-    repository.createJob(input);
-    expect(() => repository.createJob(input)).toThrow();
+    const first = repository.createJob(input);
+    const second = repository.createJob(input);
+    expect(second.id).toBe(first.id);
+    expect(repository.listJobs()).toHaveLength(1);
     expect(repository.listJobs()[0].topics).toEqual(["工厂", "定制"]);
+  });
+
+  it("creates a new immediate job after the previous immediate publish has completed", () => {
+    seedTask("task-republish");
+    database.prepare("UPDATE generation_tasks SET output_path=?, snapshot_json=? WHERE id=?")
+      .run("D:/outputs/republish.mp4", JSON.stringify({ copywriting: { mainTitle: "复发测试" } }), "task-republish");
+    const asset = repository.syncCompletedTasks()[0];
+    const account = repository.createAccount({
+      name: "抖音复发号",
+      platform: "douyin",
+      userDataDir: "D:/profiles/republish"
+    });
+    repository.updateAccountStatus(account.id, "connected");
+
+    const first = repository.createJobsForAsset({ assetId: asset.id, accountIds: [account.id], scheduledAt: null })[0];
+    repository.claim(first.id);
+    repository.finishJob(first.id, "published");
+    const second = repository.createJobsForAsset({ assetId: asset.id, accountIds: [account.id], scheduledAt: null })[0];
+
+    expect(second.id).not.toBe(first.id);
+    expect(second.status).toBe("ready");
+    expect(repository.claimNextDue(new Date().toISOString())?.id).toBe(second.id);
   });
 
   it("claims due jobs once and serializes work for the same account", () => {
@@ -93,7 +117,7 @@ describe("PublishRepository", () => {
     expect(second?.id).not.toBe(first?.id);
   });
 
-  it("claims a future platform-scheduled job immediately so the website can receive its time", () => {
+  it.skip("claims a future platform-scheduled job immediately so the website can receive its time", () => {
     seedTask("task-future");
     const account = repository.createAccount({
       name: "抖音定时号", platform: "douyin", userDataDir: "D:/profiles/future"
@@ -106,7 +130,40 @@ describe("PublishRepository", () => {
     expect(repository.claimNextDue("2026-08-04T12:00:00.000Z")?.id).toBe(job.id);
   });
 
-  it("moves human verification failures to needs_user without retrying", () => {
+  it("only claims ready jobs and never auto-claims platform publish times", () => {
+    seedTask("task-future");
+    seedTask("task-past");
+    const account = repository.createAccount({
+      name: "douyin scheduled account",
+      platform: "douyin",
+      userDataDir: "D:/profiles/future"
+    });
+    const futurePlatformTimeJob = repository.createJob({
+      taskId: "task-future",
+      accountId: account.id,
+      title: "future upload",
+      topics: [],
+      publishTime: "2099-08-04T20:30:00.000Z",
+      scheduledAt: null,
+      idempotencyKey: "future-job"
+    });
+    const now = new Date().toISOString();
+    database.prepare(
+      `INSERT INTO publish_jobs(
+        id, task_id, account_id, title, topics_json, status, scheduled_at,
+        idempotency_key, created_at, updated_at
+      ) VALUES ('legacy-scheduled', 'task-past', ?, 'legacy due upload', '[]',
+        'scheduled', '2026-08-04T11:59:00.000Z', 'legacy-due-job', ?, ?)`
+    ).run(account.id, now, now);
+
+    expect(futurePlatformTimeJob.status).toBe("ready");
+    expect(repository.claimNextDue("2026-08-04T12:00:00.000Z")?.id).toBe(futurePlatformTimeJob.id);
+    repository.finishJob(futurePlatformTimeJob.id, "published");
+    expect(repository.claimNextDue("2026-08-04T12:00:00.000Z")).toBeNull();
+    expect(repository.getJob("legacy-scheduled")?.status).toBe("scheduled");
+  });
+
+  it("records human verification failures as retryable failed jobs", () => {
     seedTask("task-1");
     const account = repository.createAccount({
       name: "平台账号",
@@ -123,12 +180,13 @@ describe("PublishRepository", () => {
     });
 
     repository.claim(job.id);
-    const result = repository.finishJob(job.id, "needs_user", {
+    const result = repository.finishJob(job.id, "failed", {
       errorMessage: "需要扫码或验证码",
       screenshotPath: "D:/logs/check.png"
     });
 
-    expect(result.status).toBe("needs_user");
+    expect(result.status).toBe("failed");
+    expect(result.errorMessage).toBe("需要扫码或验证码");
     expect(result.attemptCount).toBe(1);
     expect(result.screenshotPath).toBe("D:/logs/check.png");
   });
@@ -195,6 +253,7 @@ describe("PublishRepository", () => {
       idempotencyKey: "delete-job"
     });
 
+    repository.claim(job.id);
     expect(() => repository.deleteJob(job.id)).toThrow(/取消正在等待或执行/);
     repository.cancelJob(job.id);
     expect(repository.deleteJob(job.id)).toBe(true);
@@ -224,8 +283,53 @@ describe("PublishRepository", () => {
     repository.updateAsset(asset.id, { topics: ["工厂", "定制"] });
     const jobs = repository.createJobsForAsset({ assetId: asset.id, accountIds: [first.id, second.id], scheduledAt: "2026-08-06T10:00:00.000Z" });
     expect(jobs).toHaveLength(2);
-    expect(jobs.every((job) => job.status === "scheduled")).toBe(true);
+    expect(jobs.every((job) => job.status === "ready")).toBe(true);
+    expect(jobs.every((job) => job.publishTime === "2026-08-06T10:00:00.000Z")).toBe(true);
     expect(repository.getAsset(asset.id)?.status).toBe("scheduled");
+  });
+
+  it("freezes vertical and horizontal cover paths into publish jobs", () => {
+    seedTask("task-cover");
+    database.prepare("UPDATE generation_tasks SET output_path=?, snapshot_json=? WHERE id=?")
+      .run("D:/outputs/cover.mp4", JSON.stringify({ copywriting: { mainTitle: "封面测试" } }), "task-cover");
+    const asset = repository.syncCompletedTasks()[0];
+    const account = repository.createAccount({
+      name: "douyin cover account",
+      platform: "douyin",
+      userDataDir: "D:/profiles/cover"
+    });
+    repository.updateAccountStatus(account.id, "connected");
+
+    const updated = repository.updateAsset(asset.id, {
+      verticalCoverPath: "D:/covers/vertical.jpg",
+      horizontalCoverPath: "D:/covers/horizontal.jpg"
+    });
+    const job = repository.createJobsForAsset({ assetId: updated.id, accountIds: [account.id], publishTime: null })[0];
+
+    expect(updated.coverPath).toBe("D:/covers/vertical.jpg");
+    expect(updated.verticalCoverPath).toBe("D:/covers/vertical.jpg");
+    expect(updated.horizontalCoverPath).toBe("D:/covers/horizontal.jpg");
+    expect(job.coverPath).toBe("D:/covers/vertical.jpg");
+    expect(job.verticalCoverPath).toBe("D:/covers/vertical.jpg");
+    expect(job.horizontalCoverPath).toBe("D:/covers/horizontal.jpg");
+  });
+
+  it("maps legacy cover_path to verticalCoverPath for old publish assets", () => {
+    seedTask("task-legacy-cover");
+    const now = new Date().toISOString();
+    database.prepare(
+      `INSERT INTO publish_assets(
+        id, task_id, short_title, topic, publish_title, topics_json,
+        cover_path, status, created_at, updated_at
+      ) VALUES ('legacy-cover-asset', 'task-legacy-cover', '旧封面', '', '旧封面', '[]',
+        'D:/covers/legacy.jpg', 'unscheduled', ?, ?)`
+    ).run(now, now);
+
+    const asset = repository.getAsset("legacy-cover-asset");
+
+    expect(asset?.coverPath).toBe("D:/covers/legacy.jpg");
+    expect(asset?.verticalCoverPath).toBe("D:/covers/legacy.jpg");
+    expect(asset?.horizontalCoverPath).toBeNull();
   });
 
   it("stores reusable topic templates", () => {

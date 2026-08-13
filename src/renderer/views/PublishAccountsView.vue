@@ -20,7 +20,7 @@ const platforms: Array<{ id: Platform; name: string }> = [
   { id: "kuaishou", name: "快手" }
 ];
 const statusName: Record<Account["linkStatus"], string> = {
-  unknown: "未检测", checking: "检测中", connected: "已登录", expired: "登录失效", needs_user: "需要接管"
+  unknown: "需重新登录", checking: "检测中", connected: "可自动发布", expired: "需重新登录", needs_user: "需重新登录"
 };
 const filtered = computed(() => accounts.value.filter((account) =>
   account.platform === activePlatform.value
@@ -40,6 +40,7 @@ async function create() {
   } catch (error) { ElMessage.error(toUserMessage(error, "创建账号失败")); }
 }
 async function run(account: Account, mode: "connect" | "check") {
+  if (busyId.value) return;
   busyId.value = account.id;
   ElMessage.info(mode === "connect" ? "已打开独立登录窗口，请完成登录或验证" : "正在检测账号登录状态…");
   try {
@@ -47,10 +48,17 @@ async function run(account: Account, mode: "connect" | "check") {
       ? await window.autocut.connectPublishAccount(account.id)
       : await window.autocut.checkPublishAccount(account.id);
     await load();
-    if (value.linkStatus === "connected") ElMessage.success("账号登录状态正常");
-    else if (value.linkStatus === "expired") ElMessage.warning("登录已失效，请重新登录");
-    else ElMessage.warning("平台要求验证，请在浏览器窗口完成后重试");
-  } catch (error) { ElMessage.error(toUserMessage(error, "账号状态操作失败")); }
+    if (value.linkStatus === "connected") ElMessage.success("账号可自动发布");
+    else ElMessage.warning("账号当前不能自动发布，请打开登录窗口完成登录或平台验证后再检测");
+  } catch (error) {
+    // Keep the desktop/backend diagnostic visible.  A generic toast made a
+    // profile lock, missing Playwright runtime, and a temporary backend
+    // restart look like the same "status operation failed" problem.
+    const message = error instanceof Error
+      ? error.message.replace(/^Error invoking remote method '[^']+': Error:\s*/i, "")
+      : "";
+    ElMessage.error(message || toUserMessage(error, "账号状态操作失败"));
+  }
   finally { busyId.value = ""; }
 }
 async function remove(account: Account) {
