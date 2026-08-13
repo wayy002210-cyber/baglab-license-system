@@ -21,6 +21,7 @@
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
     "native:node": "npm rebuild better-sqlite3 keytar",
     "dist:win": "npm run native:node && npm run check && node scripts/build-installer.mjs"
+    ,"license:public-config": "node scripts/write-license-public-config.mjs"
   },
   "build": {
     "appId": "com.innovessel.autocut",

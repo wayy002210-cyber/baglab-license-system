@@ -9,6 +9,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+    ,"secrets:generate": "node scripts/generate-secrets.mjs"
+    ,"db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
