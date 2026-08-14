@@ -1,5 +1,5 @@
 {
-  "serviceOrigin": "https://baglab-license-system.vercel.app",
+  "serviceOrigin": "https://license-api.pangluobo.site",
   "publicJwk": {
     "crv": "Ed25519",
     "x": "KttaQw7kk9GTgBmI4tLXcF2dQbY-7zCIOv76zCECXVY",
