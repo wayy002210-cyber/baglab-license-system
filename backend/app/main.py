@@ -60,7 +60,7 @@ from app.publisher.service import AccountBrowserError, Platform, PublishingServi
 from app.single_instance import exit_if_backend_lock_is_taken
 from app.license_proof import verify_license_proof
 
-BACKEND_BUILD_ID = os.environ.get("AUTOCUT_BUILD_ID", "0.7.0-license.20260813.162600")
+BACKEND_BUILD_ID = os.environ.get("AUTOCUT_BUILD_ID", "0.7.1-license.20260814.92600")
 BACKEND_LOCK_PATH: str | None = None
 
 

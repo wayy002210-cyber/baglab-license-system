@@ -83,7 +83,7 @@ import { GenerationQueue } from "./services/generation-queue.js";
 import { createProjectTasks } from "./services/copywriting-task-service.js";
 import { defaultSubtitleStyle,defaultTitleStyle } from "../src/shared/media-style.js";
 import { toSafeOutputStem } from "../src/shared/short-title.js";
-import { LicenseApiClient } from "./license/api-client.js";
+import { createElectronLicenseApiClient } from "./license/api-client.js";
 import { LicenseCoordinator } from "./license/coordinator.js";
 import { verifySignedCredential } from "./license/credential.js";
 import { collectWindowsDevice } from "./license/windows-device.js";
@@ -1557,7 +1557,7 @@ app.whenReady().then(async () => {
       environment: process.env,
       packagedConfigPath: resolve(process.resourcesPath, "license-public.json")
     });
-    licenseCoordinator = new LicenseCoordinator({ device, buildId: app.getVersion(), store: credentials, api: new LicenseApiClient(serviceOrigin), verify: (token) => verifySignedCredential(token, publicJwk) });
+    licenseCoordinator = new LicenseCoordinator({ device, buildId: app.getVersion(), store: credentials, api: createElectronLicenseApiClient(serviceOrigin, net.fetch), verify: (token) => verifySignedCredential(token, publicJwk) });
     await licenseCoordinator.initialize();
     licenseRefreshTimer = setInterval(() => { void licenseCoordinator?.refresh().then(() => window?.webContents.send("license:changed")); }, 30 * 60_000);
   } catch (error) {
