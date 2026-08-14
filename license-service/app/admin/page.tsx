@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { clearAdminCsrf, readAdminCsrf, saveAdminCsrf } from "../../src/admin/client-session";
 
 type Dashboard = { codes: Array<Record<string, string>>; licenses: Array<Record<string, string>>; events: Array<Record<string, string>> };
 const plans = [["day1","1天卡"],["day3","3天卡"],["day7","7天卡"],["month","月卡"],["year","年卡"],["permanent","永久卡"]];
@@ -7,11 +8,12 @@ const plans = [["day1","1天卡"],["day3","3天卡"],["day7","7天卡"],["month"
 export default function AdminPage() {
   const [password,setPassword]=useState(""); const [csrf,setCsrf]=useState(""); const [data,setData]=useState<Dashboard>();
   const [plan,setPlan]=useState("day1"); const [count,setCount]=useState(1); const [codes,setCodes]=useState<string[]>([]); const [message,setMessage]=useState("");
-  async function load(){const response=await fetch("/api/admin/dashboard",{cache:"no-store"});if(response.ok)setData((await response.json()).data);}
-  useEffect(()=>{void load()},[]);
-  async function login(){const response=await fetch("/api/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password})});const body=await response.json();if(response.ok){setCsrf(body.data.csrfToken);setMessage("已登录");void load()}else setMessage(body.error.message)}
-  async function generate(){const response=await fetch("/api/admin/codes",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify({plan,count,note:""})});const body=await response.json();if(response.ok){setCodes(body.data.codes);setMessage("明文仅在本页显示一次，请立即复制或导出。");void load()}else setMessage(body.error.message)}
-  async function mutate(licenseId:string,action:string){const hours=action==="extend"?Number(prompt("延长小时数","24")):undefined;const note=prompt("备注","")??"";await fetch("/api/admin/licenses",{method:"PATCH",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify({licenseId,action,hours,note})});void load()}
+  function expireSession(reason:string){clearAdminCsrf(window.sessionStorage);setCsrf("");setData(undefined);setCodes([]);setMessage(reason)}
+  async function load(){const response=await fetch("/api/admin/dashboard",{cache:"no-store"});if(response.ok)setData((await response.json()).data);else expireSession("管理员会话已过期，请重新登录")}
+  useEffect(()=>{const saved=readAdminCsrf(window.sessionStorage);if(saved){setCsrf(saved);void load()}},[]);
+  async function login(){const response=await fetch("/api/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password})});const body=await response.json();if(response.ok){const token=body.data.csrfToken;saveAdminCsrf(window.sessionStorage,token);setCsrf(token);setMessage("已登录");void load()}else setMessage(body.error.message)}
+  async function generate(){const response=await fetch("/api/admin/codes",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify({plan,count,note:""})});const body=await response.json();if(response.ok){setCodes(body.data.codes);setMessage("明文仅在本页显示一次，请立即复制或导出。");void load()}else if(response.status===403)expireSession("安全校验已失效，请重新登录");else setMessage(body.error.message)}
+  async function mutate(licenseId:string,action:string){const hours=action==="extend"?Number(prompt("延长小时数","24")):undefined;const note=prompt("备注","")??"";const response=await fetch("/api/admin/licenses",{method:"PATCH",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify({licenseId,action,hours,note})});if(response.status===403){expireSession("安全校验已失效，请重新登录");return}void load()}
   function exportCodes(){const blob=new Blob([codes.join("\r\n")],{type:"text/plain;charset=utf-8"});const link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=`activation-codes-${Date.now()}.txt`;link.click();URL.revokeObjectURL(link.href)}
   return <main className="admin"><header><div><small>BAG LAB</small><h1>授权管理台</h1></div><p>{message}</p></header>
     {!data&&<section className="card login"><h2>管理员登录</h2><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="管理员密码"/><button onClick={login}>登录</button></section>}
