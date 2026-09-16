@@ -34,6 +34,7 @@ def sourced_response() -> SearchResponse:
             title="商场更新环保包装要求",
             url="https://news.example.com/green",
             site_name="行业媒体",
+            published_at="2026-09-15",
         )],
     )
 
@@ -46,10 +47,12 @@ def test_provider_keeps_only_candidates_backed_by_search_sources() -> None:
         mode="balanced",
     )
 
-    assert len(result) == 1
-    assert result[0].id == "hot-1"
-    assert result[0].source_url == "https://news.example.com/green"
-    assert result[0].retrieved_at == NOW
+    assert len(result.sources) == 1
+    assert result.status == "available"
+    assert result.sources[0].id == "hot-1"
+    assert result.sources[0].source_url == "https://news.example.com/green"
+    assert result.sources[0].retrieved_at == NOW
+    assert result.sources[0].title == "商场更新环保包装要求"
 
 
 def test_provider_reuses_cached_results_within_ttl() -> None:
@@ -76,7 +79,7 @@ def test_provider_returns_empty_for_disabled_mode_without_searching() -> None:
     assert provider.get(
         api_key="secret", model="qwen-plus", industry="帆布袋", now=NOW,
         mode="off",
-    ) == []
+    ).sources == []
     assert chat.calls == 0
 
 
@@ -86,10 +89,12 @@ def test_provider_degrades_to_empty_on_recoverable_search_failure() -> None:
     )])
     provider = HotspotProvider(chat)
 
-    assert provider.get(
+    result = provider.get(
         api_key="secret", model="qwen-plus", industry="帆布袋", now=NOW,
         mode="priority",
-    ) == []
+    )
+    assert result.sources == []
+    assert result.status == "unavailable"
 
 
 def test_provider_rejects_future_dates_and_non_https_urls() -> None:
@@ -101,8 +106,8 @@ def test_provider_rejects_future_dates_and_non_https_urls() -> None:
            "publishedAt":"2026-09-15","summary":"不是加密来源。","relevance":"与帆布袋有关"}
         ]}""",
         sources=[
-            SearchSource(title="未来消息", url="https://news.example.com/future", site_name="来源"),
-            SearchSource(title="不安全链接", url="http://news.example.com/item", site_name="来源"),
+            SearchSource(title="未来消息", url="https://news.example.com/future", site_name="来源", published_at="2026-10-01"),
+            SearchSource(title="不安全链接", url="http://news.example.com/item", site_name="来源", published_at="2026-09-15"),
         ],
     )
     provider = HotspotProvider(SearchFixture([response]))
@@ -112,4 +117,27 @@ def test_provider_rejects_future_dates_and_non_https_urls() -> None:
         mode="balanced",
     )
 
-    assert result == []
+    assert result.sources == []
+    assert result.status == "no_match"
+
+
+def test_provider_rejects_stale_or_model_fabricated_dates() -> None:
+    response = SearchResponse(
+        content='''{"hotspots":[
+          {"id":"stale","title":"模型改写标题","sourceUrl":"https://news.example.com/stale",
+           "publishedAt":"2026-09-15","summary":"帆布袋旧消息。","relevance":"与帆布袋有关"},
+          {"id":"fabricated","title":"另一个模型标题","sourceUrl":"https://news.example.com/fabricated",
+           "publishedAt":"2026-09-15","summary":"帆布袋日期不一致。","relevance":"与帆布袋有关"}
+        ]}''',
+        sources=[
+            SearchSource(title="真实旧标题", url="https://news.example.com/stale", site_name="来源", published_at="2026-07-01"),
+            SearchSource(title="真实新标题", url="https://news.example.com/fabricated", site_name="来源", published_at="2026-09-14"),
+        ],
+    )
+    result = HotspotProvider(SearchFixture([response])).get(
+        api_key="secret", model="qwen-plus", industry="帆布袋", now=NOW,
+        mode="balanced",
+    )
+
+    assert result.sources == []
+    assert result.status == "no_match"

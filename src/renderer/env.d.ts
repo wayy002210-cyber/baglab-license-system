@@ -150,6 +150,7 @@ declare global {
         }
       ): Promise<{ text: string; structureType:string; hookType:string; argumentBeats:string[]; semanticVector:number[]|null }>;
       markContentHistory(input:{personaId:string;topic:CopywritingTopic;state:"rejected"|"shown"|"selected"|"generated"|"collected"|"archived"|"published";projectId?:string}):Promise<unknown>;
+      markScriptHistory(input:{personaId:string;text:string;state:"rejected"|"shown"|"selected"|"generated"|"collected"|"archived"|"published";projectId?:string}):Promise<unknown>;
       openExternalUrl(url:string):Promise<void>;
       listCopywritingProjects(statuses?: CopywritingStatus[]): Promise<CopywritingProject[]>;
       createCopywritingProject(input: Omit<CopywritingProject,"id"|"createdAt"|"updatedAt"|"archivedAt"|"complianceIssues"|"errorMessage"> & {complianceIssues?:ComplianceIssue[];errorMessage?:string|null}): Promise<CopywritingProject>;

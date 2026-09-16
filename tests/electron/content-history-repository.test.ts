@@ -102,4 +102,42 @@ describe("ContentHistoryRepository", () => {
     });
     database.close();
   });
+
+  it("attaches a generated script to its project and advances it to collected", () => {
+    const database = databaseWithPersona();
+    const history = new ContentHistoryRepository(database);
+    const text = "这是已经生成并保存的完整口播文案。";
+    history.recordScript("p1", topic(), text, null, NOW);
+
+    history.markScript("p1", text, "collected", "project-2", "2026-09-16T03:00:00.000Z");
+
+    expect(history.listDigest("p1", 500)[0]).toMatchObject({
+      contentType: "script",
+      lifecycleState: "collected",
+      projectId: "project-2",
+      lastUsedAt: "2026-09-16T03:00:00.000Z"
+    });
+    database.close();
+  });
+
+  it("keeps permanent exact signatures beyond the recent fuzzy window and across the same industry", () => {
+    const database = databaseWithPersona();
+    database.prepare(`INSERT INTO personas(id, name, industry, brand_facts_json, tone, cta,
+      banned_words_json, is_default, created_at, updated_at) VALUES
+      ('p2', '同行人设', '帆布袋', '[]', '', '', '[]', 0, '', '')`).run();
+    const history = new ContentHistoryRepository(database);
+    for (let index = 0; index < 501; index += 1) {
+      const marker = String.fromCodePoint(0x5200 + index);
+      history.recordTopics("p1", [{
+        ...topic(), id: `topic-${index}`, displayTitle: marker.repeat(10),
+        description: marker.repeat(20), hook: marker.repeat(6)
+      }], new Date(2026, 0, 1, 0, 0, index).toISOString());
+    }
+
+    const signatures = history.listStrictSignatures("p2");
+
+    expect(signatures.topics).toHaveLength(501);
+    expect(signatures.topics).toContain("刀".repeat(36));
+    database.close();
+  });
 });

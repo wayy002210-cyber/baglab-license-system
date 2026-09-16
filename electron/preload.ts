@@ -605,6 +605,13 @@ contextBridge.exposeInMainWorld("autocut", {
       projectId: z.string().uuid().optional()
     }).parse(input))
   ),
+  markScriptHistory: async (input: unknown) => z.unknown().parse(
+    await ipcRenderer.invoke("copywriting:markScriptHistory", z.object({
+      personaId: z.string().min(1), text: z.string().min(1),
+      state: z.enum(["rejected", "shown", "selected", "generated", "collected", "archived", "published"]),
+      projectId: z.string().uuid().optional()
+    }).parse(input))
+  ),
   listCopywritingProjects: async (statuses?: unknown) => z.array(copywritingProjectSchema).parse(
     await ipcRenderer.invoke("copywritingProjects:list", z.array(copywritingStatusSchema).optional().parse(statuses))
   ),

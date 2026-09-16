@@ -100,6 +100,10 @@ function normalizeContent(value: string): string {
   return value
     .normalize("NFKC")
     .toLocaleLowerCase("zh-CN")
+    .replace(/[零〇一二两三四五六七八九]/g, (character) => ({
+      零: "0", 〇: "0", 一: "1", 二: "2", 两: "2", 三: "3", 四: "4",
+      五: "5", 六: "6", 七: "7", 八: "8", 九: "9"
+    }[character] ?? character))
     .replace(/[\p{P}\p{S}\s]+/gu, "");
 }
 
@@ -176,12 +180,57 @@ export class ContentHistoryRepository {
     return this.upsert(personaId, "topic", state, topic, "", projectId ?? null, now);
   }
 
+  markScript(
+    personaId: string,
+    text: string,
+    state: ContentLifecycleState,
+    projectId?: string,
+    now = new Date().toISOString()
+  ): ContentHistoryDigest | null {
+    const normalizedHash = hashContent(text);
+    const current = this.database.prepare(
+      `SELECT * FROM content_history
+       WHERE persona_id = ? AND content_type = 'script' AND normalized_hash = ?`
+    ).get(personaId, normalizedHash) as HistoryRow | undefined;
+    if (!current) return null;
+    const nextState = lifecycleRank[current.lifecycle_state] > lifecycleRank[state]
+      ? current.lifecycle_state
+      : state;
+    this.database.prepare(`UPDATE content_history
+      SET lifecycle_state = ?, project_id = COALESCE(?, project_id), last_used_at = ?
+      WHERE id = ?`).run(nextState, projectId ?? null, now, current.id);
+    const row = this.database.prepare("SELECT * FROM content_history WHERE id = ?")
+      .get(current.id) as HistoryRow;
+    return mapRow(row);
+  }
+
   listDigest(personaId: string, limit: number): ContentHistoryDigest[] {
     const rows = this.database.prepare(
       `SELECT * FROM content_history WHERE persona_id = ?
        ORDER BY last_used_at DESC, id DESC LIMIT ?`
     ).all(personaId, limit) as HistoryRow[];
     return rows.map(mapRow);
+  }
+
+  listStrictSignatures(personaId: string): { topics: string[]; scripts: string[] } {
+    const rows = this.database.prepare(`
+      SELECT DISTINCT history.*
+      FROM content_history history
+      JOIN personas source ON source.id = history.persona_id
+      JOIN personas target ON target.id = ?
+      WHERE history.persona_id = ?
+         OR (source.industry <> '' AND source.industry = target.industry)
+    `).all(personaId, personaId) as HistoryRow[];
+    const topics: string[] = [];
+    const scripts: string[] = [];
+    for (const row of rows) {
+      if (row.content_type === "topic") {
+        topics.push(normalizeContent(`${row.display_title}|${row.description}|${row.hook}`));
+      } else if (row.content_text) {
+        scripts.push(normalizeContent(row.content_text));
+      }
+    }
+    return { topics: [...new Set(topics)], scripts: [...new Set(scripts)] };
   }
 
   setSemanticVector(id: string, vector: number[]): void {

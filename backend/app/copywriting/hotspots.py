@@ -34,6 +34,11 @@ class _HotspotEnvelope(BaseModel):
     hotspots: list[_HotspotCandidate] = Field(default_factory=list, max_length=20)
 
 
+class HotspotResult(BaseModel):
+    status: Literal["disabled", "available", "no_match", "unavailable"]
+    sources: list[HotspotSource] = Field(default_factory=list)
+
+
 def _extract_json(value: str) -> dict:
     cleaned = value.strip()
     fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", cleaned, re.DOTALL)
@@ -52,7 +57,7 @@ class HotspotProvider:
     def __init__(self, chat: SearchClient, ttl_seconds: int = 3600) -> None:
         self.chat = chat
         self.ttl = timedelta(seconds=ttl_seconds)
-        self._cache: dict[tuple[str, str, HotspotMode], tuple[datetime, list[HotspotSource]]] = {}
+        self._cache: dict[tuple[str, str, HotspotMode], tuple[datetime, HotspotResult]] = {}
 
     def get(
         self,
@@ -62,13 +67,13 @@ class HotspotProvider:
         industry: str,
         now: datetime,
         mode: HotspotMode,
-    ) -> list[HotspotSource]:
+    ) -> HotspotResult:
         if mode == "off":
-            return []
+            return HotspotResult(status="disabled")
         cache_key = (model, industry.strip(), mode)
         cached = self._cache.get(cache_key)
         if cached and now - cached[0] < self.ttl:
-            return list(cached[1])
+            return cached[1].model_copy(deep=True)
         try:
             response = self.chat.search(
                 api_key=api_key,
@@ -77,18 +82,24 @@ class HotspotProvider:
             )
             envelope = _HotspotEnvelope.model_validate(_extract_json(response.content))
         except (BailianAPIError, ValidationError, json.JSONDecodeError, ValueError):
-            return []
-        source_urls = {source.url for source in response.sources}
+            return HotspotResult(status="unavailable")
+        source_by_url = {source.url: source for source in response.sources}
         results: list[HotspotSource] = []
         for candidate in envelope.hotspots:
             parsed_url = urlparse(candidate.source_url)
-            if parsed_url.scheme != "https" or candidate.source_url not in source_urls:
+            source = source_by_url.get(candidate.source_url)
+            if parsed_url.scheme != "https" or source is None or not source.published_at:
                 continue
             try:
                 published_at = datetime.fromisoformat(candidate.published_at.replace("Z", "+00:00")).date()
+                source_published_at = datetime.fromisoformat(
+                    source.published_at.replace("Z", "+00:00")
+                ).date()
             except ValueError:
                 continue
-            if published_at > now.date():
+            if published_at != source_published_at:
+                continue
+            if published_at > now.date() or published_at < (now - timedelta(days=30)).date():
                 continue
             relevance = _plain_text(candidate.relevance, 300)
             searchable = " ".join((candidate.title, candidate.summary, relevance))
@@ -96,15 +107,19 @@ class HotspotProvider:
                 continue
             results.append(HotspotSource(
                 id=candidate.id,
-                title=_plain_text(candidate.title, 200),
+                title=_plain_text(source.title, 200),
                 sourceUrl=candidate.source_url,
                 publishedAt=published_at,
                 retrievedAt=now,
-                summary=_plain_text(candidate.summary, 500),
+                summary=_plain_text(source.snippet or candidate.summary, 500),
                 relevance=relevance,
             ))
-        self._cache[cache_key] = (now, results)
-        return list(results)
+        result = HotspotResult(
+            status="available" if results else "no_match",
+            sources=results,
+        )
+        self._cache[cache_key] = (now, result)
+        return result.model_copy(deep=True)
 
     @staticmethod
     def _prompt(*, industry: str, now: datetime, mode: HotspotMode) -> str:

@@ -87,6 +87,16 @@ async function createFromTopic(topic: BatchTopic, text: string, status: "review"
     personaId: persona.value.id, topicId: topic.id, topicTitle: topic.description,
     displayTitle: topic.displayTitle, mainTitle: topic.shortTitle, text, model: model.value, status, errorMessage
   });
+  if (status === "review" && text) {
+    await Promise.all([
+      window.autocut.markContentHistory({
+        personaId: persona.value.id, topic, state: "generated", projectId: project.id
+      }),
+      window.autocut.markScriptHistory({
+        personaId: persona.value.id, text, state: "generated", projectId: project.id
+      })
+    ]);
+  }
   projects.value = [project, ...projects.value];
 }
 
@@ -135,6 +145,11 @@ async function checkProject(project: Project): Promise<void> {
 async function collect(project: Project): Promise<void> {
   if (project.text.replace(/\s/g, "").length < 50) return void ElMessage.warning("文案内容过短，请先完善");
   await window.autocut.collectCopywritingProject(project.id);
+  if (persona.value && project.text) {
+    await window.autocut.markScriptHistory({
+      personaId: persona.value.id, text: project.text, state: "collected", projectId: project.id
+    });
+  }
   projects.value = projects.value.filter((item) => item.id !== project.id);
   ElMessage.success("已收进文案库，可继续生成更多内容");
 }

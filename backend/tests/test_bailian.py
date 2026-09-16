@@ -128,6 +128,7 @@ def test_search_returns_content_and_real_provider_sources(monkeypatch) -> None:
                         "title": "行业新规",
                         "url": "https://example.com/news",
                         "site_name": "示例来源",
+                        "published_at": "2026-09-15",
                     }]
                 },
             }
@@ -144,3 +145,4 @@ def test_search_returns_content_and_real_provider_sources(monkeypatch) -> None:
     assert captured["parameters"]["search_options"]["forced_search"] is True
     assert result.content == '{"hotspots":[]}'
     assert result.sources[0].url == "https://example.com/news"
+    assert result.sources[0].published_at == "2026-09-15"

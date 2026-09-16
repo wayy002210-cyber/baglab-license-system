@@ -34,6 +34,8 @@ export type CopywritingGenerationResult = {
 
 export type HistoryAwarePayload<T> = T & {
   history: ContentHistoryDigest[];
+  exactTopicSignatures: string[];
+  exactScriptSignatures: string[];
 };
 
 export interface ContentGenerationBackend {
@@ -53,7 +55,12 @@ export class ContentGenerationOrchestrator {
 
   async generateTopics(input: TopicGenerationPayload): Promise<TopicGenerationResult> {
     const digest = this.history.listDigest(input.personaId, 500);
-    const result = await this.backend.generateTopics({ ...input, history: digest });
+    const strict = this.history.listStrictSignatures(input.personaId);
+    const result = await this.backend.generateTopics({
+      ...input, history: digest,
+      exactTopicSignatures: strict.topics,
+      exactScriptSignatures: strict.scripts
+    });
     this.history.recordTopics(input.personaId, result.topics);
     return result;
   }
@@ -68,6 +75,7 @@ export class ContentGenerationOrchestrator {
       input.projectId ?? undefined
     );
     const digest = this.history.listDigest(input.personaId, 500);
+    const strict = this.history.listStrictSignatures(input.personaId);
     const recentStructures = input.recentStructures ?? digest
       .filter((item) => item.contentType === "script")
       .map((item) => item.structureType)
@@ -76,6 +84,8 @@ export class ContentGenerationOrchestrator {
     const result = await this.backend.generateCopywriting({
       ...input,
       history: digest,
+      exactTopicSignatures: strict.topics,
+      exactScriptSignatures: strict.scripts,
       recentStructures
     });
     const scriptTopic: ContentTopic = {
@@ -103,5 +113,14 @@ export class ContentGenerationOrchestrator {
     projectId?: string
   ): ContentHistoryDigest {
     return this.history.markTopic(personaId, topic, state, projectId);
+  }
+
+  markScript(
+    personaId: string,
+    text: string,
+    state: ContentLifecycleState,
+    projectId?: string
+  ): ContentHistoryDigest | null {
+    return this.history.markScript(personaId, text, state, projectId);
   }
 }

@@ -22,6 +22,8 @@ class SearchSource:
     title: str
     url: str
     site_name: str
+    published_at: str | None = None
+    snippet: str = ""
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,11 @@ class BailianChat:
                     title=str(item.get("title", ""))[:300],
                     url=str(item.get("url", ""))[:2000],
                     site_name=str(item.get("site_name", ""))[:200],
+                    published_at=str(
+                        item.get("published_at") or item.get("publish_time")
+                        or item.get("date") or ""
+                    )[:40] or None,
+                    snippet=str(item.get("snippet") or item.get("summary") or "")[:1000],
                 )
                 for item in raw_sources
                 if item.get("url")

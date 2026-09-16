@@ -39,7 +39,9 @@ describe("CopywritingView", () => {
       searchReferenceScripts: vi.fn(async () => []), listCopywritingProjects: vi.fn(async () => []),
       generateTopics: vi.fn(async () => ({ topics: ["a", "b", "c", "d", "e"].map((id) => richTopic(id)), historyChecked: 126, hotspotStatus: "no_match" })),
       generateCopywriting: vi.fn(async (input) => ({ text: `${input.topic.shortTitle}完整文案`.repeat(30), structureType: "现场观察", hookType: "场景冲突", argumentBeats: [], semanticVector: null })),
-      createCopywritingProject: create, openExternalUrl: vi.fn(async () => undefined)
+      createCopywritingProject: create,
+      markContentHistory: vi.fn(async () => undefined), markScriptHistory: vi.fn(async () => undefined),
+      openExternalUrl: vi.fn(async () => undefined)
     } });
     const wrapper = mountView(); await flushPromises();
 

@@ -1436,6 +1436,14 @@ licensedHandle("copywriting:markHistory", (_event, payload: {
     payload.personaId, payload.topic, payload.state, payload.projectId
   )
 );
+licensedHandle("copywriting:markScriptHistory", (_event, payload: {
+  personaId: string;
+  text: string;
+  state: Parameters<ContentGenerationOrchestrator["markScript"]>[2];
+  projectId?: string;
+}) => contentGenerationOrchestrator().markScript(
+  payload.personaId, payload.text, payload.state, payload.projectId
+));
 ipcMain.handle("copywriting:compliance", (_event, payload: unknown) =>
   postCopywriting("compliance", payload, false)
 );
