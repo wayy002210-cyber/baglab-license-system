@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +19,18 @@ class ContentIdentity(BaseModel):
     hook_type: str = Field(alias="hookType", min_length=1, max_length=80)
     viewer_gain: str = Field(alias="viewerGain", min_length=1, max_length=160)
     hotspot_id: str | None = Field(default=None, alias="hotspotId", max_length=160)
+
+
+class HotspotSource(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str = Field(min_length=1, max_length=160)
+    title: str = Field(min_length=1, max_length=200)
+    source_url: str = Field(alias="sourceUrl", min_length=1, max_length=2000)
+    published_at: date = Field(alias="publishedAt")
+    retrieved_at: datetime = Field(alias="retrievedAt")
+    summary: str = Field(min_length=1, max_length=500)
+    relevance: str = Field(min_length=1, max_length=300)
 
 
 class DedupCandidate(BaseModel):
