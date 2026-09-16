@@ -13,7 +13,10 @@ type Project = Awaited<ReturnType<typeof window.autocut.listCopywritingProjects>
 const personas = ref<Persona[]>([]);
 const personaId = ref("");
 const model = ref("deepseek-v3");
+const hotspotMode = ref<"off" | "balanced" | "priority">("balanced");
 const topics = ref<BatchTopic[]>([]);
+const historyChecked = ref(0);
+const hotspotStatus = ref<"disabled" | "available" | "no_match" | "unavailable">("disabled");
 const selectedIds = ref<string[]>([]);
 const projects = ref<Project[]>([]);
 const mode = ref<"ai" | "custom">("ai");
@@ -48,7 +51,7 @@ async function references(topic = ""): Promise<string[]> {
 
 function context() {
   if (!persona.value) throw new Error("请先选择人设档案");
-  return toCopywritingContext(persona.value, model.value);
+  return toCopywritingContext(persona.value, model.value, hotspotMode.value);
 }
 
 async function generateTopics(): Promise<void> {
@@ -59,6 +62,8 @@ async function generateTopics(): Promise<void> {
   try {
     const result = await window.autocut.generateTopics({ ...context(), referenceScripts: await references() });
     topics.value = result.topics;
+    historyChecked.value = result.historyChecked;
+    hotspotStatus.value = result.hotspotStatus;
     selectedIds.value = [];
   } catch (error) { ElMessage.error(toUserMessage(error, "生成选题失败")); }
   finally {
@@ -80,7 +85,7 @@ async function createFromTopic(topic: BatchTopic, text: string, status: "review"
   if (!persona.value) return;
   const project = await window.autocut.createCopywritingProject({
     personaId: persona.value.id, topicId: topic.id, topicTitle: topic.description,
-    mainTitle: topic.shortTitle, text, model: model.value, status, errorMessage
+    displayTitle: topic.displayTitle, mainTitle: topic.shortTitle, text, model: model.value, status, errorMessage
   });
   projects.value = [project, ...projects.value];
 }
@@ -94,8 +99,8 @@ async function generateSelected(): Promise<void> {
   const base = toCopywritingGenerationInput(context(), persona.value.bannedWords);
   const result = await generateCopywritingBatch({
     topics: selected,
-    generate: async (topic) => window.autocut.generateCopywriting({ ...base, referenceScripts: await references(topic.description), topic: `${topic.shortTitle}：${topic.description}。开场方向：${topic.hook}`, minLength: 200, maxLength: 1000 }),
-    saveSuccess: async (topic, text) => createFromTopic(topic, text, "review", null),
+    generate: async (topic) => window.autocut.generateCopywriting({ ...base, referenceScripts: await references(topic.description), topic, minLength: 200, maxLength: 1000 }),
+    saveSuccess: async (topic, result) => createFromTopic(topic, result.text, "review", null),
     saveFailure: async (topic, error) => createFromTopic(topic, "", "failed", toUserMessage(error, "生成文案失败")),
     onProgress: (state) => { progress.value = state; }
   });
@@ -135,14 +140,16 @@ async function collect(project: Project): Promise<void> {
 }
 
 async function retry(project: Project): Promise<void> {
-  const topic = { id: project.topicId ?? project.id, shortTitle: project.mainTitle, description: project.topicTitle, hook: "" };
+  const topic = topics.value.find((item) => item.id === project.topicId) ?? localTopic(
+    project.topicId ?? project.id, project.displayTitle, project.mainTitle, project.topicTitle
+  );
   projects.value = projects.value.filter((item) => item.id !== project.id);
   selectedIds.value = [];
   batchRunning.value = true;
   try {
     const current = persona.value;
     if (!current) throw new Error("人设档案不存在");
-    const result = await window.autocut.generateCopywriting({ ...toCopywritingGenerationInput(context(), current.bannedWords), referenceScripts: await references(topic.description), topic: `${topic.shortTitle}：${topic.description}`, minLength: 200, maxLength: 1000 });
+    const result = await window.autocut.generateCopywriting({ ...toCopywritingGenerationInput(context(), current.bannedWords), referenceScripts: await references(topic.description), topic, projectId: project.id, minLength: 200, maxLength: 1000 });
     const updated = await window.autocut.updateCopywritingProject(project.id, { text: result.text, mainTitle: topic.shortTitle, status: "review", errorMessage: null });
     projects.value = [updated, ...projects.value];
   } catch (error) {
@@ -173,7 +180,10 @@ async function addCustom(): Promise<void> {
     });
     projects.value = projects.value.map((item) => item.id === updated.id ? updated : item);
   } else {
-    await createFromTopic({ id: crypto.randomUUID(), shortTitle: title, description: customTitle.value.trim() || "用户自定义口播文案", hook: "" }, customText.value, "review", null);
+    await createFromTopic(localTopic(
+      crypto.randomUUID(), customTitle.value.trim() || title, title,
+      customTitle.value.trim() || "用户自行提供的完整口播文案，不参与自动生成流程"
+    ), customText.value, "review", null);
   }
   customEditingProjectId.value = null;
   customText.value = ""; customTitle.value = "";
@@ -192,6 +202,26 @@ async function editArchived(project: Project): Promise<void> {
 
 onMounted(load);
 onUnmounted(() => { if (topicTimer) clearInterval(topicTimer); });
+
+function localTopic(id: string, displayTitle: string, shortTitle: string, description: string): BatchTopic {
+  const fullTitle = (displayTitle || shortTitle).slice(0, 22);
+  const detail = description.length >= 20 ? description : `${description}，用于说明这条内容的具体论述方向和使用场景`;
+  return {
+    id, displayTitle: fullTitle, shortTitle, description: detail,
+    hook: "这件事真正应该先看什么？",
+    identity: {
+      audience: "当前人设受众", scenario: "当前业务场景", problem: fullTitle,
+      thesis: detail, evidenceType: "已有资料", angle: "实用判断",
+      structureType: "流程揭示", hookType: "问题追问", viewerGain: "获得可执行判断方法",
+      hotspotId: null
+    },
+    hotspot: null, semanticVector: null
+  };
+}
+
+async function openSource(url: string): Promise<void> {
+  await window.autocut.openExternalUrl(url);
+}
 </script>
 
 <template>
@@ -205,11 +235,23 @@ onUnmounted(() => { if (topicTimer) clearInterval(topicTimer); });
       <div class="mode-tabs"><button :class="{active:mode==='ai'}" @click="mode='ai'">AI 自动选题</button><button :class="{active:mode==='custom'}" @click="mode='custom'">自定义文案</button></div>
 
       <template v-if="mode==='ai'">
+        <div class="hotspot-controls" data-testid="hotspot-controls">
+          <span>选题模式</span>
+          <button :class="{active:hotspotMode==='off'}" @click="hotspotMode='off'">常规</button>
+          <button :class="{active:hotspotMode==='balanced'}" @click="hotspotMode='balanced'">综合</button>
+          <button :class="{active:hotspotMode==='priority'}" @click="hotspotMode='priority'">热点优先</button>
+        </div>
         <div class="topic-header"><div><strong>选题库</strong><span>一次生成5个内容角度，可多选</span></div><div><el-button v-if="topics.length" data-action="select-all-topics" :disabled="loadingTopics" @click="toggleAllTopics">{{ selectedIds.length===topics.length?'取消全选':'全选' }}</el-button><el-button data-action="generate-topics" :loading="loadingTopics" :disabled="loadingTopics" @click="generateTopics">{{ topics.length?'换一批':'生成选题' }}</el-button></div></div>
+        <div v-if="topics.length" class="novelty-status">
+          <span>已避开本地历史 {{ historyChecked }} 条内容</span>
+          <span v-if="hotspotStatus==='available'">已核验近期来源</span>
+          <span v-else-if="hotspotStatus==='unavailable'">本次热点不可用，已使用常规选题</span>
+          <span v-else-if="hotspotStatus==='no_match'">暂无合适热点，已使用常规选题</span>
+        </div>
         <div v-if="loadingTopics" data-testid="topic-progress" class="topic-progress"><strong>AI 正在生成选题</strong><span>已等待 {{ topicElapsedSec }} 秒，请勿重复点击</span><el-progress :percentage="Math.min(92, 8 + topicElapsedSec * 3)" :show-text="false" :indeterminate="true" /></div>
         <div v-if="topics.length" class="topic-list">
           <button v-for="(topic,index) in topics" :key="topic.id" :data-topic-id="topic.id" :class="{selected:selectedIds.includes(topic.id)}" @click="toggleTopic(topic.id)">
-            <span>{{ String.fromCharCode(65+index) }}</span><div><strong>{{ topic.shortTitle }}</strong><small>{{ topic.description }}</small><em>开场：{{ topic.hook }}</em></div><b>{{ selectedIds.includes(topic.id)?'✓':'' }}</b>
+            <span>{{ String.fromCharCode(65+index) }}</span><div><strong>{{ topic.displayTitle }}</strong><small class="short-title">封面：{{ topic.shortTitle }} · 角度：{{ topic.identity.angle }}</small><small>{{ topic.description }}</small><em>开场：{{ topic.hook }}</em><a v-if="topic.hotspot" data-testid="hotspot-source" :href="topic.hotspot.sourceUrl" @click.prevent.stop="openSource(topic.hotspot.sourceUrl)">来源：{{ topic.hotspot.title }}（{{ topic.hotspot.publishedAt }}）</a></div><b>{{ selectedIds.includes(topic.id)?'✓':'' }}</b>
           </button>
         </div>
         <div v-else class="empty-topics"><p>根据当前人设生成5个不同内容角度</p><el-button type="primary" data-action="generate-topics" @click="generateTopics">生成选题</el-button></div>
@@ -239,5 +281,5 @@ onUnmounted(() => { if (topicTimer) clearInterval(topicTimer); });
 </template>
 
 <style scoped>
-.workspace{padding:26px;display:grid;gap:22px}.selectors{display:grid;grid-template-columns:260px 220px;gap:16px}.selectors label{display:grid;gap:7px;color:var(--text-muted)}.mode-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mode-tabs button{height:48px;border:1px solid var(--border);border-radius:14px;background:#fff;font-weight:700}.mode-tabs .active{color:var(--brand-yellow);background:var(--brand-black)}.topic-header,.results>header,.project-title,.project-actions,.batch-actions,.batch-progress>div{display:flex;align-items:center;justify-content:space-between;gap:12px}.topic-header span,.results header span{display:block;margin-top:4px;color:var(--text-muted);font-size:13px}.topic-progress{display:grid;gap:8px;padding:14px 18px;border-radius:14px;background:#fff8bf}.topic-progress span{font-size:13px;color:#6f6500}.topic-list{display:grid;gap:10px}.topic-list button{display:grid;grid-template-columns:34px 1fr 28px;gap:14px;align-items:center;padding:15px;border:1px solid transparent;border-radius:14px;text-align:left;background:var(--surface-muted)}.topic-list button>span{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#111}.topic-list button small,.topic-list button em{display:block;margin-top:4px;color:var(--text-muted);font-style:normal}.topic-list button em{font-size:12px}.topic-list button.selected{border-color:var(--brand-yellow);background:#171714;color:#fff}.topic-list button.selected small,.topic-list button.selected em{color:#ccc}.topic-list button.selected b{color:var(--brand-yellow)}.empty-topics{min-height:180px;display:grid;place-content:center;justify-items:center;border:1px dashed var(--border);border-radius:16px;color:var(--text-muted)}.batch-actions{justify-content:center}.batch-progress{padding:16px;border-radius:14px;background:#fff9c9}.custom-box{display:grid;gap:14px}.results{display:grid;gap:15px;padding-top:20px;border-top:1px solid var(--border)}.project-card{display:grid;gap:13px;padding:18px;border:1px solid var(--border);border-radius:16px;background:#fff}.project-card.failed{border-color:#ffb4ac;background:#fff7f6}.archived-card{background:#fafaf7}.project-title{justify-content:flex-start}.project-title .el-input{width:180px}.project-title strong{flex:1}.project-actions{justify-content:flex-end}.error,.issues{color:#b42318}.issues{padding:10px;border-radius:10px;background:#fff1ef}@media(max-width:850px){.selectors{grid-template-columns:1fr}.project-title{align-items:stretch;flex-direction:column}.project-title .el-input{width:100%}}
+.workspace{padding:26px;display:grid;gap:22px}.selectors{display:grid;grid-template-columns:260px 220px;gap:16px}.selectors label{display:grid;gap:7px;color:var(--text-muted)}.mode-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mode-tabs button{height:48px;border:1px solid var(--border);border-radius:14px;background:#fff;font-weight:700}.mode-tabs .active{color:var(--brand-yellow);background:var(--brand-black)}.hotspot-controls,.novelty-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.hotspot-controls button{padding:7px 14px;border:1px solid var(--border);border-radius:999px;background:#fff}.hotspot-controls button.active{color:#fff;background:#2f5faf;border-color:#2f5faf}.novelty-status{padding:10px 14px;border-radius:12px;background:#eef5ff;color:#31578f;font-size:13px}.topic-header,.results>header,.project-title,.project-actions,.batch-actions,.batch-progress>div{display:flex;align-items:center;justify-content:space-between;gap:12px}.topic-header span,.results header span{display:block;margin-top:4px;color:var(--text-muted);font-size:13px}.topic-progress{display:grid;gap:8px;padding:14px 18px;border-radius:14px;background:#fff8bf}.topic-progress span{font-size:13px;color:#6f6500}.topic-list{display:grid;gap:10px}.topic-list button{display:grid;grid-template-columns:34px 1fr 28px;gap:14px;align-items:center;padding:15px;border:1px solid transparent;border-radius:14px;text-align:left;background:var(--surface-muted)}.topic-list button>span{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#111}.topic-list button small,.topic-list button em,.topic-list button a{display:block;margin-top:4px;color:var(--text-muted);font-style:normal}.topic-list button a{color:#2f5faf;text-decoration:underline}.topic-list button em{font-size:12px}.topic-list button.selected{border-color:var(--brand-yellow);background:#171714;color:#fff}.topic-list button.selected small,.topic-list button.selected em{color:#ccc}.topic-list button.selected a{color:#9fc2ff}.topic-list button.selected b{color:var(--brand-yellow)}.empty-topics{min-height:180px;display:grid;place-content:center;justify-items:center;border:1px dashed var(--border);border-radius:16px;color:var(--text-muted)}.batch-actions{justify-content:center}.batch-progress{padding:16px;border-radius:14px;background:#fff9c9}.custom-box{display:grid;gap:14px}.results{display:grid;gap:15px;padding-top:20px;border-top:1px solid var(--border)}.project-card{display:grid;gap:13px;padding:18px;border:1px solid var(--border);border-radius:16px;background:#fff}.project-card.failed{border-color:#ffb4ac;background:#fff7f6}.archived-card{background:#fafaf7}.project-title{justify-content:flex-start}.project-title .el-input{width:180px}.project-title strong{flex:1}.project-actions{justify-content:flex-end}.error,.issues{color:#b42318}.issues{padding:10px;border-radius:10px;background:#fff1ef}@media(max-width:850px){.selectors{grid-template-columns:1fr}.project-title{align-items:stretch;flex-direction:column}.project-title .el-input{width:100%}}
 </style>

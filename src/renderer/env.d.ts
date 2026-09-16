@@ -7,7 +7,7 @@ type Persona = PersonaInput & {
   updatedAt: string;
 };
 type CopywritingStatus = "generating" | "failed" | "review" | "library" | "shots_ready" | "tasked" | "archived";
-type CopywritingProject = { id:string; personaId:string; topicId:string|null; topicTitle:string; mainTitle:string; text:string; model:string; status:CopywritingStatus; complianceIssues:ComplianceIssue[]; errorMessage:string|null; createdAt:string; updatedAt:string; archivedAt:string|null };
+type CopywritingProject = { id:string; personaId:string; topicId:string|null; topicTitle:string; displayTitle:string; mainTitle:string; text:string; model:string; status:CopywritingStatus; complianceIssues:ComplianceIssue[]; errorMessage:string|null; createdAt:string; updatedAt:string; archivedAt:string|null };
 type CopywritingShot = { id:string; projectId:string; index:number; copywriting:string; suggestedCategoryId:string|null; assetCategoryId:string|null; suggestionSource:"ai"|"keyword"|"default"|"manual"; suggestionConfirmed:boolean; durationMode:"voice"|"fixed"|"auto"; durationSec:number|null; muteOriginal:boolean };
 type QueueState={status:"idle"|"running"|"pause_requested"|"paused";activeTaskId:string|null;pendingCount:number};
 
@@ -136,15 +136,21 @@ declare global {
       }>;
       generateTopics(input: CopywritingContext): Promise<{
         topics: CopywritingTopic[];
+        historyChecked: number;
+        hotspotStatus: "disabled" | "available" | "no_match" | "unavailable";
       }>;
       generateCopywriting(
         input: CopywritingContext & {
           bannedWords: string[];
-          topic: string;
+          topic: CopywritingTopic;
+          projectId?: string | null;
+          recentStructures?: string[];
           minLength: number;
           maxLength: number;
         }
-      ): Promise<{ text: string }>;
+      ): Promise<{ text: string; structureType:string; hookType:string; argumentBeats:string[]; semanticVector:number[]|null }>;
+      markContentHistory(input:{personaId:string;topic:CopywritingTopic;state:"rejected"|"shown"|"selected"|"generated"|"collected"|"archived"|"published";projectId?:string}):Promise<unknown>;
+      openExternalUrl(url:string):Promise<void>;
       listCopywritingProjects(statuses?: CopywritingStatus[]): Promise<CopywritingProject[]>;
       createCopywritingProject(input: Omit<CopywritingProject,"id"|"createdAt"|"updatedAt"|"archivedAt"|"complianceIssues"|"errorMessage"> & {complianceIssues?:ComplianceIssue[];errorMessage?:string|null}): Promise<CopywritingProject>;
       updateCopywritingProject(id:string,patch:Partial<Pick<CopywritingProject,"text"|"mainTitle"|"status"|"complianceIssues"|"errorMessage">>):Promise<CopywritingProject>;
@@ -442,18 +448,26 @@ type CopyModelSettings = {
 };
 type CopywritingContext = {
   model: string;
+  personaId: string;
   personaName: string;
   industry: string;
   brandFacts: string[];
   tone: string;
   cta: string;
   referenceScripts: string[];
+  hotspotMode: "off" | "balanced" | "priority";
 };
+type ContentIdentity = { audience:string;scenario:string;problem:string;thesis:string;evidenceType:string;angle:string;structureType:string;hookType:string;viewerGain:string;hotspotId:string|null };
+type HotspotSource = { id:string;title:string;sourceUrl:string;publishedAt:string;retrievedAt:string;summary:string;relevance:string };
 type CopywritingTopic = {
   id: string;
+  displayTitle: string;
   shortTitle: string;
   description: string;
   hook: string;
+  identity: ContentIdentity;
+  hotspot: HotspotSource | null;
+  semanticVector: number[] | null;
 };
 type ComplianceIssue = {
   term: string;

@@ -1,4 +1,5 @@
 export type CopywritingPersona = {
+  id: string;
   name: string;
   industry: string;
   brandFacts: string[];
@@ -8,24 +9,29 @@ export type CopywritingPersona = {
 
 export type CopywritingContext = {
   model: string;
+  personaId: string;
   personaName: string;
   industry: string;
   brandFacts: string[];
   tone: string;
   cta: string;
+  hotspotMode: "off" | "balanced" | "priority";
 };
 
 export function toCopywritingContext(
   persona: CopywritingPersona,
-  model: string
+  model: string,
+  hotspotMode: "off" | "balanced" | "priority" = "balanced"
 ): CopywritingContext {
   return {
     model,
+    personaId: persona.id,
     personaName: persona.name,
     industry: persona.industry,
     brandFacts: [...persona.brandFacts],
     tone: persona.tone,
-    cta: persona.cta
+    cta: persona.cta,
+    hotspotMode
   };
 }
 

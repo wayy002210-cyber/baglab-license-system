@@ -401,6 +401,9 @@ contextBridge.exposeInMainWorld("autocut", {
     backendStatusSchema.parse(await ipcRenderer.invoke("backend:status")),
   getBuildId: async () =>
     z.string().parse(await ipcRenderer.invoke("app:getBuildId")),
+  openExternalUrl: async (url: unknown) => ipcRenderer.invoke(
+    "app:openExternal", z.string().url().refine((value) => value.startsWith("https://")).parse(url)
+  ),
   getLicenseStatus: async () => licenseStatusSchema.parse(await ipcRenderer.invoke("license:status")),
   activateLicense: async (activationCode: string) => licenseStatusSchema.parse(await ipcRenderer.invoke("license:activate", z.string().trim().min(12).max(128).parse(activationCode))),
   refreshLicense: async () => licenseStatusSchema.parse(await ipcRenderer.invoke("license:refresh")),

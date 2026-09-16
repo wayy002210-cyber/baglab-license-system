@@ -1,22 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { generateCopywritingBatch } from "../../src/renderer/copywriting/generate-copywriting-batch";
 
+function topic(id: string) {
+  return {
+    id, displayTitle: `这是完整选题标题${id}用于测试`, shortTitle: "工厂选题一号",
+    description: "这是面向采购人员的详细内容方向说明和可执行方法", hook: "这个问题真正应该先看什么？",
+    identity: { audience: "采购", scenario: `场景${id}`, problem: `问题${id}`, thesis: `结论${id}`,
+      evidenceType: "测试", angle: "判断", structureType: "现场演示", hookType: "问题",
+      viewerGain: "学会判断", hotspotId: null }, hotspot: null, semanticVector: null
+  };
+}
+
 describe("generateCopywritingBatch", () => {
   it("keeps successful projects when a later topic fails", async () => {
-    const topics = [
-      { id: "a", shortTitle: "工厂选题一号", description: "第一个详细内容方向说明", hook: "钩子A" },
-      { id: "b", shortTitle: "工厂选题二号", description: "第二个详细内容方向说明", hook: "钩子B" },
-      { id: "c", shortTitle: "工厂选题三号", description: "第三个详细内容方向说明", hook: "钩子C" }
-    ];
+    const topics = [topic("a"), { ...topic("b"), shortTitle: "工厂选题二号" }, { ...topic("c"), shortTitle: "工厂选题三号" }];
     const saved: string[] = [];
 
     const result = await generateCopywritingBatch({
       topics,
       generate: async (topic) => {
         if (topic.id === "b") throw new Error("额度不足");
-        return { text: `${topic.shortTitle}的完整文案` };
+        return { text: `${topic.shortTitle}的完整文案`, structureType: "现场演示", hookType: "问题", argumentBeats: [], semanticVector: null };
       },
-      saveSuccess: async (topic, text) => { saved.push(`${topic.id}:${text}`); },
+      saveSuccess: async (topic, result) => { saved.push(`${topic.id}:${result.text}`); },
       saveFailure: async () => undefined
     });
 
@@ -27,11 +33,8 @@ describe("generateCopywritingBatch", () => {
   it("reports progress after every selected topic", async () => {
     const progress: number[] = [];
     await generateCopywritingBatch({
-      topics: [
-        { id: "a", shortTitle: "工厂选题一号", description: "第一个详细内容方向说明", hook: "" },
-        { id: "b", shortTitle: "工厂选题二号", description: "第二个详细内容方向说明", hook: "" }
-      ],
-      generate: async (topic) => ({ text: topic.shortTitle }),
+      topics: [topic("a"), topic("b")],
+      generate: async (topic) => ({ text: topic.shortTitle, structureType: "现场演示", hookType: "问题", argumentBeats: [], semanticVector: null }),
       saveSuccess: async () => undefined,
       saveFailure: async () => undefined,
       onProgress: (state) => progress.push(state.completed)

@@ -11,6 +11,17 @@ const complianceIssueSchema = z
   })
   .strict();
 
+const draftContentIdentitySchema = z.object({
+  audience: z.string(), scenario: z.string(), problem: z.string(), thesis: z.string(),
+  evidenceType: z.string(), angle: z.string(), structureType: z.string(), hookType: z.string(),
+  viewerGain: z.string(), hotspotId: z.string().nullable()
+}).strict();
+
+const draftHotspotSourceSchema = z.object({
+  id: z.string(), title: z.string(), sourceUrl: z.string(), publishedAt: z.string(),
+  retrievedAt: z.string(), summary: z.string(), relevance: z.string()
+}).strict();
+
 const draftCopywritingSchema = z
   .object({
     model: z.string().min(1),
@@ -19,9 +30,13 @@ const draftCopywritingSchema = z
       z
         .object({
           id: z.string().min(1),
+          displayTitle: z.string().min(1).max(22).optional(),
           shortTitle: z.string().regex(/^[\u3400-\u9fff]{5,8}$/),
           description: z.string().min(10).max(160),
-          hook: z.string()
+          hook: z.string(),
+          identity: draftContentIdentitySchema.optional(),
+          hotspot: draftHotspotSourceSchema.nullable().optional(),
+          semanticVector: z.array(z.number()).nullable().optional()
         })
         .strict()
     ),

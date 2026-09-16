@@ -1367,6 +1367,11 @@ ipcMain.handle("diagnostics:export", async () => {
   });
   return selection.filePath;
 });
+ipcMain.handle("app:openExternal", async (_event, value: string) => {
+  const target = new URL(value);
+  if (target.protocol !== "https:") throw new Error("只允许打开 HTTPS 来源链接");
+  await shell.openExternal(target.toString());
+});
 licensedHandle("copywriting:rewrite", async (_event, payload: unknown) => {
   if (backendState.status !== "ready") {
     throw new Error("本地 AI 服务尚未就绪");
