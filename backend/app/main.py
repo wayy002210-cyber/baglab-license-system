@@ -35,6 +35,7 @@ from app.copywriting.topic_service import (
     TopicGenerationRequest,
     TopicResult,
     TopicService,
+    NovelTopicsExhausted,
 )
 from app.voice.minimax import MiniMaxAPIError, MiniMaxTTS, MiniMaxVoiceClient
 from app.voice.cloning import (
@@ -498,6 +499,15 @@ def create_app(
             )
         except BailianAPIError as error:
             raise_bailian_http(error)
+        except NovelTopicsExhausted as error:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "NOVEL_TOPICS_EXHAUSTED",
+                    "message": "当前资料下暂时无法生成五个不重复的新选题，请补充品牌事实或稍后重试",
+                    "acceptedCount": error.accepted_count,
+                },
+            ) from error
         except StructuredOutputError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 

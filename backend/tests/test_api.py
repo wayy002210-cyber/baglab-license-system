@@ -4,8 +4,36 @@ from app.main import BACKEND_BUILD_ID, create_app
 from app.media.asset_scanner import ScanResult, ScannedAsset
 from app.copywriting.service import RewriteResult
 from app.copywriting.compliance import ComplianceResult
-from app.copywriting.topic_service import CopywritingResult, TopicResult
+from app.copywriting.topic_service import (
+    CopywritingResult,
+    NovelTopicsExhausted,
+    TopicResult,
+)
 from app.copywriting.bailian import BailianAuthenticationError
+
+
+def topic_candidate(index: int) -> dict:
+    chinese = "一二三四五"
+    return {
+        "id": str(index),
+        "displayTitle": f"工厂内容方向{chinese[index]}的完整选题标题",
+        "shortTitle": f"工厂方向{chinese[index]}",
+        "description": f"面向品牌采购，在新品打样场景讲清第{index}个具体问题和可执行判断方法",
+        "hook": f"第{index}个问题，为什么不能只看表面？",
+        "identity": {
+            "audience": f"采购角色{chinese[index]}",
+            "scenario": f"业务场景{chinese[index]}",
+            "problem": f"具体问题{chinese[index]}",
+            "thesis": f"核心结论{chinese[index]}",
+            "evidenceType": f"证据类型{chinese[index]}",
+            "angle": f"内容角度{chinese[index]}",
+            "structureType": f"叙事结构{chinese[index]}",
+            "hookType": f"开场类型{chinese[index]}",
+            "viewerGain": f"获得方法{chinese[index]}",
+            "hotspotId": None,
+        },
+        "hotspot": None,
+    }
 
 
 def test_health_requires_session_token() -> None:
@@ -129,15 +157,7 @@ def test_content_creation_endpoints_use_selected_bailian_model() -> None:
             assert api_key == "bailian-secret"
             assert request.model == "deepseek-v3"
             return TopicResult(
-                topics=[
-                    {
-                        "id": str(index),
-                        "shortTitle": f"工厂选题{'一二三四五'[index]}号",
-                        "description": f"这是第{index}个选题的详细内容方向说明",
-                        "hook": f"钩子{index}",
-                    }
-                    for index in range(5)
-                ]
+                topics=[topic_candidate(index) for index in range(5)]
             )
 
         def generate_copywriting(self, *, api_key, request):
@@ -242,6 +262,45 @@ def test_topics_exposes_invalid_bailian_key_as_actionable_401() -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "BAILIAN_INVALID_KEY"
+
+
+def test_topics_reports_when_five_novel_topics_cannot_be_found() -> None:
+    class ContentCreation:
+        def generate_topics(self, *, api_key, request):
+            raise NovelTopicsExhausted(accepted_count=3)
+
+        def generate_copywriting(self, *, api_key, request):
+            raise AssertionError("not called")
+
+        def check_compliance(self, request):
+            raise AssertionError("not called")
+
+    client = TestClient(
+        create_app(
+            session_token="secret",
+            content_creation_service=ContentCreation(),
+        )
+    )
+    response = client.post(
+        "/copywriting/topics",
+        headers={
+            "X-Autocut-Token": "secret",
+            "X-Bailian-Key": "valid-key",
+        },
+        json={
+            "model": "deepseek-v3",
+            "personaName": "袋研官",
+            "industry": "帆布袋",
+            "hotspotMode": "off",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "NOVEL_TOPICS_EXHAUSTED",
+        "message": "当前资料下暂时无法生成五个不重复的新选题，请补充品牌事实或稍后重试",
+        "acceptedCount": 3,
+    }
 
 
 def test_bailian_connection_uses_selected_model() -> None:

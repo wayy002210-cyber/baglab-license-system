@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import json
-from typing import Protocol
+from datetime import UTC, datetime
+from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from app.copywriting.bailian import BailianAPIError
 from app.copywriting.compliance import ComplianceChecker, ComplianceRequest, ComplianceResult
+from app.copywriting.content_identity import (
+    ContentHistoryItem,
+    ContentIdentity,
+    DedupCandidate,
+    HotspotSource,
+)
+from app.copywriting.dedup import ContentDeduplicator, lexical_similarity
+from app.copywriting.hotspots import HotspotMode, HotspotProvider
 from app.copywriting.service import StructuredOutputError, _extract_json
 from app.copywriting.spoken_copy import clean_spoken_copy
 
@@ -14,59 +24,51 @@ class ChatCompletion(Protocol):
     def complete(self, *, api_key: str, model: str, prompt: str) -> str: ...
 
 
-class TopicCandidate(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+class EmbeddingChat(Protocol):
+    def embed(
+        self, *, api_key: str, texts: list[str], model: str = "text-embedding-v3",
+        dimensions: int = 256,
+    ) -> list[list[float]]: ...
 
-    id: str = Field(min_length=1)
+
+class TopicCandidate(DedupCandidate):
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
+    display_title: str = Field(alias="displayTitle", min_length=10, max_length=22)
     short_title: str = Field(
         alias="shortTitle", min_length=5, max_length=8,
         pattern=r"^[\u3400-\u9fff]+$",
     )
-    description: str = Field(min_length=10, max_length=160)
-    hook: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=20, max_length=160)
+    hook: str = Field(min_length=4, max_length=120)
+    hotspot: HotspotSource | None = None
+
+
+class TopicCandidateBatch(BaseModel):
+    topics: list[TopicCandidate] = Field(min_length=1, max_length=15)
 
 
 class TopicResult(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     topics: list[TopicCandidate] = Field(min_length=5, max_length=5)
+    history_checked: int = Field(default=0, alias="historyChecked", ge=0)
+    hotspot_status: Literal["disabled", "available", "no_match", "unavailable"] = Field(
+        default="disabled", alias="hotspotStatus"
+    )
 
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_provider_topics(cls, value):
-        if not isinstance(value, dict) or not isinstance(value.get("topics"), list):
-            return value
-        normalized = []
-        seen_titles: set[str] = set()
-        for index, item in enumerate(value["topics"]):
-            if not isinstance(item, dict):
-                continue
-            short_title = str(item.get("shortTitle", "")).strip()
-            description = str(item.get("description", "")).strip()
-            hook = str(item.get("hook", "")).strip()
-            if not short_title or not description or not hook or short_title in seen_titles:
-                continue
-            seen_titles.add(short_title)
-            normalized.append({
-                "id": str(item.get("id") or index + 1),
-                "shortTitle": short_title[:8],
-                "description": description[:160],
-                "hook": hook[:120],
-            })
-            if len(normalized) == 5:
-                break
-        return {**value, "topics": normalized}
 
-    @model_validator(mode="after")
-    def require_unique_topics(self) -> "TopicResult":
-        titles = [topic.short_title.strip() for topic in self.topics]
-        if len(set(titles)) != 5:
-            raise ValueError("topic titles must be unique")
-        return self
+class NovelTopicsExhausted(RuntimeError):
+    def __init__(self, accepted_count: int) -> None:
+        super().__init__("not enough novel topics after three attempts")
+        self.accepted_count = accepted_count
 
 
 class TopicGenerationRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     model: str = Field(min_length=1)
+    persona_id: str = Field(default="", alias="personaId")
     persona_name: str = Field(alias="personaName", min_length=1)
     industry: str = ""
     brand_facts: list[str] = Field(default_factory=list, alias="brandFacts")
@@ -75,6 +77,8 @@ class TopicGenerationRequest(BaseModel):
     reference_scripts: list[str] = Field(
         default_factory=list, alias="referenceScripts", max_length=5
     )
+    history: list[ContentHistoryItem] = Field(default_factory=list, max_length=500)
+    hotspot_mode: HotspotMode = Field(default="balanced", alias="hotspotMode")
 
 
 class CopywritingGenerationRequest(TopicGenerationRequest):
@@ -110,8 +114,15 @@ def _persona_context(request: TopicGenerationRequest) -> str:
 
 
 class TopicService:
-    def __init__(self, chat: ChatCompletion) -> None:
+    def __init__(
+        self,
+        chat: ChatCompletion,
+        hotspot_provider: HotspotProvider | None = None,
+    ) -> None:
         self.chat = chat
+        self.hotspot_provider = hotspot_provider
+        if self.hotspot_provider is None and hasattr(chat, "search"):
+            self.hotspot_provider = HotspotProvider(cast(object, chat))
 
     def _structured(
         self, *, api_key: str, model: str, prompt: str, schema, post_validate=None
@@ -145,20 +156,198 @@ class TopicService:
     def generate_topics(
         self, *, api_key: str, request: TopicGenerationRequest
     ) -> TopicResult:
-        prompt = f"""你是抖音和视频号口播选题策划。根据以下资料生成恰好 5 个角度明显不同、可直接发展成口播稿的选题：
-{_persona_context(request)}
+        now = datetime.now(UTC)
+        hotspots = self._hotspots(api_key=api_key, request=request, now=now)
+        hotspot_status = self._hotspot_status(request, hotspots)
+        accepted: list[TopicCandidate] = []
+        deduplicator = ContentDeduplicator(now=now)
+        for attempt in range(3):
+            prompt = self._topic_prompt(
+                request=request,
+                hotspots=hotspots,
+                accepted=accepted,
+                missing=5 - len(accepted),
+                refill=attempt > 0,
+            )
+            batch = self._structured(
+                api_key=api_key,
+                model=request.model,
+                prompt=prompt,
+                schema=TopicCandidateBatch,
+            )
+            candidates = self._attach_embeddings(
+                api_key=api_key, candidates=batch.topics
+            )
+            comparison_history = list(request.history) + [
+                self._as_history(item, now) for item in accepted
+            ]
+            for candidate in candidates:
+                candidate = self._trusted_hotspot(candidate, hotspots)
+                decision = deduplicator.evaluate(candidate, comparison_history)
+                if decision.duplicate or decision.needs_judgment:
+                    continue
+                accepted.append(candidate)
+                comparison_history.append(self._as_history(candidate, now))
+            if len(accepted) >= 5:
+                selected = self._select_diverse(accepted, 5)
+                return TopicResult(
+                    topics=selected,
+                    historyChecked=len(request.history),
+                    hotspotStatus=hotspot_status,
+                )
+        raise NovelTopicsExhausted(len(accepted))
+
+    def _hotspots(
+        self, *, api_key: str, request: TopicGenerationRequest, now: datetime
+    ) -> list[HotspotSource]:
+        if request.hotspot_mode == "off" or self.hotspot_provider is None:
+            return []
+        return self.hotspot_provider.get(
+            api_key=api_key,
+            model=request.model,
+            industry=request.industry,
+            now=now,
+            mode=request.hotspot_mode,
+        )
+
+    def _hotspot_status(
+        self, request: TopicGenerationRequest, hotspots: list[HotspotSource]
+    ) -> Literal["disabled", "available", "no_match", "unavailable"]:
+        if request.hotspot_mode == "off":
+            return "disabled"
+        if hotspots:
+            return "available"
+        return "unavailable" if self.hotspot_provider is None else "no_match"
+
+    def _topic_prompt(
+        self,
+        *,
+        request: TopicGenerationRequest,
+        hotspots: list[HotspotSource],
+        accepted: list[TopicCandidate],
+        missing: int,
+        refill: bool,
+    ) -> str:
+        history = [
+            {
+                "displayTitle": item.display_title,
+                "shortTitle": item.short_title,
+                "hook": item.hook,
+                "identity": item.identity.model_dump(by_alias=True),
+            }
+            for item in request.history[-200:]
+        ]
+        accepted_identities = [
+            item.identity.model_dump(by_alias=True) for item in accepted
+        ]
+        hotspot_data = [item.model_dump(by_alias=True, mode="json") for item in hotspots]
+        task = (
+            f"上一轮已有 {len(accepted)} 个合格方向。只补充还缺少的{missing}个，"
+            "不得重复已接受方向，并优先填补尚未覆盖的受众、场景、证据和结构。"
+            if refill else
+            "先生成12到15个候选蓝图，系统会从中筛选五个。候选之间必须有实质内容差异。"
+        )
+        return f"""你是短视频内容规划器。{task}
+人设资料：{_persona_context(request)}
+历史禁重复摘要：{json.dumps(history, ensure_ascii=False)}
+本轮已接受内容身份：{json.dumps(accepted_identities, ensure_ascii=False)}
+可使用的近期来源资料：{json.dumps(hotspot_data, ensure_ascii=False)}
 
 要求：
-1. 不虚构资料之外的事实、数据、客户案例或承诺。
-2. shortTitle 必须是 5–8 个纯中文字符，用于视频标题和文件名。
-3. description 用 20–80 字说明这条视频具体讲什么和论述方向。
-4. hook 是可以直接开口讲的第一句话方向，不写动作或镜头提示。
-5. 五个选题不得只是同义改写。
-6. 只输出 JSON，不要 Markdown。
-格式：{{"topics":[{{"id":"a","shortTitle":"同行低价真相","description":"解释低价竞争背后的质量代价","hook":"便宜一定真的省钱吗"}}]}}"""
-        return self._structured(
-            api_key=api_key, model=request.model, prompt=prompt, schema=TopicResult
+1. displayTitle 为10到22字的完整选题标题；shortTitle 为5到8个纯中文字符的封面短标题。
+2. description 为20到80字，必须说明受众、场景、具体问题和论述方向。
+3. hook 是可直接朗读的第一句话，不写动作、镜头或舞台提示。
+4. identity 必须完整填写 audience、scenario、problem、thesis、evidenceType、angle、structureType、hookType、viewerGain、hotspotId。
+5. 不得虚构品牌事实、客户案例、数据、排名、热搜、政策或承诺。
+6. 只有引用“可使用的近期来源资料”时才能填写 hotspot，并且链接、日期与来源必须原样保留。
+7. 不使用固定的避坑、标准、坚持、玄机五类套路，不进行同义改写。
+8. 只输出JSON，不要Markdown。
+JSON结构：{{"topics":[{{"id":"候选标识","displayTitle":"完整内容标题","shortTitle":"封面短标题","description":"具体论述方向","hook":"直接开口的一句话","identity":{{"audience":"目标受众","scenario":"具体场景","problem":"具体问题","thesis":"核心结论","evidenceType":"证据类型","angle":"切入角度","structureType":"叙事结构","hookType":"开场类型","viewerGain":"观众所得","hotspotId":null}},"hotspot":null}}]}}"""
+
+    def _attach_embeddings(
+        self, *, api_key: str, candidates: list[TopicCandidate]
+    ) -> list[TopicCandidate]:
+        if not candidates or not hasattr(self.chat, "embed"):
+            return candidates
+        texts = [
+            "|".join((
+                item.display_title,
+                item.description,
+                item.hook,
+                item.identity.problem,
+                item.identity.thesis,
+            ))
+            for item in candidates
+        ]
+        try:
+            vectors = cast(EmbeddingChat, self.chat).embed(
+                api_key=api_key, texts=texts, dimensions=256
+            )
+        except BailianAPIError:
+            return candidates
+        return [
+            item.model_copy(update={"semantic_vector": vector})
+            for item, vector in zip(candidates, vectors, strict=True)
+        ]
+
+    @staticmethod
+    def _trusted_hotspot(
+        candidate: TopicCandidate, hotspots: list[HotspotSource]
+    ) -> TopicCandidate:
+        if candidate.hotspot is None:
+            return candidate
+        trusted = next(
+            (item for item in hotspots if item.id == candidate.hotspot.id
+             and item.source_url == candidate.hotspot.source_url),
+            None,
         )
+        if trusted is not None:
+            return candidate.model_copy(update={"hotspot": trusted})
+        identity = candidate.identity.model_copy(update={"hotspot_id": None})
+        return candidate.model_copy(update={"hotspot": None, "identity": identity})
+
+    @staticmethod
+    def _as_history(candidate: TopicCandidate, now: datetime) -> ContentHistoryItem:
+        return ContentHistoryItem(
+            id=f"batch:{candidate.id}",
+            contentType="topic",
+            lifecycleState="shown",
+            displayTitle=candidate.display_title,
+            shortTitle=candidate.short_title,
+            description=candidate.description,
+            hook=candidate.hook,
+            contentText="",
+            identity=candidate.identity,
+            semanticVector=candidate.semantic_vector,
+            lastUsedAt=now,
+        )
+
+    @staticmethod
+    def _select_diverse(candidates: list[TopicCandidate], limit: int) -> list[TopicCandidate]:
+        selected: list[TopicCandidate] = []
+        remaining = list(candidates)
+        while remaining and len(selected) < limit:
+            if not selected:
+                selected.append(remaining.pop(0))
+                continue
+            def diversity_score(item: TopicCandidate) -> tuple[float, int, int]:
+                similarity = max(
+                    lexical_similarity(item.identity.thesis, prior.identity.thesis)
+                    for prior in selected
+                )
+                new_structure = int(all(
+                    item.identity.structure_type != prior.identity.structure_type
+                    for prior in selected
+                ))
+                new_audience = int(all(
+                    item.identity.audience != prior.identity.audience
+                    for prior in selected
+                ))
+                return (1.0 - similarity, new_structure, new_audience)
+            best = max(remaining, key=diversity_score)
+            remaining.remove(best)
+            selected.append(best)
+        return selected
 
     def generate_copywriting(
         self, *, api_key: str, request: CopywritingGenerationRequest
