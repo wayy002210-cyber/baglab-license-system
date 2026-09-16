@@ -6,6 +6,7 @@ from app.copywriting.service import RewriteResult
 from app.copywriting.compliance import ComplianceResult
 from app.copywriting.topic_service import (
     CopywritingResult,
+    DuplicateScriptExhausted,
     NovelTopicsExhausted,
     TopicResult,
 )
@@ -301,6 +302,43 @@ def test_topics_reports_when_five_novel_topics_cannot_be_found() -> None:
         "message": "当前资料下暂时无法生成五个不重复的新选题，请补充品牌事实或稍后重试",
         "acceptedCount": 3,
     }
+
+
+def test_copywriting_reports_when_script_remains_repetitive() -> None:
+    class ContentCreation:
+        def generate_topics(self, *, api_key, request):
+            raise AssertionError("not called")
+
+        def generate_copywriting(self, *, api_key, request):
+            raise DuplicateScriptExhausted(["OPENING_DUPLICATE"])
+
+        def check_compliance(self, request):
+            raise AssertionError("not called")
+
+    client = TestClient(
+        create_app(
+            session_token="secret",
+            content_creation_service=ContentCreation(),
+        )
+    )
+    response = client.post(
+        "/copywriting/generate",
+        headers={
+            "X-Autocut-Token": "secret",
+            "X-Bailian-Key": "valid-key",
+        },
+        json={
+            "model": "deepseek-v3",
+            "personaName": "袋研官",
+            "topic": "定制预算安排",
+            "minLength": 200,
+            "maxLength": 1000,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "DUPLICATE_SCRIPT_EXHAUSTED"
+    assert response.json()["detail"]["reasonCodes"] == ["OPENING_DUPLICATE"]
 
 
 def test_bailian_connection_uses_selected_model() -> None:

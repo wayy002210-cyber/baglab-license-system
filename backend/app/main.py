@@ -32,6 +32,7 @@ from app.copywriting.topic_service import (
     ContentCreationService,
     CopywritingGenerationRequest,
     CopywritingResult,
+    DuplicateScriptExhausted,
     TopicGenerationRequest,
     TopicResult,
     TopicService,
@@ -528,6 +529,15 @@ def create_app(
             )
         except BailianAPIError as error:
             raise_bailian_http(error)
+        except DuplicateScriptExhausted as error:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "DUPLICATE_SCRIPT_EXHAUSTED",
+                    "message": "连续生成的文案仍与历史内容重复，请更换选题角度或补充新资料",
+                    "reasonCodes": error.reason_codes,
+                },
+            ) from error
         except StructuredOutputError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 

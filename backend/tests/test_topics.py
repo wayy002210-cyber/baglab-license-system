@@ -217,6 +217,73 @@ def test_generate_copywriting_does_not_discard_draft_when_banned_word_repairs_fa
     assert len(chat.calls) == 3
 
 
+def test_generation_switches_structure_on_duplicate_retry() -> None:
+    old_text = "\n".join([
+        "预算不多时，先别急着压低所有配置。",
+        "很多人会把面料和车线一起降级。",
+        "结果活动没结束，袋子已经开线。",
+        "先确认装什么，再确定承重要求。",
+        "然后检查车线和提手。",
+    ]) + ("稳" * 170)
+    duplicate = {
+        "text": old_text,
+        "structureType": "正反对比",
+        "hookType": "反常识",
+        "argumentBeats": ["确认装什么", "确定承重要求", "检查车线和提手"],
+    }
+    distinct_text = "\n".join([
+        "把样袋装满六瓶水，先提起来走一圈。",
+        "提手哪里变形，就把位置拍下来。",
+        "换一组车线，再做同样的动作。",
+        "两次结果放在一起，差别一眼就能看懂。",
+    ]) + ("牢" * 170)
+    distinct = {
+        "text": distinct_text,
+        "structureType": "现场演示",
+        "hookType": "现场动作",
+        "argumentBeats": ["装水测试", "记录变形位置", "对比不同车线"],
+    }
+    import json
+
+    chat = FixtureChat([
+        json.dumps(duplicate, ensure_ascii=False),
+        json.dumps(distinct, ensure_ascii=False),
+    ])
+    history = {
+        "id": "script-old", "contentType": "script", "lifecycleState": "generated",
+        "displayTitle": "预算有限时袋子哪里不能省", "shortTitle": "预算先保哪里",
+        "description": "", "hook": "预算不多时，先别急着压低所有配置。",
+        "contentText": old_text,
+        "identity": candidate_json(
+            "topic", "预算有限时袋子哪里不能省", "预算先保哪里",
+            audience="品牌采购", scenario="活动礼赠", problem="预算有限如何取舍",
+            thesis="预算有限时先保证承重结构", evidence="工艺对比", angle="预算分配",
+            structure="正反对比", hook_type="反常识",
+        )["identity"],
+        "semanticVector": None, "lastUsedAt": "2026-09-15T00:00:00Z",
+    }
+    topic = candidate_json(
+        "topic", "预算有限时袋子哪里不能省", "预算先保哪里",
+        audience="品牌采购", scenario="活动礼赠", problem="预算有限如何取舍",
+        thesis="预算有限时先保证承重结构", evidence="工艺对比", angle="预算分配",
+        structure="正反对比", hook_type="反常识",
+    )
+
+    result = TopicService(chat).generate_copywriting(
+        api_key="secret",
+        request=CopywritingGenerationRequest.model_validate({
+            "model": "deepseek-v3", "personaId": "p1", "personaName": "袋研官",
+            "industry": "帆布袋", "hotspotMode": "off", "topic": topic,
+            "history": [history], "recentStructures": ["正反对比"],
+            "minLength": 200, "maxLength": 1000,
+        }),
+    )
+
+    assert result.structure_type == "现场演示"
+    assert len(chat.calls) == 2
+    assert "改用不同结构" in chat.calls[1][1]
+
+
 def test_topic_planner_filters_history_and_refills_only_missing_slots() -> None:
     duplicate = candidate_json(
         "dup", "预算有限时袋子哪里不能省", "预算先保哪里",

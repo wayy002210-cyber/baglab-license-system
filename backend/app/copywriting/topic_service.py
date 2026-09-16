@@ -16,6 +16,7 @@ from app.copywriting.content_identity import (
 )
 from app.copywriting.dedup import ContentDeduplicator, lexical_similarity
 from app.copywriting.hotspots import HotspotMode, HotspotProvider
+from app.copywriting.script_review import ScriptDraft, ScriptReviewer
 from app.copywriting.service import StructuredOutputError, _extract_json
 from app.copywriting.spoken_copy import clean_spoken_copy
 
@@ -83,7 +84,10 @@ class TopicGenerationRequest(BaseModel):
 
 class CopywritingGenerationRequest(TopicGenerationRequest):
     banned_words: list[str] = Field(default_factory=list, alias="bannedWords")
-    topic: str = Field(min_length=1)
+    topic: TopicCandidate | str
+    recent_structures: list[str] = Field(
+        default_factory=list, alias="recentStructures", max_length=50
+    )
     min_length: int = Field(default=200, alias="minLength", ge=50, le=1000)
     max_length: int = Field(default=1000, alias="maxLength", ge=200, le=2000)
 
@@ -94,8 +98,14 @@ class CopywritingGenerationRequest(TopicGenerationRequest):
         return self
 
 
-class CopywritingResult(BaseModel):
-    text: str = Field(min_length=1)
+class CopywritingResult(ScriptDraft):
+    semantic_vector: list[float] | None = Field(default=None, alias="semanticVector")
+
+
+class DuplicateScriptExhausted(RuntimeError):
+    def __init__(self, reason_codes: list[str]) -> None:
+        super().__init__("script remained repetitive after three attempts")
+        self.reason_codes = reason_codes
 
 
 class RecoverableCopywritingWarning(ValueError):
@@ -114,6 +124,10 @@ def _persona_context(request: TopicGenerationRequest) -> str:
 
 
 class TopicService:
+    STRUCTURE_POOL = (
+        "现场演示", "决策复盘", "层层问答", "成本计算", "误区拆解", "流程揭示",
+        "正反对比", "清单筛选", "案例推演", "时间倒推", "实验验证", "场景故事",
+    )
     def __init__(
         self,
         chat: ChatCompletion,
@@ -352,12 +366,16 @@ JSON结构：{{"topics":[{{"id":"候选标识","displayTitle":"完整内容标�
     def generate_copywriting(
         self, *, api_key: str, request: CopywritingGenerationRequest
     ) -> CopywritingResult:
+        topic = self._script_topic(request.topic)
+        structure = self._choose_structure(request)
         prompt = f"""你是短视频口播文案编辑。
 资料：{_persona_context(request)}
-选题：{request.topic}
+选题：{json.dumps(topic, ensure_ascii=False)}
+本次指定叙事结构：{structure}
 禁用词：{json.dumps(request.banned_words, ensure_ascii=False)}
 
-写一篇 {request.min_length} 到 {request.max_length} 字的中文口播稿。全文必须是本人可直接朗读的自述或对观众说话，不写括号动作、舞台提示、镜头说明、旁白标签或表演指令。每句单独回车换行，每行正文控制在10到25个汉字，并以逗号、句号、问号或感叹号等中文标点结尾。短句、口语化、强开场、价值明确、行动引导克制；不得虚构明确事实，不得出现禁用词。只输出 JSON：{{"text":"完整口播稿"}}"""
+写一篇 {request.min_length} 到 {request.max_length} 字的中文口播稿。全文必须是本人可直接朗读的自述或对观众说话，不写括号动作、舞台提示、镜头说明、旁白标签或表演指令。每句单独回车换行，每行正文控制在10到25个汉字，并以逗号、句号、问号或感叹号等中文标点结尾。短句、口语化、强开场、价值明确、行动引导克制；不得虚构明确事实，不得出现禁用词。
+只输出 JSON：{{"text":"完整口播稿","structureType":"{structure}","hookType":"实际使用的开场类型","argumentBeats":["论点一","论点二","论点三"]}}"""
 
         def validate_copywriting(result: CopywritingResult) -> None:
             result.text = clean_spoken_copy(result.text)
@@ -375,10 +393,68 @@ JSON结构：{{"topics":[{{"id":"候选标识","displayTitle":"完整内容标�
                     "copywriting contains banned words: " + ", ".join(matched_words[:10])
                 )
 
-        return self._structured(
-            api_key=api_key, model=request.model, prompt=prompt,
-            schema=CopywritingResult, post_validate=validate_copywriting,
+        current_prompt = prompt
+        reviewer = ScriptReviewer()
+        last_reasons: list[str] = []
+        for attempt in range(3):
+            result = self._structured(
+                api_key=api_key, model=request.model, prompt=current_prompt,
+                schema=CopywritingResult, post_validate=validate_copywriting,
+            )
+            if not result.structure_type:
+                result = result.model_copy(update={"structure_type": structure})
+            if not result.hook_type and isinstance(request.topic, TopicCandidate):
+                result = result.model_copy(
+                    update={"hook_type": request.topic.identity.hook_type}
+                )
+            review = reviewer.review(result, request.history)
+            if review.accepted:
+                return self._attach_script_embedding(api_key=api_key, result=result)
+            last_reasons = review.reason_codes
+            if attempt < 2:
+                current_prompt = (
+                    f"{prompt}\n\n上一版与历史内容重复，不能沿用原句或原论证顺序。"
+                    f"{review.rewrite_instruction}"
+                    f"\n重复代码：{json.dumps(last_reasons, ensure_ascii=False)}"
+                )
+        raise DuplicateScriptExhausted(last_reasons)
+
+    @staticmethod
+    def _script_topic(topic: TopicCandidate | str) -> dict | str:
+        if isinstance(topic, TopicCandidate):
+            return topic.model_dump(by_alias=True, mode="json", exclude={"semantic_vector"})
+        return topic
+
+    def _choose_structure(self, request: CopywritingGenerationRequest) -> str:
+        used = set(request.recent_structures)
+        used.update(
+            item.identity.structure_type
+            for item in request.history
+            if item.content_type == "script"
         )
+        if isinstance(request.topic, TopicCandidate):
+            preferred = request.topic.identity.structure_type
+            if preferred not in used:
+                return preferred
+        return next(
+            (structure for structure in self.STRUCTURE_POOL if structure not in used),
+            self.STRUCTURE_POOL[0],
+        )
+
+    def _attach_script_embedding(
+        self, *, api_key: str, result: CopywritingResult
+    ) -> CopywritingResult:
+        if not hasattr(self.chat, "embed"):
+            return result
+        try:
+            vectors = cast(EmbeddingChat, self.chat).embed(
+                api_key=api_key, texts=[result.text], dimensions=256
+            )
+        except BailianAPIError:
+            return result
+        if not vectors:
+            return result
+        return result.model_copy(update={"semantic_vector": vectors[0]})
 
 
 class ContentCreationService:
