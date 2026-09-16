@@ -222,6 +222,7 @@ CREATE TABLE IF NOT EXISTS copywriting_projects (
   persona_id TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
   topic_id TEXT,
   topic_title TEXT NOT NULL DEFAULT '',
+  display_title TEXT NOT NULL DEFAULT '',
   main_title TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL DEFAULT '',
   model TEXT NOT NULL,
@@ -236,6 +237,31 @@ CREATE TABLE IF NOT EXISTS copywriting_projects (
 
 CREATE INDEX IF NOT EXISTS copywriting_projects_status_idx
   ON copywriting_projects(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS content_history (
+  id TEXT PRIMARY KEY,
+  persona_id TEXT NOT NULL,
+  content_type TEXT NOT NULL CHECK(content_type IN ('topic', 'script')),
+  lifecycle_state TEXT NOT NULL,
+  project_id TEXT,
+  display_title TEXT NOT NULL DEFAULT '',
+  short_title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  hook TEXT NOT NULL DEFAULT '',
+  content_text TEXT NOT NULL DEFAULT '',
+  identity_json TEXT NOT NULL DEFAULT '{}',
+  structure_type TEXT NOT NULL DEFAULT '',
+  hotspot_json TEXT,
+  normalized_hash TEXT NOT NULL,
+  lexical_signature_json TEXT NOT NULL DEFAULT '{}',
+  semantic_vector_json TEXT,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT NOT NULL,
+  UNIQUE(persona_id, content_type, normalized_hash)
+);
+
+CREATE INDEX IF NOT EXISTS content_history_persona_idx
+  ON content_history(persona_id, content_type, last_used_at DESC);
 
 CREATE TABLE IF NOT EXISTS copywriting_shots (
   id TEXT PRIMARY KEY,
@@ -285,6 +311,9 @@ export function applyMigrations(database: Database.Database): void {
     const projectColumns = database.prepare("PRAGMA table_info(copywriting_projects)").all() as Array<{ name: string }>;
     if (!projectColumns.some((column) => column.name === "source_project_id")) {
       database.exec("ALTER TABLE copywriting_projects ADD COLUMN source_project_id TEXT");
+    }
+    if (!projectColumns.some((column) => column.name === "display_title")) {
+      database.exec("ALTER TABLE copywriting_projects ADD COLUMN display_title TEXT NOT NULL DEFAULT ''");
     }
     const accountColumns = database.prepare("PRAGMA table_info(publish_accounts)").all() as Array<{ name: string }>;
     if (!accountColumns.some((column) => column.name === "positioning")) {
@@ -351,6 +380,9 @@ export function applyMigrations(database: Database.Database): void {
     ).run(new Date().toISOString());
     database.prepare(
       `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (7, ?)`
+    ).run(new Date().toISOString());
+    database.prepare(
+      `INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (8, ?)`
     ).run(new Date().toISOString());
     database.prepare(
       `INSERT OR IGNORE INTO queue_state(id, status, active_task_id, updated_at)
