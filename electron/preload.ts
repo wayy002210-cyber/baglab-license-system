@@ -324,23 +324,42 @@ const referenceScriptSchema = referenceScriptInputSchema.extend({
 });
 const contentContextSchema = z.object({
   model: z.string().trim().min(1),
+  personaId: z.string().trim().min(1),
   personaName: z.string().trim().min(1),
   industry: z.string(),
   brandFacts: z.array(z.string()),
   tone: z.string(),
   cta: z.string(),
-  referenceScripts: z.array(z.string()).max(5)
+  referenceScripts: z.array(z.string()).max(5),
+  hotspotMode: z.enum(["off", "balanced", "priority"]).default("balanced")
+});
+const contentIdentitySchema = z.object({
+  audience: z.string().min(1), scenario: z.string().min(1), problem: z.string().min(1),
+  thesis: z.string().min(1), evidenceType: z.string().min(1), angle: z.string().min(1),
+  structureType: z.string().min(1), hookType: z.string().min(1),
+  viewerGain: z.string().min(1), hotspotId: z.string().nullable()
+});
+const hotspotSourceSchema = z.object({
+  id: z.string().min(1), title: z.string().min(1), sourceUrl: z.string().url(),
+  publishedAt: z.string(), retrievedAt: z.string(), summary: z.string().min(1),
+  relevance: z.string().min(1)
 });
 const topicSchema = z.object({
   id: z.string().min(1),
+  displayTitle: z.string().min(10).max(22),
   shortTitle: z.string().regex(/^[\u3400-\u9fff]{5,8}$/),
-  description: z.string().min(10).max(160),
-  hook: z.string().min(1)
+  description: z.string().min(20).max(160),
+  hook: z.string().min(4),
+  identity: contentIdentitySchema,
+  hotspot: hotspotSourceSchema.nullable(),
+  semanticVector: z.array(z.number().finite()).nullable()
 });
 const topicRequestSchema = contentContextSchema;
 const generateCopywritingRequestSchema = contentContextSchema.extend({
   bannedWords: z.array(z.string()),
-  topic: z.string().trim().min(1),
+  topic: topicSchema,
+  projectId: z.string().uuid().nullable().optional(),
+  recentStructures: z.array(z.string().min(1)).max(50).optional(),
   minLength: z.number().int().min(50).max(1000),
   maxLength: z.number().int().min(200).max(2000)
 });
@@ -359,12 +378,12 @@ const complianceRequestSchema = z.object({
 const copywritingStatusSchema = z.enum(["generating", "failed", "review", "library", "shots_ready", "tasked", "archived"]);
 const copywritingProjectSchema = z.object({
   id: z.string().uuid(), personaId: z.string().min(1), topicId: z.string().nullable(),
-  topicTitle: z.string(), mainTitle: z.string(), text: z.string(), model: z.string(),
+  topicTitle: z.string(), displayTitle: z.string(), mainTitle: z.string(), text: z.string(), model: z.string(),
   status: copywritingStatusSchema, complianceIssues: z.array(z.unknown()),
   errorMessage: z.string().nullable(), createdAt: z.string(), updatedAt: z.string(), archivedAt: z.string().nullable()
 });
 const copywritingProjectInputSchema = copywritingProjectSchema.pick({
-  personaId: true, topicId: true, topicTitle: true, mainTitle: true, text: true, model: true, status: true
+  personaId: true, topicId: true, topicTitle: true, displayTitle: true, mainTitle: true, text: true, model: true, status: true
 }).extend({ complianceIssues: z.array(z.unknown()).optional(), errorMessage: z.string().nullable().optional() });
 const copywritingProjectPatchSchema = copywritingProjectSchema.pick({
   text: true, mainTitle: true, status: true, complianceIssues: true, errorMessage: true
@@ -553,7 +572,11 @@ contextBridge.exposeInMainWorld("autocut", {
       ),
   generateTopics: async (input: unknown) =>
     z
-      .object({ topics: z.array(topicSchema).length(5) })
+      .object({
+        topics: z.array(topicSchema).length(5),
+        historyChecked: z.number().int().nonnegative(),
+        hotspotStatus: z.enum(["disabled", "available", "no_match", "unavailable"])
+      })
       .parse(
         await ipcRenderer.invoke(
           "copywriting:topics",
@@ -562,13 +585,23 @@ contextBridge.exposeInMainWorld("autocut", {
       ),
   generateCopywriting: async (input: unknown) =>
     z
-      .object({ text: z.string().min(1) })
+      .object({
+        text: z.string().min(1), structureType: z.string(), hookType: z.string(),
+        argumentBeats: z.array(z.string()), semanticVector: z.array(z.number().finite()).nullable()
+      })
       .parse(
         await ipcRenderer.invoke(
           "copywriting:generate",
           generateCopywritingRequestSchema.parse(input)
         )
       ),
+  markContentHistory: async (input: unknown) => z.unknown().parse(
+    await ipcRenderer.invoke("copywriting:markHistory", z.object({
+      personaId: z.string().min(1), topic: topicSchema,
+      state: z.enum(["rejected", "shown", "selected", "generated", "collected", "archived", "published"]),
+      projectId: z.string().uuid().optional()
+    }).parse(input))
+  ),
   listCopywritingProjects: async (statuses?: unknown) => z.array(copywritingProjectSchema).parse(
     await ipcRenderer.invoke("copywritingProjects:list", z.array(copywritingStatusSchema).optional().parse(statuses))
   ),

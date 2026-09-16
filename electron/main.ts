@@ -81,6 +81,14 @@ import {
 } from "./repositories/copywriting-project-repository.js";
 import { GenerationQueue } from "./services/generation-queue.js";
 import { createProjectTasks } from "./services/copywriting-task-service.js";
+import { ContentHistoryRepository } from "./repositories/content-history-repository.js";
+import {
+  ContentGenerationOrchestrator,
+  type CopywritingGenerationPayload,
+  type CopywritingGenerationResult,
+  type TopicGenerationPayload,
+  type TopicGenerationResult
+} from "./services/content-generation-orchestrator.js";
 import { defaultSubtitleStyle,defaultTitleStyle } from "../src/shared/media-style.js";
 import { toSafeOutputStem } from "../src/shared/short-title.js";
 import { createElectronLicenseApiClient } from "./license/api-client.js";
@@ -180,6 +188,18 @@ function referenceScriptRepository(): ReferenceScriptRepository {
 function copywritingProjectRepository(): CopywritingProjectRepository {
   if (!database) throw new Error("Database is not ready");
   return new CopywritingProjectRepository(database);
+}
+function contentHistoryRepository(): ContentHistoryRepository {
+  if (!database) throw new Error("Database is not ready");
+  return new ContentHistoryRepository(database);
+}
+function contentGenerationOrchestrator(): ContentGenerationOrchestrator {
+  return new ContentGenerationOrchestrator(contentHistoryRepository(), {
+    generateTopics: async (payload) =>
+      postCopywriting("topics", payload, true) as Promise<TopicGenerationResult>,
+    generateCopywriting: async (payload) =>
+      postCopywriting("generate", payload, true) as Promise<CopywritingGenerationResult>
+  });
 }
 function queue():GenerationQueue{
   if(!generationQueue)generationQueue=new GenerationQueue(taskRepository(),runGenerationTask);
@@ -1396,10 +1416,20 @@ async function postCopywriting(
   }>(response, "文案服务请求失败");
 }
 licensedHandle("copywriting:topics", (_event, payload: unknown) =>
-  postCopywriting("topics", payload, true)
+  contentGenerationOrchestrator().generateTopics(payload as TopicGenerationPayload)
 );
 licensedHandle("copywriting:generate", (_event, payload: unknown) =>
-  postCopywriting("generate", payload, true)
+  contentGenerationOrchestrator().generateCopywriting(payload as CopywritingGenerationPayload)
+);
+licensedHandle("copywriting:markHistory", (_event, payload: {
+  personaId: string;
+  topic: CopywritingGenerationPayload["topic"];
+  state: Parameters<ContentGenerationOrchestrator["markContent"]>[2];
+  projectId?: string;
+}) =>
+  contentGenerationOrchestrator().markContent(
+    payload.personaId, payload.topic, payload.state, payload.projectId
+  )
 );
 ipcMain.handle("copywriting:compliance", (_event, payload: unknown) =>
   postCopywriting("compliance", payload, false)

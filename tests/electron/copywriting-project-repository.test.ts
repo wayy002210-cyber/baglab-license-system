@@ -26,6 +26,24 @@ describe("CopywritingProjectRepository", () => {
     database.close();
   });
 
+  it("stores a display title and falls back for pre-feature callers", () => {
+    const database = databaseWithPersona();
+    const repository = new CopywritingProjectRepository(database);
+    const rich = repository.create({
+      personaId: "p1", topicId: "t1", topicTitle: "旧选题字段",
+      displayTitle: "采购验收时怎样快速识别车线风险", mainTitle: "车线验收方法",
+      text: "完整文案", model: "deepseek-v3", status: "review"
+    });
+    const legacy = repository.create({
+      personaId: "p1", topicId: "t2", topicTitle: "旧版完整标题",
+      mainTitle: "旧版短标题", text: "完整文案", model: "deepseek-v3", status: "review"
+    });
+
+    expect(rich.displayTitle).toBe("采购验收时怎样快速识别车线风险");
+    expect(legacy.displayTitle).toBe("旧版完整标题");
+    database.close();
+  });
+
   it("persists ordered shots and marks a project ready", () => {
     const database = databaseWithPersona();
     const repository = new CopywritingProjectRepository(database);

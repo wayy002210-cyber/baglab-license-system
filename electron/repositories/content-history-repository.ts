@@ -26,10 +26,11 @@ export type ContentIdentity = {
 export type HotspotSource = {
   id: string;
   title: string;
-  url: string;
+  sourceUrl: string;
   publishedAt: string;
   retrievedAt: string;
   summary: string;
+  relevance: string;
 };
 
 export type ContentTopic = {
@@ -159,7 +160,7 @@ export class ContentHistoryRepository {
     personaId: string,
     topic: ContentTopic,
     text: string,
-    projectId: string,
+    projectId: string | null,
     now = new Date().toISOString()
   ): ContentHistoryDigest {
     return this.upsert(personaId, "script", "generated", topic, text, projectId, now);
