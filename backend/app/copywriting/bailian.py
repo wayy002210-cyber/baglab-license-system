@@ -58,7 +58,11 @@ class BailianChat:
         }
         if supports_json_object(model):
             payload["response_format"] = {"type": "json_object"}
-            if model.strip().lower().startswith("deepseek-v4"):
+            normalized_model = model.strip().lower()
+            if (
+                normalized_model.startswith("deepseek-v4")
+                or normalized_model.startswith("qwen3")
+            ):
                 payload["enable_thinking"] = False
         response = httpx.post(
             self.endpoint,

@@ -101,6 +101,25 @@ def test_qwen_can_request_json_object_output(monkeypatch) -> None:
     assert captured["response_format"] == {"type": "json_object"}
 
 
+def test_qwen3_disables_thinking_for_json_output(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_post(*args, **kwargs):
+        captured.update(kwargs["json"])
+        return response(
+            200,
+            {"choices": [{"message": {"content": '{"topics":[]}'}}]},
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    BailianChat().complete(
+        api_key="secret", model="qwen3.8-flash", prompt="hello"
+    )
+
+    assert captured["enable_thinking"] is False
+
+
 def test_invalid_key_has_typed_error_without_echoing_secret(monkeypatch) -> None:
     monkeypatch.setattr(
         httpx,
