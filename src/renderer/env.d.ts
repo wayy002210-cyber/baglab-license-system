@@ -349,6 +349,7 @@ declare global {
         extension: "ttf" | "otf" | "ttc" | "otc" | "fon" | "fnt";
       }>>;
       getCopyModelSettings(): Promise<CopyModelSettings>;
+      refreshBailianModels(): Promise<CopyModelSettings>;
       saveCopyModelSettings(input: CopyModelSettings): Promise<CopyModelSettings>;
       selectSettingsPath(
         kind: "output" | "work" | "bgm"
@@ -446,6 +447,15 @@ type CopyModelSettings = {
   defaultModel: string;
   temperature: number;
   candidateModels: string[];
+  modelRecommendations: BailianModelRecommendation[];
+  modelsCheckedAt: string | null;
+};
+type BailianModelRecommendation = {
+  id: string;
+  displayName: string;
+  family: "deepseek" | "qwen" | "other";
+  status: "available";
+  note: string;
 };
 type CopywritingContext = {
   model: string;

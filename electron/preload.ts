@@ -298,7 +298,15 @@ const systemFontSchema = z.object({
 const copyModelSettingsSchema = z.object({
   defaultModel: z.string().trim().min(1),
   temperature: z.number().min(0).max(2),
-  candidateModels: z.array(z.string().trim().min(1)).min(1)
+  candidateModels: z.array(z.string().trim().min(1)).min(1),
+  modelRecommendations: z.array(z.object({
+    id: z.string().trim().min(1),
+    displayName: z.string().trim().min(1),
+    family: z.enum(["deepseek", "qwen", "other"]),
+    status: z.literal("available"),
+    note: z.string()
+  })).max(5),
+  modelsCheckedAt: z.string().nullable()
 });
 const voiceSettingsSchema = z.object({
   voiceId: z.string().min(1), source: z.enum(["system", "custom", "clone"]), model: z.string().min(1),
@@ -829,6 +837,10 @@ contextBridge.exposeInMainWorld("autocut", {
   getCopyModelSettings: async () =>
     copyModelSettingsSchema.parse(
       await ipcRenderer.invoke("settings:getCopyModel")
+    ),
+  refreshBailianModels: async () =>
+    copyModelSettingsSchema.parse(
+      await ipcRenderer.invoke("settings:refreshBailianModels")
     ),
   saveCopyModelSettings: async (input: unknown) =>
     copyModelSettingsSchema.parse(

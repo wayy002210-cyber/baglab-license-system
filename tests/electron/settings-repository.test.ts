@@ -139,6 +139,35 @@ describe("SettingsRepository", () => {
     database.close();
   });
 
+  it("caches verified recommendations without silently replacing an unchecked current model", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const repository = new SettingsRepository(database);
+    repository.set("copy-model", {
+      ...defaultCopyModelSettings,
+      defaultModel: "legacy-custom-model",
+      candidateModels: ["legacy-custom-model"]
+    });
+
+    const saved = repository.cacheCopyModelRecommendations({
+      recommendations: [{
+        id: "deepseek-v4.1-flash",
+        displayName: "DeepSeek V4.1 Flash",
+        family: "deepseek",
+        status: "available",
+        note: "Live verification passed"
+      }],
+      checkedAt: "2026-09-18T08:00:00.000Z"
+    });
+
+    expect(saved.defaultModel).toBe("legacy-custom-model");
+    expect(saved.candidateModels).toEqual([
+      "legacy-custom-model",
+      "deepseek-v4.1-flash"
+    ]);
+    database.close();
+  });
+
   it("persists reusable subtitle and title style presets", () => {
     const database = new Database(":memory:");
     applyMigrations(database);

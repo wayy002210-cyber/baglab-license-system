@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from datetime import datetime, timezone
 
 from app.main import BACKEND_BUILD_ID, create_app
 from app.media.asset_scanner import ScanResult, ScannedAsset
@@ -11,6 +12,8 @@ from app.copywriting.topic_service import (
     TopicResult,
 )
 from app.copywriting.bailian import BailianAuthenticationError
+from app.copywriting.model_catalog import ModelRecommendation, ModelRefreshResult
+from app.license_proof import create_license_proof
 
 
 def topic_candidate(index: int) -> dict:
@@ -365,3 +368,59 @@ def test_bailian_connection_uses_selected_model() -> None:
         "status": "connected",
         "model": "deepseek-v3",
     }
+
+
+def test_model_recommendations_are_protected_and_never_echo_the_key() -> None:
+    class Catalog:
+        def refresh(self, *, api_key):
+            assert api_key == "private-key-value"
+            return ModelRefreshResult(
+                recommendations=[ModelRecommendation(
+                    id="deepseek-v4.1-flash",
+                    display_name="DeepSeek V4.1 Flash",
+                    family="deepseek",
+                    status="available",
+                    note="实时调用验证通过",
+                )],
+                checked_at=datetime(2026, 9, 18, 8, 0, tzinfo=timezone.utc),
+                source="provider",
+            )
+
+    proof = create_license_proof(
+        secret="proof-secret",
+        build_id=BACKEND_BUILD_ID,
+        device_fingerprint="device-1",
+        expires_at=2_000_000_000,
+    )
+    client = TestClient(create_app(
+        session_token="secret",
+        bailian_model_catalog=Catalog(),
+        license_proof_secret="proof-secret",
+        license_device_fingerprint="device-1",
+    ))
+    base_headers = {
+        "X-Autocut-Token": "secret",
+        "X-Bailian-Key": "private-key-value",
+    }
+
+    assert client.post(
+        "/copywriting/models/recommendations", headers=base_headers
+    ).status_code == 403
+    response = client.post(
+        "/copywriting/models/recommendations",
+        headers={**base_headers, "X-Autocut-License": proof},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "recommendations": [{
+            "id": "deepseek-v4.1-flash",
+            "displayName": "DeepSeek V4.1 Flash",
+            "family": "deepseek",
+            "status": "available",
+            "note": "实时调用验证通过",
+        }],
+        "checkedAt": "2026-09-18T08:00:00Z",
+        "source": "provider",
+    }
+    assert "private-key-value" not in response.text

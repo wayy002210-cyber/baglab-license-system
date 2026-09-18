@@ -23,9 +23,13 @@ const referenceScripts = ref<
   Awaited<ReturnType<typeof window.autocut.listReferenceScripts>>
 >([]);
 const copyModel = reactive({
-  defaultModel: "deepseek-v3",
+  defaultModel: "deepseek-v4.1-flash",
   temperature: 0.7,
-  candidateModels: ["deepseek-v3", "qwen-plus"]
+  candidateModels: ["deepseek-v4.1-flash", "qwen-plus"],
+  modelRecommendations: [] as Awaited<
+    ReturnType<typeof window.autocut.getCopyModelSettings>
+  >["modelRecommendations"],
+  modelsCheckedAt: null as string | null
 });
 const media = reactive<MediaSettings>({
   outputDirectory: "",
@@ -127,7 +131,8 @@ async function saveCopyModel(): Promise<void> {
       copyModel,
       await window.autocut.saveCopyModelSettings({
         ...copyModel,
-        candidateModels: [...copyModel.candidateModels]
+        candidateModels: [...copyModel.candidateModels],
+        modelRecommendations: copyModel.modelRecommendations.map((item) => ({ ...item }))
       })
     );
     health.bailian = "unknown";

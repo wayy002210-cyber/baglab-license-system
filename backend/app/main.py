@@ -21,6 +21,7 @@ from app.media.audio_library import (
 )
 from app.media.font_probe import FontMetadata, FontProbe, FontProbeError
 from app.copywriting.bailian import BailianAPIError, BailianChat
+from app.copywriting.model_catalog import BailianModelCatalog, ModelRefreshResult
 from app.copywriting.service import (
     CopywritingService,
     RewriteRequest,
@@ -124,6 +125,10 @@ class ContentCreator(Protocol):
     def check_compliance(self, request: ComplianceRequest) -> ComplianceResult: ...
 
 
+class ModelCatalog(Protocol):
+    def refresh(self, *, api_key: str) -> ModelRefreshResult: ...
+
+
 class VoiceProvider(Protocol):
     def list_voices(self, *, api_key: str) -> list[dict[str, str]]: ...
 
@@ -190,6 +195,7 @@ def create_app(
     task_runtime: GenerationTaskRuntime | None = None,
     publishing_service: Publisher | None = None,
     bailian_chat: BailianChat | None = None,
+    bailian_model_catalog: ModelCatalog | None = None,
     license_proof_secret: str | None = None,
     license_device_fingerprint: str | None = None,
 ) -> FastAPI:
@@ -249,6 +255,7 @@ def create_app(
     audio_library = AudioLibrary(FfprobeAudioProbe(ffprobe_path))
     font_probe = FontProbe()
     chat = bailian_chat or BailianChat()
+    model_catalog = bailian_model_catalog or BailianModelCatalog(chat=chat)
     copywriter = copywriting_service or CopywritingService(chat)
     content_creator = content_creation_service or ContentCreationService(
         TopicService(chat)
@@ -460,6 +467,34 @@ def create_app(
             return {"status": "connected", "model": payload.model}
         except BailianAPIError as error:
             raise_bailian_http(error)
+
+    @app.post(
+        "/copywriting/models/recommendations",
+        dependencies=[Depends(authorize)],
+    )
+    def refresh_bailian_models(
+        x_bailian_key: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        if not x_bailian_key:
+            raise HTTPException(status_code=401, detail="请先配置百炼 API Key")
+        try:
+            result = model_catalog.refresh(api_key=x_bailian_key)
+        except BailianAPIError as error:
+            raise_bailian_http(error)
+        return {
+            "recommendations": [
+                {
+                    "id": item.id,
+                    "displayName": item.display_name,
+                    "family": item.family,
+                    "status": item.status,
+                    "note": item.note,
+                }
+                for item in result.recommendations
+            ],
+            "checkedAt": result.checked_at.isoformat().replace("+00:00", "Z"),
+            "source": result.source,
+        }
 
     @app.post(
         "/copywriting/rewrite",

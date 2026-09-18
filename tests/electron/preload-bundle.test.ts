@@ -11,6 +11,7 @@ describe("packaged preload bridge", () => {
     expect(preload).toContain('exposeInMainWorld("autocut"');
     expect(preload).toContain("selectAndScanAssets");
     expect(preload).toContain("getCopyModelSettings");
+    expect(preload).toContain("refreshBailianModels");
     expect(preload).toContain("listReferenceScripts");
     expect(preload).toContain("generateTopics");
     expect(preload).toContain("generateCopywriting");

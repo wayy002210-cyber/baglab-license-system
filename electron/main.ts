@@ -74,6 +74,7 @@ import {
 import type { CopyModelSettings } from "./repositories/settings-repository.js";
 import { buildDraftTaskSnapshot } from "./services/task-snapshot-service.js";
 import { scanSystemFonts } from "./services/system-font-service.js";
+import { refreshBailianModels } from "./services/bailian-model-service.js";
 import {
   CopywritingProjectRepository,
   type CopywritingStatus,
@@ -1140,6 +1141,21 @@ ipcMain.handle("media:listSystemFonts", () => scanSystemFonts());
 ipcMain.handle("settings:getCopyModel", () =>
   settingsRepository().getCopyModelSettings()
 );
+licensedHandle("settings:refreshBailianModels", async () => {
+  if (backendState.status !== "ready") throw new Error("本地 AI 服务尚未就绪");
+  const apiKey = await credentials.get("bailian");
+  if (!apiKey) throw new Error("请先保存百炼 API Key");
+  const result = await refreshBailianModels({
+    baseUrl: backendState.baseUrl,
+    apiKey,
+    sessionToken: backendState.token,
+    licenseHeaders: backendLicenseHeaders()
+  });
+  return settingsRepository().cacheCopyModelRecommendations({
+    recommendations: result.recommendations,
+    checkedAt: result.checkedAt
+  });
+});
 ipcMain.handle(
   "settings:saveCopyModel",
   (_event, input: CopyModelSettings) =>

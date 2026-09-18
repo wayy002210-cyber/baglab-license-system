@@ -163,6 +163,23 @@ export class SettingsRepository {
     });
   }
 
+  cacheCopyModelRecommendations(input: {
+    recommendations: BailianModelRecommendation[];
+    checkedAt: string;
+  }): CopyModelSettings {
+    if (input.recommendations.length > 5) {
+      throw new RangeError("No more than five verified models may be stored");
+    }
+    const current = this.getCopyModelSettings();
+    const recommendationIds = input.recommendations.map((item) => item.id.trim());
+    return this.set("copy-model", normalizeCopyModelSettings({
+      ...current,
+      candidateModels: [current.defaultModel, ...recommendationIds],
+      modelRecommendations: input.recommendations,
+      modelsCheckedAt: input.checkedAt
+    }));
+  }
+
   getStylePresets(): StylePreset[] {
     return this.get("text-style-presets", []);
   }
