@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
@@ -80,8 +80,6 @@ if (workspaceNativeProbe.status !== 0) {
   );
 }
 
-rmSync(join(root, "release"), { recursive: true, force: true });
-
 const build = spawnSync(
   process.execPath,
   [builder, "--win", "nsis", "--publish", "never"],
@@ -117,7 +115,6 @@ if (build.status !== 0) {
   throw new Error(`electron-builder failed with exit code ${build.status}`);
 }
 if (nativeVerification.status !== 0) {
-  rmSync(join(root, "release"), { recursive: true, force: true });
   throw new Error(
     `packaged native verification failed with exit code ${nativeVerification.status}`
   );
