@@ -140,4 +140,32 @@ describe("ContentHistoryRepository", () => {
     expect(signatures.topics).toContain("刀".repeat(36));
     database.close();
   });
+
+  it("returns only the newest 100 confirmed topic titles for the current persona", () => {
+    const database = databaseWithPersona();
+    const history = new ContentHistoryRepository(database);
+    history.recordTopics("p1", [topic()], "2026-01-01T00:00:00.000Z");
+    for (let index = 0; index < 105; index += 1) {
+      const current = {
+        ...topic(),
+        id: `confirmed-${index}`,
+        displayTitle: `确认选题${String(index).padStart(3, "0")}`,
+        shortTitle: `确认选题${String(index).padStart(3, "0")}`,
+        description: `确认内容${index}`,
+        hook: `确认开场${index}`
+      };
+      history.markTopic(
+        "p1", current, "selected", undefined,
+        new Date(Date.UTC(2026, 0, 2, 0, 0, index)).toISOString()
+      );
+    }
+
+    const titles = history.listRecentConfirmedTopicTitles("p1", 100);
+
+    expect(titles).toHaveLength(100);
+    expect(titles).toContain("确认选题104");
+    expect(titles).not.toContain("确认选题000");
+    expect(titles).not.toContain("预算先保哪里");
+    database.close();
+  });
 });

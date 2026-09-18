@@ -9,6 +9,8 @@ from app.copywriting.topic_service import (
     TopicCandidate,
     TopicGenerationRequest,
     TopicService,
+    normalized_sha256,
+    title_character_similarity,
 )
 
 
@@ -63,6 +65,12 @@ def topic_response(items: list[dict]) -> str:
     import json
 
     return json.dumps({"topics": items}, ensure_ascii=False)
+
+
+def test_title_character_similarity_uses_multiset_overlap() -> None:
+    assert title_character_similarity("面料克重颜色工甲乙丙", "面料克重颜色工丁戊己") == pytest.approx(0.7)
+    assert title_character_similarity("袋袋选材方法", "袋子选材方法") == pytest.approx(5 / 6)
+    assert title_character_similarity("展厅色差怎么验", "活动交期怎么排") < 0.7
 
 
 def five_diverse_candidates() -> list[dict]:
@@ -201,6 +209,28 @@ def test_generate_copywriting_enforces_requested_length() -> None:
 
     assert len(result.text.replace("\n", "").replace("，", "").replace("。", "")) == 220
     assert all(len(line.rstrip("，。！？；：")) <= 25 for line in result.text.splitlines())
+
+
+def test_copywriting_retries_once_only_when_body_is_exactly_identical() -> None:
+    duplicate = "同一篇正文不应再次返回。" + ("稳" * 210)
+    replacement = "这次从不同表达重新说明。" + ("新" * 210)
+    chat = FixtureChat([
+        json.dumps({"text": duplicate}, ensure_ascii=False),
+        json.dumps({"text": replacement}, ensure_ascii=False),
+    ])
+
+    result = TopicService(chat).generate_copywriting(
+        api_key="secret",
+        request=CopywritingGenerationRequest(
+            model="deepseek-v3", personaName="袋研官", topic="采购方法",
+            recentScriptHashes=[normalized_sha256(duplicate)],
+            minLength=200, maxLength=1000,
+        ),
+    )
+
+    assert result.text != duplicate
+    assert len(chat.calls) == 2
+    assert "完全相同" in chat.calls[1][1]
 
 
 def test_generate_copywriting_repairs_banned_words_before_returning() -> None:
@@ -422,13 +452,7 @@ def test_topic_planner_filters_history_and_refills_only_missing_slots() -> None:
         "industry": "帆布袋",
         "brandFacts": ["自有工厂"],
         "hotspotMode": "off",
-        "history": [{
-            "id": "history-1", "contentType": "topic", "lifecycleState": "shown",
-            "displayTitle": duplicate["displayTitle"], "shortTitle": duplicate["shortTitle"],
-            "description": duplicate["description"], "hook": duplicate["hook"],
-            "contentText": "", "identity": duplicate["identity"],
-            "semanticVector": None, "lastUsedAt": "2026-09-15T00:00:00Z",
-        }],
+        "recentTopicTitles": [duplicate["shortTitle"]],
     })
 
     result = TopicService(chat).generate_topics(api_key="secret", request=request)
@@ -462,7 +486,7 @@ def test_topic_planner_stops_instead_of_filling_with_duplicates() -> None:
     assert len(chat.calls) == 3
 
 
-def test_permanent_exact_signature_blocks_topic_outside_recent_history() -> None:
+def test_old_global_exact_signature_does_not_block_recent_window() -> None:
     repeated = candidate_json(
         "same", "预算有限时袋子哪里不能省", "预算先保哪里",
         audience="品牌采购", scenario="活动礼赠", problem="预算有限如何取舍",
@@ -473,22 +497,23 @@ def test_permanent_exact_signature_blocks_topic_outside_recent_history() -> None
     signature = normalize_content("|".join((
         repeated["displayTitle"], repeated["description"], repeated["hook"]
     )))
-    chat = FixtureChat([topic_response([repeated])] * 3)
+    remaining = five_diverse_candidates()[1:]
+    chat = FixtureChat([topic_response([repeated, *remaining])])
 
-    with pytest.raises(NovelTopicsExhausted):
-        TopicService(chat).generate_topics(
-            api_key="secret",
-            request=TopicGenerationRequest(
-                model="deepseek-v3", personaId="p1", personaName="袋研官",
-                industry="帆布袋", hotspotMode="off",
-                exactTopicSignatures=[signature],
-            ),
-        )
+    result = TopicService(chat).generate_topics(
+        api_key="secret",
+        request=TopicGenerationRequest(
+            model="deepseek-v3", personaId="p1", personaName="袋研官",
+            industry="帆布袋", hotspotMode="off",
+            exactTopicSignatures=[signature],
+        ),
+    )
 
-    assert len(chat.calls) == 3
+    assert repeated["shortTitle"] in {item.short_title for item in result.topics}
+    assert len(chat.calls) == 1
 
 
-def test_gray_zone_candidate_receives_bounded_structured_adjudication() -> None:
+def test_topic_filter_does_not_call_model_for_semantic_adjudication() -> None:
     items = five_diverse_candidates()
     items[0]["semanticVector"] = [1.0, 0.0]
     history_identity = candidate_json(
@@ -497,10 +522,7 @@ def test_gray_zone_candidate_receives_bounded_structured_adjudication() -> None:
         thesis="按订单组合规划工位", evidence="流程记录", angle="仓储效率",
         structure="流程揭示", hook_type="现场问题",
     )
-    chat = FixtureChat([
-        topic_response(items),
-        json.dumps({"sameCoreIdea": False, "reason": "受众、场景和结论均不同"}, ensure_ascii=False),
-    ])
+    chat = FixtureChat([topic_response(items)])
     request = TopicGenerationRequest.model_validate({
         "model": "deepseek-v3", "personaId": "p1", "personaName": "袋研官",
         "industry": "帆布袋", "hotspotMode": "off",
@@ -517,11 +539,10 @@ def test_gray_zone_candidate_receives_bounded_structured_adjudication() -> None:
     result = TopicService(chat).generate_topics(api_key="secret", request=request)
 
     assert len(result.topics) == 5
-    assert len(chat.calls) == 2
-    assert "边界判重" in chat.calls[1][1]
+    assert len(chat.calls) == 1
 
 
-def test_topic_prompt_requests_candidate_pool_without_low_price_seed_example() -> None:
+def test_topic_prompt_requests_exactly_five_without_low_price_seed_example() -> None:
     items = five_diverse_candidates()
     chat = FixtureChat([topic_response(items)])
 
@@ -534,8 +555,32 @@ def test_topic_prompt_requests_candidate_pool_without_low_price_seed_example() -
     )
 
     prompt = chat.calls[0][1]
-    assert "12到15个" in prompt
+    assert "只生成5个" in prompt
+    assert "12到15个" not in prompt
     assert "同行低价真相" not in prompt
+
+
+def test_topic_parser_discards_invalid_item_and_refills_only_one() -> None:
+    first = five_diverse_candidates()
+    first[-1]["shortTitle"] = "无效1"
+    refill = candidate_json(
+        "refill", "仓库发货尺寸如何减少空隙", "发货尺寸选择",
+        audience="电商卖家", scenario="仓库发货", problem="包装空隙过大",
+        thesis="尺寸应匹配常见订单组合", evidence="订单测量", angle="仓储效率",
+        structure="成本计算", hook_type="数字疑问",
+    )
+    chat = FixtureChat([topic_response(first), topic_response([refill])])
+
+    result = TopicService(chat).generate_topics(
+        api_key="secret",
+        request=TopicGenerationRequest(
+            model="deepseek-v3", personaId="p1", personaName="袋研官",
+        ),
+    )
+
+    assert len(result.topics) == 5
+    assert len(chat.calls) == 2
+    assert "只补充还缺少的1个" in chat.calls[1][1]
 
 
 def test_topic_prompt_delimits_hotspot_material_as_untrusted_data() -> None:

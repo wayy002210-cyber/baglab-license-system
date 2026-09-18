@@ -23,6 +23,15 @@ class FakeMiniMax:
         return b"fake-mp3"
 
 
+class FlakyTransportMiniMax(FakeMiniMax):
+    def synthesize(self, *, api_key: str, request: SynthesisRequest) -> bytes:
+        self.calls.append((api_key, request))
+        if self.failures:
+            self.failures -= 1
+            raise httpx.ConnectError("EOF occurred in violation of protocol")
+        return b"fake-mp3"
+
+
 def test_synthesis_is_cached_by_normalized_request(tmp_path: Path) -> None:
     client = FakeMiniMax()
     probed_paths: list[Path] = []
@@ -64,6 +73,22 @@ def test_synthesis_retries_rate_limits_with_exponential_backoff(
     assert len(client.calls) == 3
 
 
+def test_synthesis_retries_transient_transport_failures(tmp_path: Path) -> None:
+    client = FlakyTransportMiniMax()
+    client.failures = 2
+    sleeps: list[float] = []
+    service = VoiceService(client, cache_dir=tmp_path, sleep=sleeps.append, max_attempts=4)
+
+    result = service.synthesize(
+        api_key="minimax-secret",
+        request=SynthesisRequest(text="测试网络重试", voiceId="female-shaonv"),
+    )
+
+    assert Path(result.audio_path).exists()
+    assert sleeps == [1.0, 2.0]
+    assert len(client.calls) == 3
+
+
 def test_cache_key_changes_when_voice_parameters_change(tmp_path: Path) -> None:
     client = FakeMiniMax()
     service = VoiceService(client, cache_dir=tmp_path)
@@ -84,8 +109,8 @@ def test_cache_key_changes_when_voice_parameters_change(tmp_path: Path) -> None:
 def test_minimax_client_decodes_hex_audio_and_maps_request(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def post(url, *, headers, json, timeout):
-        captured.update(url=url, headers=headers, json=json, timeout=timeout)
+    def post(url, *, headers, json, timeout, trust_env):
+        captured.update(url=url, headers=headers, json=json, timeout=timeout, trust_env=trust_env)
         return httpx.Response(
             200,
             json={"data": {"audio": b"mp3-data".hex()}},
@@ -103,6 +128,7 @@ def test_minimax_client_decodes_hex_audio_and_maps_request(monkeypatch) -> None:
 
     assert audio == b"mp3-data"
     assert captured["url"] == "https://api.minimaxi.com/v1/t2a_v2"
+    assert captured["trust_env"] is False
     payload = captured["json"]
     assert payload["voice_setting"] == {
         "voice_id": "voice-1",
@@ -129,8 +155,8 @@ def test_minimax_client_lists_all_voices_with_the_current_post_contract(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def post(url, *, headers, json, timeout):
-        captured.update(url=url, headers=headers, json=json, timeout=timeout)
+    def post(url, *, headers, json, timeout, trust_env):
+        captured.update(url=url, headers=headers, json=json, timeout=timeout, trust_env=trust_env)
         return httpx.Response(
             200,
             json={
@@ -146,4 +172,31 @@ def test_minimax_client_lists_all_voices_with_the_current_post_contract(
 
     assert [voice["voice_id"] for voice in voices] == ["voice-1", "clone-1"]
     assert captured["url"] == "https://api.minimaxi.com/v1/get_voice"
+    assert captured["trust_env"] is False
     assert captured["json"] == {"voice_type": "all"}
+
+
+def test_minimax_client_falls_back_to_system_proxy_after_direct_transport_failure(
+    monkeypatch,
+) -> None:
+    trust_env_calls: list[bool] = []
+
+    def post(url, *, headers, json, timeout, trust_env):
+        trust_env_calls.append(trust_env)
+        if not trust_env:
+            raise httpx.ConnectError("direct route unavailable")
+        return httpx.Response(
+            200,
+            json={
+                "system_voice": [{"voice_id": "voice-1"}],
+                "base_resp": {"status_code": 0, "status_msg": "success"},
+            },
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", post)
+
+    voices = MiniMaxTTS().list_voices(api_key="secret")
+
+    assert [voice["voice_id"] for voice in voices] == ["voice-1"]
+    assert trust_env_calls == [False, True]

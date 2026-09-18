@@ -1,6 +1,6 @@
 {
   "name": "autocut-studio",
-  "version": "0.7.4-topics.20260918.222743",
+  "version": "0.7.5-dedup.20260918.235902",
   "description": "Windows 本地自动混剪、配音、合成与发布工作台",
   "author": "袋研官 BAG LAB",
   "private": true,

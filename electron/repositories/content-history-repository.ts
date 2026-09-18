@@ -212,6 +212,33 @@ export class ContentHistoryRepository {
     return rows.map(mapRow);
   }
 
+  listRecentConfirmedTopicTitles(personaId: string, limit = 100): string[] {
+    const rows = this.database.prepare(`
+      SELECT short_title, MAX(last_used_at) AS latest
+      FROM content_history
+      WHERE persona_id = ?
+        AND content_type = 'topic'
+        AND lifecycle_state IN ('selected', 'generated', 'collected', 'archived', 'published')
+      GROUP BY short_title
+      ORDER BY latest DESC, short_title DESC
+      LIMIT ?
+    `).all(personaId, Math.min(Math.max(limit, 0), 100)) as Array<{ short_title: string }>;
+    return rows.map((row) => row.short_title).filter(Boolean);
+  }
+
+  listRecentConfirmedScriptHashes(personaId: string, limit = 100): string[] {
+    const rows = this.database.prepare(`
+      SELECT normalized_hash
+      FROM content_history
+      WHERE persona_id = ?
+        AND content_type = 'script'
+        AND lifecycle_state IN ('generated', 'collected', 'archived', 'published')
+      ORDER BY last_used_at DESC, id DESC
+      LIMIT ?
+    `).all(personaId, Math.min(Math.max(limit, 0), 100)) as Array<{ normalized_hash: string }>;
+    return rows.map((row) => row.normalized_hash).filter(Boolean);
+  }
+
   listStrictSignatures(personaId: string): { topics: string[]; scripts: string[] } {
     const rows = this.database.prepare(`
       SELECT DISTINCT history.*

@@ -18,7 +18,7 @@ class SecurePipelineRuntime:
     def __init__(self, factory: PipelineFactory) -> None:
         self.factory = factory
         self.encoding_lock = asyncio.Lock()
-        self.tts_semaphore = asyncio.Semaphore(3)
+        self.tts_semaphore = asyncio.Semaphore(2)
         self.runtimes: dict[str, TaskRuntime] = {}
 
     async def start(

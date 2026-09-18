@@ -190,12 +190,20 @@ class GenerationPipeline:
             *(
                 synthesize_shot(index, shot.copywriting)
                 for index, shot in enumerate(context["shotPlans"])
-            )
+            ),
+            return_exceptions=True,
         )
+        failures = [item for item in generated if isinstance(item, BaseException)]
+        if failures:
+            first = failures[0]
+            raise RuntimeError(
+                f"{len(failures)} 个镜头配音生成失败；已完成的音频会保留用于重试。{first}"
+            ) from first
+        completed = [item for item in generated if not isinstance(item, BaseException)]
         return {
             **context,
-            "voicePaths": [item[0] for item in generated],
-            "durations": [item[1] for item in generated],
+            "voicePaths": [item[0] for item in completed],
+            "durations": [item[1] for item in completed],
         }
 
     async def select_assets(

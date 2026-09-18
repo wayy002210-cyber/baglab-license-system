@@ -21,14 +21,13 @@ class MiniMaxTTS:
         self.timeout = timeout
 
     def list_voices(self, *, api_key: str) -> list[dict[str, object]]:
-        response = httpx.post(
+        response = self._post(
             f"{self.base_url}/get_voice",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={"voice_type": "all"},
-            timeout=self.timeout,
         )
         self._raise_for_status(response)
         data = response.json()
@@ -50,7 +49,7 @@ class MiniMaxTTS:
         return voices
 
     def synthesize(self, *, api_key: str, request: SynthesisRequest) -> bytes:
-        response = httpx.post(
+        response = self._post(
             f"{self.base_url}/t2a_v2",
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -79,7 +78,6 @@ class MiniMaxTTS:
                 },
                 "language_boost": request.language_boost,
             },
-            timeout=self.timeout,
         )
         self._raise_for_status(response)
         data = response.json()
@@ -136,6 +134,14 @@ class MiniMaxTTS:
                 int(status_code),
                 message,
             )
+
+    def _post(self, url: str, **kwargs) -> httpx.Response:
+        """Prefer a direct China route, then fall back to the user's proxy once."""
+        request_kwargs = {**kwargs, "timeout": self.timeout}
+        try:
+            return httpx.post(url, **request_kwargs, trust_env=False)
+        except httpx.TransportError:
+            return httpx.post(url, **request_kwargs, trust_env=True)
 
 
 class MiniMaxVoiceClient:

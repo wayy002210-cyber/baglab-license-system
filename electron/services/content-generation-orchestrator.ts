@@ -33,9 +33,8 @@ export type CopywritingGenerationResult = {
 };
 
 export type HistoryAwarePayload<T> = T & {
-  history: ContentHistoryDigest[];
-  exactTopicSignatures: string[];
-  exactScriptSignatures: string[];
+  recentTopicTitles: string[];
+  recentScriptHashes: string[];
 };
 
 export interface ContentGenerationBackend {
@@ -54,15 +53,11 @@ export class ContentGenerationOrchestrator {
   ) {}
 
   async generateTopics(input: TopicGenerationPayload): Promise<TopicGenerationResult> {
-    const digest = this.history.listDigest(input.personaId, 500);
-    const strict = this.history.listStrictSignatures(input.personaId);
-    const result = await this.backend.generateTopics({
-      ...input, history: digest,
-      exactTopicSignatures: strict.topics,
-      exactScriptSignatures: strict.scripts
+    return this.backend.generateTopics({
+      ...input,
+      recentTopicTitles: this.history.listRecentConfirmedTopicTitles(input.personaId, 100),
+      recentScriptHashes: []
     });
-    this.history.recordTopics(input.personaId, result.topics);
-    return result;
   }
 
   async generateCopywriting(
@@ -74,8 +69,7 @@ export class ContentGenerationOrchestrator {
       "selected",
       input.projectId ?? undefined
     );
-    const digest = this.history.listDigest(input.personaId, 500);
-    const strict = this.history.listStrictSignatures(input.personaId);
+    const digest = this.history.listDigest(input.personaId, 100);
     const recentStructures = input.recentStructures ?? digest
       .filter((item) => item.contentType === "script")
       .map((item) => item.structureType)
@@ -83,9 +77,8 @@ export class ContentGenerationOrchestrator {
       .slice(0, 20);
     const result = await this.backend.generateCopywriting({
       ...input,
-      history: digest,
-      exactTopicSignatures: strict.topics,
-      exactScriptSignatures: strict.scripts,
+      recentTopicTitles: this.history.listRecentConfirmedTopicTitles(input.personaId, 100),
+      recentScriptHashes: this.history.listRecentConfirmedScriptHashes(input.personaId, 100),
       recentStructures
     });
     const scriptTopic: ContentTopic = {

@@ -38,16 +38,17 @@ function setup(): { database: Database.Database; history: ContentHistoryReposito
 }
 
 describe("ContentGenerationOrchestrator", () => {
-  it("injects persona history and atomically records every returned topic", async () => {
+  it("injects only confirmed recent titles and does not record merely shown topics", async () => {
     const { database, history } = setup();
     history.recordTopics("p1", [topic("old")], "2026-09-15T00:00:00.000Z");
-    let receivedHistory = 0;
+    history.markTopic("p1", topic("confirmed"), "selected", undefined, "2026-09-16T00:00:00.000Z");
+    let receivedTitles: string[] = [];
     const backend: ContentGenerationBackend = {
       generateTopics: async (payload) => {
-        receivedHistory = payload.history.length;
+        receivedTitles = payload.recentTopicTitles;
         return {
           topics: ["a", "b", "c", "d", "e"].map(topic),
-          historyChecked: payload.history.length,
+          historyChecked: payload.recentTopicTitles.length,
           hotspotStatus: "disabled"
         };
       },
@@ -59,9 +60,9 @@ describe("ContentGenerationOrchestrator", () => {
       personaId: "p1", model: "deepseek-v3", personaName: "袋研官"
     });
 
-    expect(receivedHistory).toBe(1);
+    expect(receivedTitles).toEqual(["定制判断方法"]);
     expect(result.topics).toHaveLength(5);
-    expect(history.listDigest("p1", 500)).toHaveLength(6);
+    expect(history.listDigest("p1", 500)).toHaveLength(2);
     database.close();
   });
 
@@ -72,7 +73,8 @@ describe("ContentGenerationOrchestrator", () => {
     const backend: ContentGenerationBackend = {
       generateTopics: async () => { throw new Error("not called"); },
       generateCopywriting: async (payload) => {
-        expect(payload.history.some((item) => item.lifecycleState === "selected")).toBe(true);
+        expect(payload.recentTopicTitles).toContain(selected.shortTitle);
+        expect(payload.recentScriptHashes).toEqual([]);
         return {
           text: "这是一条通过去重检查并可以保存的完整口播文案。",
           structureType: "实验验证",

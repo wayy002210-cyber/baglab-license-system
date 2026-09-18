@@ -14,6 +14,7 @@ dist-electron/
 __pycache__/
 *.py[cod]
 *.log
+autocut-backend.lock
 .env
 .env.*
 !.env.example

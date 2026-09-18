@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import time
+import httpx
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -31,6 +32,10 @@ def voice_error_message(error: Exception) -> str:
         return "MiniMax 每分钟请求次数已达上限，系统重试后仍未恢复；请稍后再试或提升 MiniMax RPM 配额"
     if "timeout" in normalized or "timed out" in normalized:
         return "连接 MiniMax 超时，请检查网络后重试"
+    if isinstance(error, httpx.TransportError) or any(
+        word in normalized for word in ("eof occurred", "ssl", "connection reset", "connect error")
+    ):
+        return "连接 MiniMax 时网络中断，系统重试后仍未恢复；请检查代理或网络后重试"
     if "voice" in normalized and any(word in normalized for word in ("not found", "invalid")):
         return "MiniMax 音色不存在或已失效，请在音频设置中重新选择音色"
     return f"MiniMax 配音生成失败：{message or '未知错误'}"
@@ -41,7 +46,7 @@ class SynthesisRequest(BaseModel):
 
     text: str = Field(min_length=1, max_length=10_000)
     voice_id: str = Field(alias="voiceId", min_length=1)
-    model: str = Field(default="speech-2.6-hd", min_length=1)
+    model: str = Field(default="speech-2.8-hd", min_length=1)
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     volume: float = Field(default=1.0, ge=0.0, le=3.0)
     pitch: int = Field(default=0, ge=-12, le=12)
@@ -89,7 +94,7 @@ class VoiceService:
         self.duration_probe = duration_probe or (lambda _path: 1.0)
 
     def list_voices(self, *, api_key: str) -> list[dict[str, str]]:
-        voices = self.client.list_voices(api_key=api_key)
+        voices = self._call_with_retry(lambda: self.client.list_voices(api_key=api_key))
         return [
             {
                 "voiceId": str(voice.get("voice_id") or voice.get("voiceId") or ""),
@@ -133,13 +138,22 @@ class VoiceService:
     def _synthesize_with_retry(
         self, *, api_key: str, request: SynthesisRequest
     ) -> bytes:
+        return self._call_with_retry(
+            lambda: self.client.synthesize(api_key=api_key, request=request)
+        )
+
+    def _call_with_retry(self, operation):
         for attempt in range(self.max_attempts):
             try:
-                return self.client.synthesize(api_key=api_key, request=request)
+                return operation()
             except MiniMaxRateLimitError:
                 if attempt + 1 >= self.max_attempts:
                     raise
                 self.sleep(float(5 * 2**attempt))
+            except httpx.TransportError:
+                if attempt + 1 >= self.max_attempts:
+                    raise
+                self.sleep(float(2**attempt))
         raise RuntimeError("MiniMax synthesis failed")
 
     @staticmethod

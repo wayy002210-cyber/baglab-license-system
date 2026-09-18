@@ -1,6 +1,8 @@
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from app.copywriting.service import RewriteResult
 from app.tasks.pipeline import GenerationPipeline, _text_style
 from app.tasks.worker import TaskExecutionRequest
@@ -248,3 +250,40 @@ def test_pipeline_synthesizes_each_shot_as_an_independent_voice_clip() -> None:
         Path("D:/voice/master.mp3"),
     ]
     assert result["durations"] == [8.4, 8.4]
+
+
+def test_pipeline_waits_for_all_voice_jobs_and_reports_reusable_successes() -> None:
+    class PartlyFailingVoice:
+        def __init__(self):
+            self.texts: list[str] = []
+
+        def synthesize(self, *, api_key, request):
+            self.texts.append(request.text)
+            if request.text == "失败片段":
+                raise RuntimeError("temporary network error")
+            return SynthesisResult(
+                audioPath=f"D:/voice/{len(self.texts)}.mp3",
+                cacheHit=False,
+                sha256="d" * 64,
+                durationSec=2.0,
+            )
+
+    voice = PartlyFailingVoice()
+    pipeline = GenerationPipeline(
+        copywriter=Copywriter(), voice=voice, audio_probe=AudioProbe(),
+        exporter=Exporter(), bailian_key="bailian", minimax_key="minimax",
+    )
+    request = TaskExecutionRequest(
+        taskId="task-partial", seed=1, outputPath="D:/output/final.mp4",
+        snapshot={"voice": {"voiceId": "voice-1"}, "audioSegments": []},
+    )
+    shots = [
+        type("Shot", (), {"copywriting": "成功片段一"})(),
+        type("Shot", (), {"copywriting": "失败片段"})(),
+        type("Shot", (), {"copywriting": "成功片段二"})(),
+    ]
+
+    with pytest.raises(RuntimeError, match="1 个镜头配音生成失败.*保留用于重试"):
+        asyncio.run(pipeline.generate_voice(request, {"shotPlans": shots}))
+
+    assert sorted(voice.texts) == ["失败片段", "成功片段一", "成功片段二"]
