@@ -19,6 +19,7 @@ const savingCredential = ref<CredentialName | null>(null);
 const testingCredential = ref<CredentialName | null>(null);
 const savingMedia = ref(false);
 const savingCopyModel = ref(false);
+const refreshingModels = ref(false);
 const referenceScripts = ref<
   Awaited<ReturnType<typeof window.autocut.listReferenceScripts>>
 >([]);
@@ -125,6 +126,13 @@ async function exportDiagnostics(): Promise<void> {
 }
 
 async function saveCopyModel(): Promise<void> {
+  if (
+    copyModel.modelsCheckedAt &&
+    !copyModel.modelRecommendations.some((item) => item.id === copyModel.defaultModel)
+  ) {
+    ElMessage.warning("当前模型未通过本次验证，请先选择一个可用模型");
+    return;
+  }
   savingCopyModel.value = true;
   try {
     Object.assign(
@@ -140,6 +148,32 @@ async function saveCopyModel(): Promise<void> {
   } finally {
     savingCopyModel.value = false;
   }
+}
+
+async function refreshModels(): Promise<void> {
+  refreshingModels.value = true;
+  try {
+    Object.assign(copyModel, await window.autocut.refreshBailianModels());
+    ElMessage.success(`已验证 ${copyModel.modelRecommendations.length} 个可用模型`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "百炼模型更新失败");
+  } finally {
+    refreshingModels.value = false;
+  }
+}
+
+function checkedAtLabel(value: string | null): string {
+  if (!value) return "从未检查";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
+}
+
+function modelLabel(model: string): string {
+  const recommendation = copyModel.modelRecommendations.find((item) => item.id === model);
+  if (recommendation) return `${recommendation.displayName}（${model}）`;
+  return copyModel.modelsCheckedAt
+    ? `${model}（当前模型，未通过本次验证）`
+    : model;
 }
 
 async function createReferenceScript(
@@ -283,11 +317,11 @@ onMounted(load);
         <el-form label-position="top">
           <div class="form-row">
             <el-form-item label="默认模型">
-              <el-select v-model="copyModel.defaultModel" allow-create filterable>
+              <el-select v-model="copyModel.defaultModel" filterable>
                 <el-option
                   v-for="model in copyModel.candidateModels"
                   :key="model"
-                  :label="model"
+                  :label="modelLabel(model)"
                   :value="model"
                 />
               </el-select>
@@ -301,18 +335,41 @@ onMounted(load);
               />
             </el-form-item>
           </div>
-          <el-form-item label="候选模型">
-            <el-select
-              v-model="copyModel.candidateModels"
-              multiple
-              allow-create
-              filterable
-              default-first-option
-            />
-          </el-form-item>
+          <div class="model-refresh-row">
+            <el-button
+              data-action="refresh-bailian-models"
+              :loading="refreshingModels"
+              @click="refreshModels"
+            >
+              查看模型更新
+            </el-button>
+            <span class="checked-at">上次检查：{{ checkedAtLabel(copyModel.modelsCheckedAt) }}</span>
+          </div>
+          <el-alert
+            v-if="copyModel.modelsCheckedAt && !copyModel.modelRecommendations.some((item) => item.id === copyModel.defaultModel)"
+            type="warning"
+            :closable="false"
+            title="当前模型未通过本次验证，请选择下方可用模型后保存"
+          />
+          <div v-if="copyModel.modelRecommendations.length" class="model-recommendations">
+            <button
+              v-for="item in copyModel.modelRecommendations.slice(0, 5)"
+              :key="item.id"
+              type="button"
+              data-testid="model-recommendation"
+              class="model-recommendation"
+              :class="{ selected: copyModel.defaultModel === item.id }"
+              @click="copyModel.defaultModel = item.id"
+            >
+              <span><strong>{{ item.displayName }}</strong><small>{{ item.id }}</small></span>
+              <span><el-tag type="success">可用</el-tag><small>{{ item.note }}</small></span>
+            </button>
+          </div>
           <el-button
             type="primary"
+            data-action="save-copy-model"
             :loading="savingCopyModel"
+            :disabled="Boolean(copyModel.modelsCheckedAt) && !copyModel.modelRecommendations.some((item) => item.id === copyModel.defaultModel)"
             @click="saveCopyModel"
           >
             保存文案模型
@@ -344,5 +401,5 @@ onMounted(load);
 </template>
 
 <style scoped>
-.settings-grid{display:grid;grid-template-columns:1fr 1.4fr;gap:18px;align-items:start}.settings-card{padding:24px}.media-card{grid-row:span 2}.copy-card{grid-column:1 / -1}header{display:flex;gap:13px;align-items:center;margin-bottom:22px}.settings-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;color:var(--brand-black);background:var(--brand-yellow);font-size:20px}header h3,header p{margin:0}header p{margin-top:4px;color:var(--text-muted);font-size:12px}.credential{margin-top:16px;padding:16px;border:1px solid var(--border);border-radius:15px;background:var(--surface-muted)}.credential-title,.credential-actions{display:flex;align-items:center;gap:10px}.credential-title{justify-content:space-between;margin-bottom:12px}.credential-actions{margin-top:10px;flex-wrap:wrap}.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.el-select{width:100%}@media(max-width:1050px){.settings-grid{grid-template-columns:1fr}.media-card{grid-row:auto}.copy-card{grid-column:auto}}
+.settings-grid{display:grid;grid-template-columns:1fr 1.4fr;gap:18px;align-items:start}.settings-card{padding:24px}.media-card{grid-row:span 2}.copy-card{grid-column:1 / -1}header{display:flex;gap:13px;align-items:center;margin-bottom:22px}.settings-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;color:var(--brand-black);background:var(--brand-yellow);font-size:20px}header h3,header p{margin:0}header p{margin-top:4px;color:var(--text-muted);font-size:12px}.credential{margin-top:16px;padding:16px;border:1px solid var(--border);border-radius:15px;background:var(--surface-muted)}.credential-title,.credential-actions{display:flex;align-items:center;gap:10px}.credential-title{justify-content:space-between;margin-bottom:12px}.credential-actions{margin-top:10px;flex-wrap:wrap}.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.el-select{width:100%}.model-refresh-row{display:flex;align-items:center;gap:12px;margin:4px 0 14px}.checked-at{font-size:12px;color:var(--text-muted)}.model-recommendations{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin:12px 0}.model-recommendation{display:flex;justify-content:space-between;gap:14px;padding:13px;text-align:left;border:1px solid var(--border);border-radius:12px;background:var(--surface-muted);color:inherit;cursor:pointer}.model-recommendation.selected{border-color:var(--brand-yellow);box-shadow:0 0 0 1px var(--brand-yellow)}.model-recommendation span{display:flex;flex-direction:column;gap:4px}.model-recommendation small{color:var(--text-muted)}@media(max-width:1050px){.settings-grid{grid-template-columns:1fr}.media-card{grid-row:auto}.copy-card{grid-column:auto}}
 </style>
