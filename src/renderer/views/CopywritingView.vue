@@ -13,10 +13,8 @@ type Project = Awaited<ReturnType<typeof window.autocut.listCopywritingProjects>
 const personas = ref<Persona[]>([]);
 const personaId = ref("");
 const model = ref("deepseek-v3");
-const hotspotMode = ref<"off" | "balanced" | "priority">("balanced");
 const topics = ref<BatchTopic[]>([]);
 const historyChecked = ref(0);
-const hotspotStatus = ref<"disabled" | "available" | "no_match" | "unavailable">("disabled");
 const selectedIds = ref<string[]>([]);
 const projects = ref<Project[]>([]);
 const mode = ref<"ai" | "custom">("ai");
@@ -51,7 +49,7 @@ async function references(topic = ""): Promise<string[]> {
 
 function context() {
   if (!persona.value) throw new Error("请先选择人设档案");
-  return toCopywritingContext(persona.value, model.value, hotspotMode.value);
+  return toCopywritingContext(persona.value, model.value);
 }
 
 async function generateTopics(): Promise<void> {
@@ -63,7 +61,6 @@ async function generateTopics(): Promise<void> {
     const result = await window.autocut.generateTopics({ ...context(), referenceScripts: await references() });
     topics.value = result.topics;
     historyChecked.value = result.historyChecked;
-    hotspotStatus.value = result.hotspotStatus;
     selectedIds.value = [];
   } catch (error) { ElMessage.error(toUserMessage(error, "生成选题失败")); }
   finally {
@@ -106,16 +103,19 @@ async function generateSelected(): Promise<void> {
   if (!persona.value) return;
   batchRunning.value = true;
   progress.value = { total: selected.length, completed: 0, succeeded: 0, failed: 0, currentTopicId: null };
-  const base = toCopywritingGenerationInput(context(), persona.value.bannedWords);
-  const result = await generateCopywritingBatch({
-    topics: selected,
-    generate: async (topic) => window.autocut.generateCopywriting({ ...base, referenceScripts: await references(topic.description), topic, minLength: 200, maxLength: 1000 }),
-    saveSuccess: async (topic, result) => createFromTopic(topic, result.text, "review", null),
-    saveFailure: async (topic, error) => createFromTopic(topic, "", "failed", toUserMessage(error, "生成文案失败")),
-    onProgress: (state) => { progress.value = state; }
-  });
-  batchRunning.value = false;
-  ElMessage[result.failed ? "warning" : "success"](`批量生成完成：成功 ${result.succeeded} 条，失败 ${result.failed} 条`);
+  try {
+    const base = toCopywritingGenerationInput(context(), persona.value.bannedWords);
+    const result = await generateCopywritingBatch({
+      topics: selected,
+      generate: async (topic) => window.autocut.generateCopywriting({ ...base, referenceScripts: await references(topic.description), topic, minLength: 200, maxLength: 1000 }),
+      saveSuccess: async (topic, generated) => createFromTopic(topic, generated.text, "review", null),
+      saveFailure: async (topic, error) => createFromTopic(topic, "", "failed", toUserMessage(error, "生成文案失败")),
+      onProgress: (state) => { progress.value = state; }
+    });
+    ElMessage[result.failed ? "warning" : "success"](`批量生成完成：成功 ${result.succeeded} 条，失败 ${result.failed} 条`);
+  } finally {
+    batchRunning.value = false;
+  }
 }
 
 async function generateCurrent(): Promise<void> {
@@ -234,9 +234,6 @@ function localTopic(id: string, displayTitle: string, shortTitle: string, descri
   };
 }
 
-async function openSource(url: string): Promise<void> {
-  await window.autocut.openExternalUrl(url);
-}
 </script>
 
 <template>
@@ -250,23 +247,14 @@ async function openSource(url: string): Promise<void> {
       <div class="mode-tabs"><button :class="{active:mode==='ai'}" @click="mode='ai'">AI 自动选题</button><button :class="{active:mode==='custom'}" @click="mode='custom'">自定义文案</button></div>
 
       <template v-if="mode==='ai'">
-        <div class="hotspot-controls" data-testid="hotspot-controls">
-          <span>选题模式</span>
-          <button :class="{active:hotspotMode==='off'}" @click="hotspotMode='off'">常规</button>
-          <button :class="{active:hotspotMode==='balanced'}" @click="hotspotMode='balanced'">综合</button>
-          <button :class="{active:hotspotMode==='priority'}" @click="hotspotMode='priority'">热点优先</button>
-        </div>
         <div class="topic-header"><div><strong>选题库</strong><span>一次生成5个内容角度，可多选</span></div><div><el-button v-if="topics.length" data-action="select-all-topics" :disabled="loadingTopics" @click="toggleAllTopics">{{ selectedIds.length===topics.length?'取消全选':'全选' }}</el-button><el-button data-action="generate-topics" :loading="loadingTopics" :disabled="loadingTopics" @click="generateTopics">{{ topics.length?'换一批':'生成选题' }}</el-button></div></div>
         <div v-if="topics.length" class="novelty-status">
           <span>已避开本地历史 {{ historyChecked }} 条内容</span>
-          <span v-if="hotspotStatus==='available'">已核验近期来源</span>
-          <span v-else-if="hotspotStatus==='unavailable'">本次热点不可用，已使用常规选题</span>
-          <span v-else-if="hotspotStatus==='no_match'">暂无合适热点，已使用常规选题</span>
         </div>
         <div v-if="loadingTopics" data-testid="topic-progress" class="topic-progress"><strong>AI 正在生成选题</strong><span>已等待 {{ topicElapsedSec }} 秒，请勿重复点击</span><el-progress :percentage="Math.min(92, 8 + topicElapsedSec * 3)" :show-text="false" :indeterminate="true" /></div>
         <div v-if="topics.length" class="topic-list">
           <button v-for="(topic,index) in topics" :key="topic.id" :data-topic-id="topic.id" :class="{selected:selectedIds.includes(topic.id)}" @click="toggleTopic(topic.id)">
-            <span>{{ String.fromCharCode(65+index) }}</span><div><strong>{{ topic.displayTitle }}</strong><small class="short-title">封面：{{ topic.shortTitle }} · 角度：{{ topic.identity.angle }}</small><small>{{ topic.description }}</small><em>开场：{{ topic.hook }}</em><a v-if="topic.hotspot" data-testid="hotspot-source" :href="topic.hotspot.sourceUrl" @click.prevent.stop="openSource(topic.hotspot.sourceUrl)">来源：{{ topic.hotspot.title }}（{{ topic.hotspot.publishedAt }}）</a></div><b>{{ selectedIds.includes(topic.id)?'✓':'' }}</b>
+            <span>{{ String.fromCharCode(65+index) }}</span><div><strong>{{ topic.shortTitle }}</strong><small>{{ topic.description }}</small><em>开场：{{ topic.hook }}</em></div><b>{{ selectedIds.includes(topic.id)?'✓':'' }}</b>
           </button>
         </div>
         <div v-else class="empty-topics"><p>根据当前人设生成5个不同内容角度</p><el-button type="primary" data-action="generate-topics" @click="generateTopics">生成选题</el-button></div>
@@ -278,7 +266,7 @@ async function openSource(url: string): Promise<void> {
 
       <section class="results"><header><div><strong>待检查文案</strong><span>逐条修改、筛查后收进文案库</span></div><el-tag>{{ reviewProjects.length }} 条</el-tag></header>
         <article v-for="project in reviewProjects" :key="project.id" class="project-card" :class="{failed:project.status==='failed'}">
-          <div class="project-title"><el-input v-model="project.mainTitle" maxlength="8" /><strong>{{ project.topicTitle }}</strong><el-tag :type="project.status==='failed'?'danger':'warning'">{{ project.status==='failed'?'生成失败':'待检查' }}</el-tag></div>
+          <div class="project-title"><el-input v-model="project.mainTitle" maxlength="10" /><strong>{{ project.topicTitle }}</strong><el-tag :type="project.status==='failed'?'danger':'warning'">{{ project.status==='failed'?'生成失败':'待检查' }}</el-tag></div>
           <template v-if="project.status==='failed'"><p class="error">{{ project.errorMessage }}</p><el-button type="primary" @click="retry(project)">重新生成</el-button></template>
           <template v-else><el-input v-model="project.text" type="textarea" :rows="9" maxlength="1000" show-word-limit />
             <div v-if="project.complianceIssues.length" class="issues">发现 {{ project.complianceIssues.length }} 处风险词，请人工修改后重新检查。</div>

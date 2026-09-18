@@ -623,6 +623,9 @@ async function ensureBackendReady(action: string): Promise<BackendReadyState> {
 function createWindow(): void {
   window = new BrowserWindow({
     title: PRODUCT_NAME,
+    icon: app.isPackaged
+      ? resolve(process.resourcesPath, "app-icon.ico")
+      : resolve(__dirname, "../../build/icon.ico"),
     width: 1440,
     height: 900,
     minWidth: 900,

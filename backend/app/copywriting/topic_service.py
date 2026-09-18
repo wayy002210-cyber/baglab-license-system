@@ -36,14 +36,28 @@ class EmbeddingChat(Protocol):
 class TopicCandidate(DedupCandidate):
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
-    display_title: str = Field(alias="displayTitle", min_length=10, max_length=22)
+    display_title: str = Field(
+        alias="displayTitle", min_length=5, max_length=10,
+        pattern=r"^[\u3400-\u9fff]+$",
+    )
     short_title: str = Field(
-        alias="shortTitle", min_length=5, max_length=8,
+        alias="shortTitle", min_length=5, max_length=10,
         pattern=r"^[\u3400-\u9fff]+$",
     )
     description: str = Field(min_length=20, max_length=160)
     hook: str = Field(min_length=4, max_length=120)
     hotspot: HotspotSource | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def unify_title(cls, value):
+        if not isinstance(value, dict):
+            return value
+        title = str(
+            value.get("shortTitle") or value.get("short_title")
+            or value.get("displayTitle") or value.get("display_title") or ""
+        ).strip()
+        return {**value, "displayTitle": title, "shortTitle": title}
 
 
 class TopicCandidateBatch(BaseModel):
@@ -93,7 +107,7 @@ class TopicGenerationRequest(BaseModel):
     exact_script_signatures: list[str] = Field(
         default_factory=list, alias="exactScriptSignatures", max_length=20000
     )
-    hotspot_mode: HotspotMode = Field(default="balanced", alias="hotspotMode")
+    hotspot_mode: HotspotMode = Field(default="off", alias="hotspotMode")
 
 
 class CopywritingGenerationRequest(TopicGenerationRequest):
@@ -336,14 +350,13 @@ class TopicService:
 <untrusted_sources_json>{json.dumps(hotspot_data, ensure_ascii=False)}</untrusted_sources_json>
 
 要求：
-1. displayTitle 为10到22字的完整选题标题；shortTitle 为5到8个纯中文字符的封面短标题。
+1. displayTitle 与 shortTitle 必须完全相同，均为5到10个纯中文字符的统一选题标题。
 2. description 为20到80字，必须说明受众、场景、具体问题和论述方向。
 3. hook 是可直接朗读的第一句话，不写动作、镜头或舞台提示。
 4. identity 必须完整填写 audience、scenario、problem、thesis、evidenceType、angle、structureType、hookType、viewerGain、hotspotId。
 5. 不得虚构品牌事实、客户案例、数据、排名、热搜、政策或承诺。
-6. 只有引用“可使用的近期来源资料”时才能填写 hotspot，并且链接、日期与来源必须原样保留。
-7. 不使用固定的避坑、标准、坚持、玄机五类套路，不进行同义改写。
-8. 只输出JSON，不要Markdown。
+6. 不使用固定的避坑、标准、坚持、玄机五类套路，不进行同义改写。
+7. 只输出JSON，不要Markdown。
 JSON结构：{{"topics":[{{"id":"候选标识","displayTitle":"完整内容标题","shortTitle":"封面短标题","description":"具体论述方向","hook":"直接开口的一句话","identity":{{"audience":"目标受众","scenario":"具体场景","problem":"具体问题","thesis":"核心结论","evidenceType":"证据类型","angle":"切入角度","structureType":"叙事结构","hookType":"开场类型","viewerGain":"观众所得","hotspotId":null}},"hotspot":null}}]}}"""
 
     def _attach_embeddings(

@@ -1,10 +1,12 @@
 import json
+import re
 
 import pytest
 
 from app.copywriting.topic_service import (
     CopywritingGenerationRequest,
     NovelTopicsExhausted,
+    TopicCandidate,
     TopicGenerationRequest,
     TopicService,
 )
@@ -101,6 +103,39 @@ def test_topics_returns_five_unique_candidates() -> None:
     assert len(result.topics) == 5
     assert len({topic.short_title for topic in result.topics}) == 5
     assert chat.calls[0][0] == "deepseek-v3"
+
+
+def test_topics_normalize_to_one_five_to_ten_character_chinese_title() -> None:
+    items = five_diverse_candidates()
+    titles = ["面料克重怎么选", "展厅色差怎么验", "承重测试怎么做", "活动交期怎么排", "礼赠袋如何复用"]
+    for item, title in zip(items, titles, strict=True):
+        item["displayTitle"] = f"这是原先较长的完整选题标题{title}"
+        item["shortTitle"] = title
+    chat = FixtureChat([topic_response(items)])
+
+    result = TopicService(chat).generate_topics(
+        api_key="secret",
+        request=TopicGenerationRequest(
+            model="deepseek-v3", personaId="p1", personaName="袋研官",
+            industry="帆布袋",
+        ),
+    )
+
+    assert all(5 <= len(item.short_title) <= 10 for item in result.topics)
+    assert all(item.short_title == item.display_title for item in result.topics)
+    assert all(re.fullmatch(r"[\u3400-\u9fff]{5,10}", item.short_title) for item in result.topics)
+    assert result.hotspot_status == "disabled"
+
+
+def test_topic_candidate_accepts_python_field_names() -> None:
+    item = five_diverse_candidates()[0]
+    item["display_title"] = item.pop("displayTitle")
+    item["short_title"] = item.pop("shortTitle")
+
+    result = TopicCandidate.model_validate(item)
+
+    assert result.short_title == "面料克重选择"
+    assert result.display_title == result.short_title
 
 
 def test_topics_accepts_provider_extras_without_retrying() -> None:

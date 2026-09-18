@@ -38,7 +38,7 @@ const RULES: Array<[RegExp, UserError]> = [
     detail: "AI 服务正在限流，本次内容没有丢失。",
     action: "请稍等一分钟后重试当前步骤。"
   }],
-  [/timeout|timed out|network|fetch failed/i, {
+  [/timeout|timed out|network|fetch failed|ERR_(?:CONNECTION|NETWORK|TIMED_OUT)/i, {
     title: "网络连接失败",
     detail: "暂时无法连接 AI 服务，本地草稿已经保留。",
     action: "检查网络后重试当前步骤。"

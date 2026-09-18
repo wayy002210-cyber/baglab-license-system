@@ -2,8 +2,41 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { useCreationDraft } from "../../src/renderer/composables/useCreationDraft";
+import { creationDraftSchema } from "../../src/shared/contracts";
 
 describe("useCreationDraft", () => {
+  it("keeps legacy long display titles while accepting a ten-character unified title", () => {
+    const parsed = creationDraftSchema.parse({
+      version: 1,
+      stage: "copywriting",
+      personaId: "persona-1",
+      copywriting: {
+        model: "deepseek-v3",
+        temperature: 0.7,
+        topics: [{
+          id: "a",
+          displayTitle: "采购验收时怎样快速识别车线风险",
+          shortTitle: "帆布袋选购新方法论篇",
+          description: "这是面向采购人员的详细内容方向说明",
+          hook: "这个问题应该先看什么？"
+        }],
+        selectedTopicId: "a",
+        mainTitle: "帆布袋选购新方法论篇",
+        text: "",
+        complianceIssues: []
+      },
+      voice: null,
+      audioSegments: [],
+      shots: [],
+      bgm: null,
+      titleStyle: null,
+      subtitleStyle: null
+    });
+
+    expect(parsed.copywriting?.mainTitle).toBe("帆布袋选购新方法论篇");
+    expect(parsed.copywriting?.topics[0].displayTitle).toContain("采购验收");
+  });
+
   it("surfaces automatic save failures instead of creating an unhandled promise", async () => {
     Object.assign(window, {
       autocut: {

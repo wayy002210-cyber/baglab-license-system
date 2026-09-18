@@ -466,7 +466,6 @@ type CopywritingContext = {
   tone: string;
   cta: string;
   referenceScripts: string[];
-  hotspotMode: "off" | "balanced" | "priority";
 };
 type ContentIdentity = { audience:string;scenario:string;problem:string;thesis:string;evidenceType:string;angle:string;structureType:string;hookType:string;viewerGain:string;hotspotId:string|null };
 type HotspotSource = { id:string;title:string;sourceUrl:string;publishedAt:string;retrievedAt:string;summary:string;relevance:string };

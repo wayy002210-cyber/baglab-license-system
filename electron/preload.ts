@@ -338,8 +338,7 @@ const contentContextSchema = z.object({
   brandFacts: z.array(z.string()),
   tone: z.string(),
   cta: z.string(),
-  referenceScripts: z.array(z.string()).max(5),
-  hotspotMode: z.enum(["off", "balanced", "priority"]).default("balanced")
+  referenceScripts: z.array(z.string()).max(5)
 });
 const contentIdentitySchema = z.object({
   audience: z.string().min(1), scenario: z.string().min(1), problem: z.string().min(1),
@@ -354,8 +353,8 @@ const hotspotSourceSchema = z.object({
 });
 const topicSchema = z.object({
   id: z.string().min(1),
-  displayTitle: z.string().min(10).max(22),
-  shortTitle: z.string().regex(/^[\u3400-\u9fff]{5,8}$/),
+  displayTitle: z.string().min(1).max(22),
+  shortTitle: z.string().regex(/^[\u3400-\u9fff]{5,10}$/),
   description: z.string().min(20).max(160),
   hook: z.string().min(4),
   identity: contentIdentitySchema,

@@ -41,4 +41,26 @@ describe("generateCopywritingBatch", () => {
     });
     expect(progress).toEqual([1, 2]);
   });
+
+  it("retries one transient Electron IPC failure before saving a failed project", async () => {
+    let attempts = 0;
+    const saved: string[] = [];
+
+    const result = await generateCopywritingBatch({
+      topics: [topic("a")],
+      generate: async (current) => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("Error invoking remote method 'copywriting:generate': Error: net::ERR_CONNECTION_RESET");
+        }
+        return { text: `${current.shortTitle}的完整文案`, structureType: "现场演示", hookType: "问题", argumentBeats: [], semanticVector: null };
+      },
+      saveSuccess: async (_topic, value) => { saved.push(value.text); },
+      saveFailure: async () => undefined
+    });
+
+    expect(attempts).toBe(2);
+    expect(saved).toEqual(["工厂选题一号的完整文案"]);
+    expect(result).toEqual({ total: 1, completed: 1, succeeded: 1, failed: 0 });
+  });
 });

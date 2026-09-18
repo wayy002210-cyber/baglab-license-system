@@ -17,7 +17,7 @@ describe("copywriting request payloads", () => {
       bannedWords: ["第一"]
     });
 
-    const context = toCopywritingContext(persona, "deepseek-v3", "priority");
+    const context = toCopywritingContext(persona, "deepseek-v3");
     const generation = toCopywritingGenerationInput(
       context,
       persona.bannedWords
@@ -27,7 +27,7 @@ describe("copywriting request payloads", () => {
     expect(() => structuredClone(generation)).not.toThrow();
     expect(context.brandFacts).toEqual(["自有工厂"]);
     expect(context.personaId).toBe("persona-1");
-    expect(context.hotspotMode).toBe("priority");
+    expect(context).not.toHaveProperty("hotspotMode");
     expect(generation.bannedWords).toEqual(["第一"]);
   });
 });

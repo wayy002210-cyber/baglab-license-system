@@ -52,6 +52,16 @@ describe("user error mapping", () => {
     );
   });
 
+  it("explains an Electron connection reset instead of replacing it with a generic failure", () => {
+    const result = mapUserError(
+      new Error("Error invoking remote method 'copywriting:generate': Error: net::ERR_CONNECTION_RESET"),
+      "生成文案失败"
+    );
+
+    expect(result.title).toBe("网络连接失败");
+    expect(result.action).toContain("重试");
+  });
+
   it("preserves a useful Chinese business error", () => {
     expect(toUserMessage(new Error("请选择包含视频的分类文件夹"), "素材扫描失败"))
       .toBe("请选择包含视频的分类文件夹");

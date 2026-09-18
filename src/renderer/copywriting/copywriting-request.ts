@@ -15,13 +15,11 @@ export type CopywritingContext = {
   brandFacts: string[];
   tone: string;
   cta: string;
-  hotspotMode: "off" | "balanced" | "priority";
 };
 
 export function toCopywritingContext(
   persona: CopywritingPersona,
-  model: string,
-  hotspotMode: "off" | "balanced" | "priority" = "balanced"
+  model: string
 ): CopywritingContext {
   return {
     model,
@@ -30,8 +28,7 @@ export function toCopywritingContext(
     industry: persona.industry,
     brandFacts: [...persona.brandFacts],
     tone: persona.tone,
-    cta: persona.cta,
-    hotspotMode
+    cta: persona.cta
   };
 }
 

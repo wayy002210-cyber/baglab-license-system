@@ -18,8 +18,9 @@ function mountView() {
 
 function richTopic(id: string, hotspot = false) {
   const suffix: Record<string, string> = { a: "甲", b: "乙", c: "丙", d: "丁", e: "戊" };
+  const title = `帆布袋色差${suffix[id] ?? "甲"}`;
   return {
-    id, displayTitle: `展厅灯光下袋子颜色为何会变化${id}`, shortTitle: `展厅色差${suffix[id] ?? "甲"}`,
+    id, displayTitle: title, shortTitle: title,
     description: "面向展会设计师，在展厅布置时讲清现场灯光造成颜色偏差的判断方法",
     hook: "同一块面料，为什么进了展厅就像换了颜色？",
     identity: { audience: "展会设计师", scenario: `展厅布置${id}`, problem: `现场颜色偏差${id}`,
@@ -51,39 +52,26 @@ describe("CopywritingView", () => {
     await wrapper.get('[data-action="generate-selected-copywriting"]').trigger("click"); await flushPromises();
 
     expect(create).toHaveBeenCalledTimes(2);
-    expect(create.mock.calls.map(([input]) => input.mainTitle)).toEqual(["展厅色差甲", "展厅色差乙"]);
+    expect(create.mock.calls.map(([input]) => input.mainTitle)).toEqual(["帆布袋色差甲", "帆布袋色差乙"]);
     expect(wrapper.find('[data-action="select-all-topics"]').exists()).toBe(true);
   });
 
-  it("shows the full title, short title, angle and verified hotspot source", async () => {
+  it("uses one topic title and keeps the local history deduplication status", async () => {
+    const generateTopics = vi.fn(async (_input: unknown) => ({ topics: [richTopic("a"), ...["b", "c", "d", "e"].map((id) => richTopic(id))], historyChecked: 42, hotspotStatus: "disabled" }));
     Object.assign(window, { autocut: {
       listPersonas: vi.fn(async () => [persona]), getCopyModelSettings: vi.fn(async () => ({ defaultModel: "deepseek-v3", temperature: 0.7, candidateModels: ["deepseek-v3"] })),
       searchReferenceScripts: vi.fn(async () => []), listCopywritingProjects: vi.fn(async () => []),
-      generateTopics: vi.fn(async () => ({ topics: [richTopic("a", true), ...["b", "c", "d", "e"].map((id) => richTopic(id))], historyChecked: 42, hotspotStatus: "available" })),
+      generateTopics,
       openExternalUrl: vi.fn(async () => undefined)
     } });
     const wrapper = mountView(); await flushPromises();
 
     await wrapper.get('[data-action="generate-topics"]').trigger("click"); await flushPromises();
 
-    expect(wrapper.text()).toContain("展厅灯光下袋子颜色为何会变化a");
-    expect(wrapper.text()).toContain("展厅色差甲");
-    expect(wrapper.text()).toContain("光线影响");
-    expect(wrapper.get('[data-testid="hotspot-source"]').attributes("href")).toBe("https://example.com/trend");
+    expect(wrapper.text()).toContain("帆布袋色差甲");
+    expect(wrapper.text()).not.toContain("封面：");
+    expect(wrapper.text()).not.toContain("选题模式");
     expect(wrapper.text()).toContain("已避开本地历史 42 条内容");
-  });
-
-  it("reports evergreen fallback when current sources are unavailable", async () => {
-    Object.assign(window, { autocut: {
-      listPersonas: vi.fn(async () => [persona]), getCopyModelSettings: vi.fn(async () => ({ defaultModel: "deepseek-v3", temperature: 0.7, candidateModels: ["deepseek-v3"] })),
-      searchReferenceScripts: vi.fn(async () => []), listCopywritingProjects: vi.fn(async () => []),
-      generateTopics: vi.fn(async () => ({ topics: ["a", "b", "c", "d", "e"].map((id) => richTopic(id)), historyChecked: 126, hotspotStatus: "unavailable" })),
-      openExternalUrl: vi.fn(async () => undefined)
-    } });
-    const wrapper = mountView(); await flushPromises();
-    await wrapper.get('[data-action="generate-topics"]').trigger("click"); await flushPromises();
-
-    expect(wrapper.text()).toContain("已避开本地历史 126 条内容");
-    expect(wrapper.text()).toContain("本次热点不可用，已使用常规选题");
+    expect(generateTopics.mock.calls[0][0]).not.toHaveProperty("hotspotMode");
   });
 });
