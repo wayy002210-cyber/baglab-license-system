@@ -7,6 +7,7 @@ from app.copywriting.bailian import (
     BailianAPIError,
     BailianAuthenticationError,
     BailianChat,
+    ProviderModel,
 )
 
 
@@ -32,6 +33,53 @@ def test_deepseek_requests_json_object_output(monkeypatch) -> None:
     )
 
     assert captured["response_format"] == {"type": "json_object"}
+
+
+def test_deepseek_v4_disables_thinking_for_json_output(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_post(*args, **kwargs):
+        captured.update(kwargs["json"])
+        return response(
+            200,
+            {"choices": [{"message": {"content": '{"topics":[]}'}}]},
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    BailianChat().complete(
+        api_key="secret", model="deepseek-v4.1-flash", prompt="hello"
+    )
+
+    assert captured["response_format"] == {"type": "json_object"}
+    assert captured["enable_thinking"] is False
+
+
+def test_list_models_returns_provider_model_ids(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["headers"] = kwargs["headers"]
+        return httpx.Response(
+            200,
+            json={"output": {"models": [
+                {"model_name": "deepseek-v4.1-flash"},
+                {"id": "qwen3.7-plus"},
+            ]}},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    result = BailianChat().list_models(api_key="secret")
+
+    assert captured["url"] == BailianChat.models_endpoint
+    assert captured["headers"]["Authorization"] == "Bearer secret"
+    assert result == [
+        ProviderModel(id="deepseek-v4.1-flash"),
+        ProviderModel(id="qwen3.7-plus"),
+    ]
 
 
 def test_qwen_can_request_json_object_output(monkeypatch) -> None:

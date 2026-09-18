@@ -18,6 +18,11 @@ class BailianAuthenticationError(BailianAPIError):
 
 
 @dataclass(frozen=True)
+class ProviderModel:
+    id: str
+
+
+@dataclass(frozen=True)
 class SearchSource:
     title: str
     url: str
@@ -38,6 +43,7 @@ def supports_json_object(model: str) -> bool:
 
 class BailianChat:
     endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    models_endpoint = "https://dashscope.aliyuncs.com/api/v1/models"
     embedding_endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
     search_endpoint = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
 
@@ -52,6 +58,8 @@ class BailianChat:
         }
         if supports_json_object(model):
             payload["response_format"] = {"type": "json_object"}
+            if model.strip().lower().startswith("deepseek-v4"):
+                payload["enable_thinking"] = False
         response = httpx.post(
             self.endpoint,
             headers={
@@ -67,6 +75,39 @@ class BailianChat:
             return str(data["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as error:
             raise RuntimeError("Bailian returned an unexpected response") from error
+
+    def list_models(self, *, api_key: str) -> list[ProviderModel]:
+        response = httpx.get(
+            self.models_endpoint,
+            headers=self._headers(api_key),
+            timeout=self.timeout,
+        )
+        self._raise_for_status(response, model="model catalog")
+        payload = response.json()
+        output = payload.get("output", {}) if isinstance(payload, dict) else {}
+        raw_models = output.get("models") if isinstance(output, dict) else None
+        if raw_models is None and isinstance(payload, dict):
+            raw_models = payload.get("data")
+        if not isinstance(raw_models, list):
+            raise BailianAPIError(
+                "百炼模型列表返回格式异常",
+                code="BAILIAN_MODEL_LIST_INVALID",
+                status_code=502,
+            )
+        result: list[ProviderModel] = []
+        seen: set[str] = set()
+        for item in raw_models:
+            if not isinstance(item, dict):
+                continue
+            raw_id = (
+                item.get("id") or item.get("model_name")
+                or item.get("model") or item.get("name")
+            )
+            model_id = str(raw_id or "").strip()
+            if model_id and model_id not in seen:
+                seen.add(model_id)
+                result.append(ProviderModel(id=model_id))
+        return result
 
     def embed(
         self,
