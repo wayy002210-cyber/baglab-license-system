@@ -74,7 +74,10 @@ import {
 import type { CopyModelSettings } from "./repositories/settings-repository.js";
 import { buildDraftTaskSnapshot } from "./services/task-snapshot-service.js";
 import { scanSystemFonts } from "./services/system-font-service.js";
-import { refreshBailianModels } from "./services/bailian-model-service.js";
+import {
+  buildBailianBackendHeaders,
+  refreshBailianModels
+} from "./services/bailian-model-service.js";
 import {
   CopywritingProjectRepository,
   type CopywritingStatus,
@@ -684,8 +687,11 @@ ipcMain.handle("credentials:testBailian", async (_event, model: string) => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Autocut-Token": backendState.token,
-      "X-Bailian-Key": apiKey
+      ...buildBailianBackendHeaders({
+        apiKey,
+        sessionToken: backendState.token,
+        licenseHeaders: backendLicenseHeaders()
+      })
     },
     body: JSON.stringify({ model })
   });

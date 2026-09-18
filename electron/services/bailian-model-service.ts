@@ -23,6 +23,18 @@ type ErrorBody = {
   detail?: string | { code?: string; message?: string };
 };
 
+export function buildBailianBackendHeaders(input: {
+  apiKey: string;
+  sessionToken: string;
+  licenseHeaders: Record<string, string>;
+}): Record<string, string> {
+  return {
+    "X-Autocut-Token": input.sessionToken,
+    ...input.licenseHeaders,
+    "X-Bailian-Key": input.apiKey
+  };
+}
+
 function errorMessage(status: number, body: ErrorBody | null): string {
   const detail = typeof body?.detail === "object" ? body.detail : null;
   const suffix = detail?.message ? `：${detail.message}` : "";
@@ -51,11 +63,7 @@ export async function refreshBailianModels(input: {
       `${input.baseUrl}/copywriting/models/recommendations`,
       {
         method: "POST",
-        headers: {
-          "X-Autocut-Token": input.sessionToken,
-          "X-Bailian-Key": input.apiKey,
-          ...input.licenseHeaders
-        },
+        headers: buildBailianBackendHeaders(input),
         signal: controller.signal
       }
     );

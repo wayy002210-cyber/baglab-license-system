@@ -73,6 +73,7 @@ class BailianModelCatalog:
             candidates = list(RECOMMENDED_MODELS)
 
         recommendations: list[ModelRecommendation] = []
+        network_failure_count = 0
         for model_id in candidates:
             try:
                 self.chat.complete(
@@ -86,7 +87,10 @@ class BailianModelCatalog:
                 if error.status_code == 429:
                     raise
                 continue
-            except (httpx.HTTPError, RuntimeError, ValueError):
+            except httpx.HTTPError:
+                network_failure_count += 1
+                continue
+            except (RuntimeError, ValueError):
                 continue
             recommendations.append(ModelRecommendation(
                 id=model_id,
@@ -107,6 +111,12 @@ class BailianModelCatalog:
                 break
 
         if not recommendations:
+            if candidates and network_failure_count == len(candidates):
+                raise BailianAPIError(
+                    "百炼网络连接异常，请检查网络后重试",
+                    code="BAILIAN_NETWORK_UNAVAILABLE",
+                    status_code=503,
+                )
             raise BailianAPIError(
                 "当前账号没有可用的推荐文案模型",
                 code="BAILIAN_NO_USABLE_MODEL",

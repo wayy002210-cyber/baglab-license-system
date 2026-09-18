@@ -18,10 +18,12 @@ class FakeChat:
         listed: list[str] | None = None,
         list_error: Exception | None = None,
         failed_probes: set[str] | None = None,
+        probe_error: Exception | None = None,
     ) -> None:
         self.listed = listed or []
         self.list_error = list_error
         self.failed_probes = failed_probes or set()
+        self.probe_error = probe_error
         self.probed: list[str] = []
 
     def list_models(self, *, api_key: str) -> list[ProviderModel]:
@@ -31,6 +33,8 @@ class FakeChat:
 
     def complete(self, *, api_key: str, model: str, prompt: str) -> str:
         self.probed.append(model)
+        if self.probe_error:
+            raise self.probe_error
         if model in self.failed_probes:
             raise BailianAPIError(
                 "forbidden", code="BAILIAN_MODEL_FORBIDDEN", status_code=403
@@ -102,3 +106,16 @@ def test_refresh_raises_when_no_candidate_is_usable() -> None:
 
     assert captured.value.code == "BAILIAN_NO_USABLE_MODEL"
     assert captured.value.status_code == 422
+
+
+def test_refresh_reports_network_failure_when_catalog_and_all_probes_timeout() -> None:
+    chat = FakeChat(
+        list_error=httpx.ConnectTimeout("catalog timeout"),
+        probe_error=httpx.ConnectTimeout("probe timeout"),
+    )
+
+    with pytest.raises(BailianAPIError) as captured:
+        BailianModelCatalog(chat=chat).refresh(api_key="secret")
+
+    assert captured.value.code == "BAILIAN_NETWORK_UNAVAILABLE"
+    assert captured.value.status_code == 503

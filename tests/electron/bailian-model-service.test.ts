@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { refreshBailianModels } from "../../electron/services/bailian-model-service";
+import {
+  buildBailianBackendHeaders,
+  refreshBailianModels
+} from "../../electron/services/bailian-model-service";
 
 function input(fetchImpl: typeof fetch) {
   return {
@@ -12,6 +15,18 @@ function input(fetchImpl: typeof fetch) {
 }
 
 describe("refreshBailianModels", () => {
+  it("builds the same protected headers for connection tests and model refresh", () => {
+    expect(buildBailianBackendHeaders({
+      apiKey: "private-key-value",
+      sessionToken: "session-token",
+      licenseHeaders: { "X-Autocut-License": "signed-proof" }
+    })).toEqual({
+      "X-Autocut-Token": "session-token",
+      "X-Autocut-License": "signed-proof",
+      "X-Bailian-Key": "private-key-value"
+    });
+  });
+
   it("sends secrets only to the local backend and returns model metadata", async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect(init?.method).toBe("POST");
