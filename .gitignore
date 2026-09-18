@@ -1,6 +1,7 @@
 node_modules/
 .venv/
 .tmp/
+.worktrees/
 .pytest_cache/
 .pnpm-store/
 .python-test-deps/
