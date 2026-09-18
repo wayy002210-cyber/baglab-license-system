@@ -15,6 +15,16 @@ export type CopyModelSettings = {
   defaultModel: string;
   temperature: number;
   candidateModels: string[];
+  modelRecommendations: BailianModelRecommendation[];
+  modelsCheckedAt: string | null;
+};
+
+export type BailianModelRecommendation = {
+  id: string;
+  displayName: string;
+  family: "deepseek" | "qwen" | "other";
+  status: "available";
+  note: string;
 };
 
 export type StylePreset = {
@@ -45,9 +55,11 @@ export const defaultMediaSettings: MediaSettings = {
 };
 
 export const defaultCopyModelSettings: CopyModelSettings = {
-  defaultModel: "deepseek-v3",
+  defaultModel: "deepseek-v4.1-flash",
   temperature: 0.7,
-  candidateModels: ["deepseek-v3", "qwen-plus"]
+  candidateModels: ["deepseek-v4.1-flash", "qwen-plus"],
+  modelRecommendations: [],
+  modelsCheckedAt: null
 };
 export const defaultVoiceSettings: VoiceSettings = {
   voiceId: "male-qn-qingse",
@@ -110,28 +122,43 @@ export class SettingsRepository {
   }
 
   getCopyModelSettings(): CopyModelSettings {
-    return this.get("copy-model", defaultCopyModelSettings);
+    const stored = this.get<Partial<CopyModelSettings> | null>("copy-model", null);
+    if (!stored) return structuredClone(defaultCopyModelSettings);
+    const normalized = normalizeCopyModelSettings(stored);
+    if (JSON.stringify(stored) !== JSON.stringify(normalized)) {
+      this.set("copy-model", normalized);
+    }
+    return normalized;
   }
 
   saveCopyModelSettings(settings: CopyModelSettings): CopyModelSettings {
-    const models = [...new Set(settings.candidateModels.map((model) => model.trim()))]
+    const normalized = normalizeCopyModelSettings(settings);
+    const models = [...new Set(normalized.candidateModels.map((model) => model.trim()))]
       .filter(Boolean);
-    if (!settings.defaultModel.trim()) {
+    if (!normalized.defaultModel) {
       throw new Error("Default copywriting model is required");
     }
-    if (!models.includes(settings.defaultModel.trim())) {
+    if (!models.includes(normalized.defaultModel)) {
       throw new Error("Default model must be included in candidate models");
     }
+    if (normalized.modelRecommendations.length > 5) {
+      throw new RangeError("No more than five verified models may be stored");
+    }
     if (
-      !Number.isFinite(settings.temperature) ||
-      settings.temperature < 0 ||
-      settings.temperature > 2
+      normalized.modelsCheckedAt &&
+      !normalized.modelRecommendations.some((item) => item.id === normalized.defaultModel)
+    ) {
+      throw new Error("Default model must be a verified available model");
+    }
+    if (
+      !Number.isFinite(normalized.temperature) ||
+      normalized.temperature < 0 ||
+      normalized.temperature > 2
     ) {
       throw new RangeError("Temperature must be between 0 and 2");
     }
     return this.set("copy-model", {
-      defaultModel: settings.defaultModel.trim(),
-      temperature: settings.temperature,
+      ...normalized,
       candidateModels: models
     });
   }
@@ -164,4 +191,51 @@ export class SettingsRepository {
     if (!Number.isInteger(settings.pitch) || settings.pitch < -12 || settings.pitch > 12) throw new RangeError("音调必须在 -12 至 12 之间");
     return this.set("voice-settings", structuredClone(settings));
   }
+}
+
+function migrateModelId(model: string): string {
+  return model.trim() === "deepseek-v3" ? "deepseek-v4.1-flash" : model.trim();
+}
+
+function normalizeCopyModelSettings(
+  settings: Partial<CopyModelSettings>
+): CopyModelSettings {
+  const defaultModel = migrateModelId(
+    typeof settings.defaultModel === "string"
+      ? settings.defaultModel
+      : defaultCopyModelSettings.defaultModel
+  );
+  const rawCandidates = Array.isArray(settings.candidateModels)
+    ? settings.candidateModels
+    : defaultCopyModelSettings.candidateModels;
+  const candidateModels = [...new Set(
+    rawCandidates
+      .filter((model): model is string => typeof model === "string")
+      .map(migrateModelId)
+      .filter(Boolean)
+  )];
+  if (!candidateModels.includes(defaultModel)) candidateModels.unshift(defaultModel);
+  const modelRecommendations = Array.isArray(settings.modelRecommendations)
+    ? settings.modelRecommendations
+      .filter((item): item is BailianModelRecommendation => Boolean(
+        item &&
+        typeof item.id === "string" &&
+        typeof item.displayName === "string" &&
+        ["deepseek", "qwen", "other"].includes(item.family) &&
+        item.status === "available" &&
+        typeof item.note === "string"
+      ))
+      .map((item) => ({ ...item, id: migrateModelId(item.id) }))
+    : [];
+  return {
+    defaultModel,
+    temperature: typeof settings.temperature === "number"
+      ? settings.temperature
+      : defaultCopyModelSettings.temperature,
+    candidateModels,
+    modelRecommendations,
+    modelsCheckedAt: typeof settings.modelsCheckedAt === "string"
+      ? settings.modelsCheckedAt
+      : null
+  };
 }

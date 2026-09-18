@@ -52,9 +52,10 @@ describe("SettingsRepository", () => {
 
     expect(repository.getCopyModelSettings()).toEqual(defaultCopyModelSettings);
     const saved = repository.saveCopyModelSettings({
-      defaultModel: "deepseek-v3",
+      ...defaultCopyModelSettings,
+      defaultModel: "deepseek-v4.1-flash",
       temperature: 0.8,
-      candidateModels: ["deepseek-v3", "qwen-plus"]
+      candidateModels: ["deepseek-v4.1-flash", "qwen-plus"]
     });
 
     expect(repository.getCopyModelSettings()).toEqual(saved);
@@ -64,6 +65,77 @@ describe("SettingsRepository", () => {
         temperature: 2.1
       })
     ).toThrow();
+    database.close();
+  });
+
+  it("migrates retired deepseek-v3 settings to deepseek-v4.1-flash", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const repository = new SettingsRepository(database);
+    repository.set("copy-model", {
+      defaultModel: "deepseek-v3",
+      temperature: 0.8,
+      candidateModels: ["deepseek-v3", "qwen-plus"]
+    });
+
+    expect(repository.getCopyModelSettings()).toEqual({
+      defaultModel: "deepseek-v4.1-flash",
+      temperature: 0.8,
+      candidateModels: ["deepseek-v4.1-flash", "qwen-plus"],
+      modelRecommendations: [],
+      modelsCheckedAt: null
+    });
+    expect(repository.get<Record<string, unknown>>("copy-model", {})).toMatchObject({
+      defaultModel: "deepseek-v4.1-flash"
+    });
+    database.close();
+  });
+
+  it("normalizes legacy save payloads before the renderer bridge is upgraded", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const repository = new SettingsRepository(database);
+
+    expect(repository.saveCopyModelSettings({
+      defaultModel: "deepseek-v3",
+      temperature: 0.7,
+      candidateModels: ["deepseek-v3", "qwen-plus"]
+    } as never)).toEqual(defaultCopyModelSettings);
+    database.close();
+  });
+
+  it("rejects unchecked defaults after verified recommendations are cached", () => {
+    const database = new Database(":memory:");
+    applyMigrations(database);
+    const repository = new SettingsRepository(database);
+
+    expect(() => repository.saveCopyModelSettings({
+      defaultModel: "retired-model",
+      temperature: 0.7,
+      candidateModels: ["retired-model", "deepseek-v4.1-flash"],
+      modelRecommendations: [{
+        id: "deepseek-v4.1-flash",
+        displayName: "DeepSeek V4.1 Flash",
+        family: "deepseek",
+        status: "available",
+        note: "Live verification passed"
+      }],
+      modelsCheckedAt: "2026-09-18T08:00:00.000Z"
+    })).toThrow(/verified|可用/i);
+
+    expect(() => repository.saveCopyModelSettings({
+      defaultModel: "deepseek-v4.1-flash",
+      temperature: 0.7,
+      candidateModels: ["deepseek-v4.1-flash"],
+      modelRecommendations: Array.from({ length: 6 }, (_, index) => ({
+        id: `model-${index}`,
+        displayName: `Model ${index}`,
+        family: "other",
+        status: "available",
+        note: "Live verification passed"
+      })),
+      modelsCheckedAt: "2026-09-18T08:00:00.000Z"
+    })).toThrow(/five|5/i);
     database.close();
   });
 
