@@ -55,6 +55,7 @@ import {
 } from "./repositories/publish-repository.js";
 import { JsonLogger } from "./logger.js";
 import { reportStartupFailure } from "./startup.js";
+import { registerDesktopWindowVisibility } from "./window-visibility.js";
 import { exportDiagnosticBundle } from "./diagnostics.js";
 import { readJsonResponse } from "./http-response.js";
 import {
@@ -632,7 +633,7 @@ function createWindow(): void {
       ,devTools: !app.isPackaged
     }
   });
-  window.once("ready-to-show", () => window?.show());
+  registerDesktopWindowVisibility(window, app.isPackaged);
   window.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedUrl) => {
