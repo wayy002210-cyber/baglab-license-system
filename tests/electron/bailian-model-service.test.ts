@@ -68,7 +68,9 @@ describe("refreshBailianModels", () => {
       detail: { code, message: "provider detail" }
     }), { status })) as typeof fetch;
 
-    await expect(refreshBailianModels(input(fetchImpl))).rejects.toThrow(message);
+    const promise = refreshBailianModels(input(fetchImpl));
+    await expect(promise).rejects.toThrow(message);
+    await expect(refreshBailianModels(input(fetchImpl))).rejects.toThrow(code);
   });
 
   it("rejects malformed success responses", async () => {

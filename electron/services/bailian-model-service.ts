@@ -38,13 +38,14 @@ export function buildBailianBackendHeaders(input: {
 function errorMessage(status: number, body: ErrorBody | null): string {
   const detail = typeof body?.detail === "object" ? body.detail : null;
   const suffix = detail?.message ? `：${detail.message}` : "";
-  if (status === 401) return `百炼密钥无效或地域不匹配${suffix}`;
-  if (status === 403) return `当前账号无权使用推荐模型，请检查服务开通和额度${suffix}`;
-  if (status === 429) return `百炼请求过于频繁，请稍后重试${suffix}`;
-  if (status === 504) return `百炼网络连接超时，请检查网络后重试${suffix}`;
+  const codeSuffix = detail?.code ? `（${detail.code}）` : "";
+  if (status === 401) return `百炼密钥无效或地域不匹配${codeSuffix}${suffix}`;
+  if (status === 403) return `当前账号无权使用推荐模型，请检查服务开通和额度${codeSuffix}${suffix}`;
+  if (status === 429) return `百炼请求过于频繁，请稍后重试${codeSuffix}${suffix}`;
+  if (status === 504) return `百炼网络连接超时，请检查网络后重试${codeSuffix}${suffix}`;
   return typeof body?.detail === "string"
     ? body.detail
-    : detail?.message || `百炼模型更新失败（错误码 ${status}）`;
+    : (detail?.message ? `${detail.message}${codeSuffix}` : `百炼模型更新失败（错误码 ${status}）`);
 }
 
 export async function refreshBailianModels(input: {
