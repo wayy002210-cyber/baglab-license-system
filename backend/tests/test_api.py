@@ -348,26 +348,27 @@ def test_bailian_connection_uses_selected_model() -> None:
     class Chat:
         def complete(self, *, api_key, model, prompt):
             assert api_key == "valid-key"
-            assert model == "deepseek-v3"
+            assert model in {"deepseek-v4.1-flash", "qwen3.7-plus"}
             return '{"ok":true}'
 
     client = TestClient(
         create_app(session_token="secret", bailian_chat=Chat())
     )
-    response = client.post(
-        "/copywriting/connection",
-        headers={
-            "X-Autocut-Token": "secret",
-            "X-Bailian-Key": "valid-key",
-        },
-        json={"model": "deepseek-v3"},
-    )
+    for model in ("deepseek-v4.1-flash", "qwen3.7-plus"):
+        response = client.post(
+            "/copywriting/connection",
+            headers={
+                "X-Autocut-Token": "secret",
+                "X-Bailian-Key": "valid-key",
+            },
+            json={"model": model},
+        )
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "status": "connected",
-        "model": "deepseek-v3",
-    }
+        assert response.status_code == 200
+        assert response.json() == {
+            "status": "connected",
+            "model": model,
+        }
 
 
 def test_model_recommendations_are_protected_and_never_echo_the_key() -> None:
